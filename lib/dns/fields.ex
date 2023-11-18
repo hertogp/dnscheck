@@ -90,6 +90,7 @@ defmodule DNS.Fields do
     do: decode_dname(offset, msg, <<>>, %{})
 
   def decode_dname(offset, msg, name, seen) do
+    # note: OPT RR (EDNS0) MUST have root name (i.e. "" encoded as <<0>>
     <<_::binary-size(offset), bin::binary>> = msg
 
     case bin do
@@ -106,7 +107,7 @@ defmodule DNS.Fields do
 
       <<3::2, ptr::14, _::binary>> ->
         if Map.has_key?(seen, ptr),
-          do: error(:edname, "dname compression loop")
+          do: error(:edname, "domain name compression loop")
 
         {_, name} = decode_dname(ptr, msg, name, Map.put(seen, ptr, []))
         {offset + 2, name}

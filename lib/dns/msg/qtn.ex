@@ -11,29 +11,29 @@ defmodule MsgQtn do
   #       0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
   #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
   #     |                                               |
-  #     /                     QNAME                     /
+  #     /                     name                     /
   #     /                                               /
   #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                     QTYPE                     |
+  #     |                     type                     |
   #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                     QCLASS                    |
+  #     |                     class                    |
   #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
   #
-  # - QNAME, domain name (series of length encoded labels)
-  # - QTYPE, 2 octets, type of Qry
-  # - QCLASS, 2 octets, class of Qry, usally IN (1)
+  # - name, domain name (series of length encoded labels)
+  # - type, 2 octets, type of qtn
+  # - class, 2 octets, class of qtn, usally IN (1)
   #
 
-  defstruct qname: "", qtype: 1, qclass: 1, wdata: <<>>
+  defstruct name: "", type: 1, class: 1, wdata: <<>>
 
   @type offset :: non_neg_integer
   @type type :: non_neg_integer
   @type class :: non_neg_integer
 
   @type t :: %__MODULE__{
-          qname: binary,
-          qtype: type,
-          qclass: class,
+          name: binary,
+          type: type,
+          class: class,
           wdata: binary
         }
 
@@ -45,13 +45,14 @@ defmodule MsgQtn do
   # [[ new ]]
 
   @doc """
-  Create a DnsQuestion struct for given `qname` and `opts`.
+  Create a MsgQtn struct for given `name` and `opts`.
 
-  The `qname` is assumed to be a length encoded binary domain name.
+  The `name` is assumed to be a length encoded binary domain name.
 
   Options include:
-  - `qtype`, defaults to 1 (QUERY)
-  - `qclass, defaults to 1 (IN class)
+  - `name`, defaults to ""
+  - `type`, defaults to 1 (QUERY)
+  - `class, defaults to 1 (IN class)
 
   """
   @spec new(Keyword.t()) :: t()
@@ -61,76 +62,73 @@ defmodule MsgQtn do
   # [[ put ]]
 
   @spec put(t(), Keyword.t()) :: t()
-  def put(%__MODULE__{} = qry, opts \\ []),
-    do: Enum.reduce(opts, %{qry | wdata: nil}, &do_put/2)
+  def put(%__MODULE__{} = qtn, opts \\ []),
+    do: Enum.reduce(opts, %{qtn | wdata: nil}, &do_put/2)
 
-  defp do_put({k, v}, qry) when k == :qname do
+  defp do_put({k, v}, qtn) when k == :name do
     if is_binary(v),
-      do: Map.put(qry, k, v),
+      do: Map.put(qtn, k, v),
       else: error(:evalue, "#{k} not binary, got: #{inspect(v)}")
   end
 
   @spec do_put({atom, any}, t()) :: t()
-  defp do_put({k, v}, qry) when k == :qtype do
-    case encode_dns_type(v) do
-      nil -> error(:evalue, "invalid #{k},: got #{inspect(v)}?")
-      v -> Map.put(qry, k, v)
-    end
-  end
+  defp do_put({k, v}, qtn) when k == :type,
+    do: Map.put(qtn, k, decode_rr_type(v))
 
-  defp do_put({k, v}, qry) when k == :qclass do
-    case encode_dns_class(v) do
-      nil -> error(:evalue, "invalid #{k}, got #{inspect(v)}")
-      v -> Map.put(qry, k, v)
-    end
-  end
+  defp do_put({k, v}, qtn) when k == :class,
+    do: Map.put(qtn, k, v)
 
   # [[ encode ]]
   @doc """
-  Sets the `:wdata` (wiredata) field of the `MsgQry` struct.
+  Sets the `:wdata` (wiredata) field of the `MsgQtn` struct.
 
   """
   @spec encode(t()) :: t()
-  def encode(qry) do
-    dname = encode_dname(qry.qname)
-    %{qry | wdata: <<dname::binary, qry.qtype::16, qry.qclass::16>>}
+  def encode(%__MODULE__{} = qtn) do
+    dname = encode_dname(qtn.name)
+    class = 1
+    type = encode_rr_type(qtn.type)
+    %{qtn | wdata: <<dname::binary, type::16, class::16>>}
   end
 
   # [[ decode ]]
   @doc """
-  Decode a `t:MsgQry.t/0` struct at given `offset` and `msg`.
+  Decode a `t:MsgQtn.t/0` struct at given `offset` and `msg`.
 
-  Returns `{new_offset, t:MsgQry.t/0}`.
+  Returns `{new_offset, t:MsgQtn.t/0}`.
 
   """
   @spec decode(offset, binary) :: {offset, t()}
   def decode(offset, msg) do
-    # offset2 - offset might not equal byte_size(qname) due to name compression
-    {offset2, qname} = decode_dname(offset, msg)
-    <<_::binary-size(offset2), qtype::16, qclass::16, _::binary>> = msg
+    # offset2 - offset might not equal byte_size(name) due to name compression
+    {offset2, name} = decode_dname(offset, msg)
+    <<_::binary-size(offset2), type::16, class::16, _::binary>> = msg
 
     wdata = :binary.part(msg, {offset, offset2 - offset + 4})
-    qry = new(qname: qname, qtype: qtype, qclass: qclass)
+    qtn = new(name: name, type: type, class: class)
 
     # new(..) will not set calculated wdata-field
-    {offset2 + 4, %{qry | wdata: wdata}}
+    {offset2 + 4, %{qtn | wdata: wdata}}
   end
 
   @spec to_string(t) :: binary
   def to_string(%__MODULE__{} = qtn) do
-    "#{qtn.qname}" <>
-      "\t#{decode_dns_class(qtn.qclass)}" <>
-      "\t#{decode_dns_type(qtn.qtype)}"
+    "#{qtn.name}" <>
+      "\t#{qtn.class}" <>
+      "\t#{decode_rr_type(qtn.type)}"
   end
 end
 
-# defimpl Inspect, for: MsgQtn do
-#   import Inspect.Algebra
-#   import DNS.Terms
-#
-#   def inspect(qtn, _opts) do
-#     concat([
-#       "{#{qtn.qname}, #{decode_dns_class(qtn.qclass)}, #{decode_dns_type(qtn.qtype)}}"
-#     ])
-#   end
-# end
+defimpl Inspect, for: MsgQtn do
+  import DNS.Terms
+
+  def inspect(qtn, opts) do
+    syntax_colors = IO.ANSI.syntax_colors()
+    opts = Map.put(opts, :syntax_colors, syntax_colors)
+
+    qtn
+    |> Map.put(:type, "#{encode_rr_type(qtn.type)} (#{qtn.type})")
+    |> Map.put(:class, "#{qtn.class} (IN)")
+    |> Inspect.Any.inspect(opts)
+  end
+end

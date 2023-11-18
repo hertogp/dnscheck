@@ -49,7 +49,7 @@ defmodule MsgHdr do
             opcode: 0,
             aa: 0,
             tc: 0,
-            rd: 0,
+            rd: 1,
             ra: 0,
             z: 0,
             ad: 0,
@@ -179,5 +179,27 @@ defmodule MsgHdr do
       )
 
     {12, %{hdr | wdata: :binary.part(wdata, {0, 12})}}
+  end
+end
+
+defimpl Inspect, for: MsgHdr do
+  import DNS.Terms
+
+  def inspect(hdr, opts) do
+    syntax_colors = IO.ANSI.syntax_colors()
+    opts = Map.put(opts, :syntax_colors, syntax_colors)
+    qr = if hdr.qr == 0, do: "request", else: "response"
+
+    hdr
+    |> Map.put(:opcode, "#{hdr.opcode} (#{decode_dns_opcode(hdr.opcode)})")
+    |> Map.put(:rcode, "#{hdr.rcode} (#{decode_dns_rcode(hdr.rcode)})")
+    |> Map.put(:qr, "#{hdr.qr} (#{qr})")
+    |> Map.put(:aa, "#{hdr.aa}, (authoritative answer: #{hdr.aa == 1})")
+    |> Map.put(:ad, "#{hdr.ad}, (authentic data: #{hdr.ad == 1})")
+    |> Map.put(:rd, "#{hdr.rd}, (recursion desired: #{hdr.rd == 1})")
+    |> Map.put(:ra, "#{hdr.ra}, (recursion available: #{hdr.ra == 1})")
+    |> Map.put(:tc, "#{hdr.tc}, (truncated: #{hdr.tc == 1})")
+    |> Map.put(:cd, "#{hdr.tc}, (check disabled: #{hdr.cd == 1})")
+    |> Inspect.Any.inspect(opts)
   end
 end

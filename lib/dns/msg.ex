@@ -16,14 +16,15 @@ defmodule MsgError do
     efield: "[invalid field]",
     evalue: "[invalid value]",
     elabel: "[invalid label]",
-    edname: "[invalid dname]"
+    edname: "[invalid dname]",
+    eedns: "[invalid edns]"
   }
 
   def exception(reason, data),
     do: %__MODULE__{reason: reason, data: data}
 
   def message(%__MODULE__{reason: reason, data: data}) do
-    category = Map.get(@reasons, reason, "[ERROR]")
+    category = Map.get(@reasons, reason, "[#{inspect(reason)}]")
     "#{category} #{inspect(data)}"
   end
 end
@@ -69,33 +70,52 @@ defmodule Msg do
   @doc """
   Create a new `t:Msg.t/0` struct.
 
+  TODO:
+  A new Msg.t should take options:
+  - hdr: [], options for the header
+  - qtn: [], options for questions, 1 at a time
+  - ans: [], options for answer RRs, 1 at a time
+  - aut: [], options for authority RRs, 1 at a time
+  - add: [], options for additional RRs, 1 at a time
+
+  ## Examples
+
+      iex> Msg.new(
+      ...> hdr: [qr: 0],
+      ...> qtn: [[name: "host.domain.tld", type: :A]],
+      ...> add: [[type: :OPT, bufsize: 1410, do: 1]]
+      ...> )
+
   """
-  @spec new(binary, type, Keyword.t()) :: t()
+  @spec new(Keyword.t()) :: t()
 
-  def new(name, type, opts),
-    do: new([{name, type}], opts)
+  def new(opts) do
+    hdr_opts = Keyword.get(opts, :hdr, [])
+    qtn_opts = Keyword.get(opts, :qtn, [])
+    ans_opts = Keyword.get(opts, :ans, [])
+    aut_opts = Keyword.get(opts, :aut, [])
+    add_opts = Keyword.get(opts, :add, [])
 
-  @spec new([tuple], Keyword.t()) :: t
-  def new(queries, opts) when is_list(queries) do
-    question =
-      queries
-      |> Enum.reduce([], fn
-        {name, type}, acc -> [MsgQtn.new(qname: name, qclass: "IN", qtype: type) | acc]
-        {name, class, type}, acc -> [MsgQtn.new(qname: name, qclass: class, qtype: type) | acc]
-      end)
-      |> Enum.reverse()
+    question = for o <- qtn_opts, do: MsgQtn.new(o)
+    answer = for o <- ans_opts, do: MsgRR.new(o)
+    authority = for o <- aut_opts, do: MsgRR.new(o)
+    additional = for o <- add_opts, do: MsgRR.new(o)
 
-    {edns, opts} = Keyword.pop(opts, :edns, [])
+    header =
+      hdr_opts
+      |> Keyword.put(:qdc, length(question))
+      |> Keyword.put(:anc, length(answer))
+      |> Keyword.put(:adc, length(authority))
+      |> Keyword.put(:arc, length(additional))
+      |> MsgHdr.new()
 
-    additional =
-      case edns do
-        [] -> []
-        opts -> [MsgRR.encode_edns(opts)]
-      end
-
-    opts = Keyword.merge(opts, qdc: length(question), anc: 0, nsc: 0, arc: length(additional))
-
-    %__MODULE__{header: MsgHdr.new(opts), question: question, additional: additional}
+    %__MODULE__{
+      header: header,
+      question: question,
+      answer: answer,
+      authority: authority,
+      additional: additional
+    }
   end
 
   # [[ ENCODE MSG ]]
@@ -165,10 +185,35 @@ defmodule Msg do
 
   # [[ RESOLVE ]]
 
+  @doc """
+  Tries to resolve and Return a `Msg` for given `name` and `type`.
+
+  Options include:
+  - `rd`, defaults to 1 (recursion desired, true)
+  - `id`, defaults to 0 (used to link replies to requests)
+  - `opcode`, defaults to 0
+  - `bufsize`, defaults to 1410 if edns0 is used
+  - `do`, defaults to 0 (dnssec ok, false)
+  - `cd`, defaults to 0 (dnssec check disable, fals)
+  - `nameserver`, defaults to `{{127,0,0,53}, 53}`
+
+  If any of the `bufsize, do or cd` options is used, a pseudo-RR
+  is added to the additonal section of the `Msg`.
+
+
+  """
   @spec resolve(binary, type) :: t
   def resolve(name, type, opts \\ []) do
+    {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do, :cd])
+    {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode])
+    qtn_opts = [name: name, type: type]
+    edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, 41)]
+
+    IO.inspect(edns_opts, label: :edns)
+
     msg =
-      new(name, type, Keyword.put(opts, :rd, 1))
+      new(qtn: [qtn_opts], hdr: hdr_opts, add: edns_opts)
+      |> IO.inspect(label: :query)
       |> encode()
 
     send_udp(msg.wdata, opts)
