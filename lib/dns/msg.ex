@@ -50,13 +50,12 @@ defmodule DNS.Msg do
   @doc ~S"""
   Create a new `t:DNS.Msg.t/0` struct.
 
-  TODO:
-  A new `t:DNS.Msg.t/0` should take options:
-  - hdr: [], options for `t:Hdr.t/0` header
-  - qtn: [], options for `t:Qtn.t/0` questions, 1 at a time
-  - ans: [], options for `t:RR.t/0` answer RRs, 1 at a time
-  - aut: [], options for `t:RR.t/0` authority RRs, 1 at a time
-  - add: [], options for `t:RR.t/0` additional RRs, 1 at a time
+  `new/1` takes options for each of its constituents:
+  - hdr: `[opts]`, options for `t:DNS.Msg.Hdr.t/0` header
+  - qtn: `[[opts]]`, options for `t:DNS.Msg.Qtn.t/0` questions, 1 at a time
+  - ans: `[[opts]]`, options for `t:DNS.Msg.RR.t/0` answer RRs, 1 at a time
+  - aut: `[[opts]]`, options for `t:DNS.Msg.RR.t/0` authority RRs, 1 at a time
+  - add: `[[opts]]`, options for `t:DNS.Msg.RR.t/0` additional RRs, 1 at a time
 
   ## Examples
 

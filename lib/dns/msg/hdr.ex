@@ -1,50 +1,44 @@
 defmodule DNS.Msg.Hdr do
   import DNS.Msg.Terms
   alias DNS.Msg.Error
-  # 12 Bytes containing the following fields: (sec 4.1.1)
-  #                                     1  1  1  1  1  1
-  #       0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                      ID                       |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |QR|   Opcode  |AA|TC|RD|RA|Z |AD|CD|   RCODE   |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                    QDCOUNT                    |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                    ANCOUNT                    |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                    NSCOUNT                    |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                    ARCOUNT                    |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  # - ID, 16b, query ID, is copied in the reply
-  # - QR, 1b, 0=query, 1=response
-  # - Opcode, 4b, kind of query: 0=normal, 1=inverse q, 2=server status, 3-15 reserved
-  # - AA, 1b, Authoritative Anser, valid in responses
-  # - TC, 1b, TrunCation
-  # - RD, 1b, Recursion Desired, may be set in a Qry and copied to Resp.
-  # - RA, 1b, Recursion Available, set or cleared in a Resp.
-  # - Z, 1b, reserved, must be zero
-  # - AD, 1b, authenticated data
-  # - CD, 1b, check disabled
-  # - RCODE, 4b, Response Code
-  # - QDCOUNT, 16b, num entries in Question section
-  # - ANCOUNT, 16b, num of RRs in Answer section
-  # - NSCOUNT, 16b, num of NS RRs in Authority section
-  # - ARCOUNT, 16b, num of RRs in Additional section
-  #
-  # See:
-  # - https://www.rfc-editor.org/rfc/rfc1035
-  # - https://www.rfc-editor.org/rfc/rfc2136
-  # - https://www.rfc-editor.org/rfc/rfc6840#section-5.7
-  # - https://www.rfc-editor.org/rfc/rfc6891 - EDNS(0)
-  # - https://www.rfc-editor.org/rfc/rfc6895
-  #
-  # This module defines:
-  # - new/1    -> takes opts, returns Dns.Msg.Hdr
-  # - put/3    -> takes (hdr, field, value), returns updated hdr w/ input validation
-  # - encode/1 -> takes (hdr),returns a binary (wireformat)
-  # - decode/1 -> takes (bin) returns {DNS.Msg.Hdr, restBin}
+
+  @moduledoc """
+
+  Low level functions to create, encode or decode a `t:Dns.Msg.Hdr` struct.
+
+  A DNS header consists of 12 bytes containing the following fields:
+
+  ```
+        0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+      +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+      |                      ID                       |
+      +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+      |QR|   Opcode  |AA|TC|RD|RA|Z |AD|CD|   RCODE   |
+      +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+      |                    QDCOUNT                    |
+      +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+      |                    ANCOUNT                    |
+      +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+      |                    NSCOUNT                    |
+      +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+      |                    ARCOUNT                    |
+      +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  ```
+
+  See `t:DNS.Msg.Hdr.t/0` for the meaning of the fields.  Some have meaning
+  only in requests (like `rd`), others only in replies (like `ra`).  Usually,
+  request-flags are copied back into the header, by the nameserver, when
+  creating a reply.
+
+  See also:
+  - [rfc1035 - Domain names](ttps://www.rfc-editor.org/rfc/rfc1035)
+  - [rfc2136 - DNS Update](https://www.rfc-editor.org/rfc/rfc2136)
+  - [rfc6840 - clarifications for DNSSEC ](https://www.rfc-editor.org/rfc/rfc6840#section-5.7)
+  - [rfc6891 - EDNS0](https://www.rfc-editor.org/rfc/rfc6891)
+  - [rfc6895 - IANA considerations](https://www.rfc-editor.org/rfc/rfc6895)
+  - [IANA - DNS Parameters](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
+
+  """
   defstruct id: 0,
             qr: 0,
             opcode: 0,
@@ -62,6 +56,29 @@ defmodule DNS.Msg.Hdr do
             arc: 0,
             wdata: <<>>
 
+  @typedoc """
+  A `t:DNS.Msg.Hdr.t/0` struct represents part of a `t:DNS.Msg.t/0` message.
+
+  It fields include:
+
+  - `id`, set in a request, copied into a reply (links replies to earlier requests)
+  - `qr`, set to 0 in a request, to 1 in a reply
+  - `opcode`, defaults to 0 (QUERY), see [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
+  - `aa`, set to 1 in a reply to indicate an authoritative answer
+  - `tc`, set to 1 in a reply to indicate a message was truncated
+  - `rd`, set to 1 in a query to indicate "recursion desired"
+  - `ra`, set to 1 in a reply to indicate "recursion available"
+  - `z`, currently MUST be zero
+  - `ad`, set to 1 in a reply to indicate "authenticated data"
+  - `cd`, set to 1 in a request to indicate (DNSSEC) "check disabled"
+  - `rcode`, set in a reply, see [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6)
+  - `qdc`, set in a request to indicate the number of questions
+  - `anc`, set in a reply to indicate the number of answer RR's
+  - `nsc`, set in a reply to indicate the number of authority RR's
+  - `arc`, set in a reply to indicate the number of additional RR's
+  - `wdata`, the header's wireformat data upon receiving a reply (or encoding a header)
+
+  """
   @type t :: %__MODULE__{
           id: non_neg_integer,
           qr: non_neg_integer,
@@ -81,6 +98,9 @@ defmodule DNS.Msg.Hdr do
           wdata: binary
         }
 
+  @typedoc """
+  A non-negative offset into a DNS message's wireformat
+  """
   @type offset :: non_neg_integer
 
   @spec new(Keyword.t()) :: t()
