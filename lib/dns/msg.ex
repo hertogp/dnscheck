@@ -1,4 +1,4 @@
-defmodule Msg do
+defmodule DNS.Msg do
   @moduledoc """
   Encode or decode a DNS message.
 
@@ -47,7 +47,7 @@ defmodule Msg do
   @type class :: non_neg_integer | binary | atom
   @type type :: non_neg_integer | binary | atom
 
-  @doc """
+  @doc ~S"""
   Create a new `t:Msg.t/0` struct.
 
   TODO:
@@ -60,11 +60,54 @@ defmodule Msg do
 
   ## Examples
 
-      iex> Msg.new(
+      iex> new(
       ...> hdr: [qr: 0],
       ...> qtn: [[name: "host.domain.tld", type: :A]],
       ...> add: [[type: :OPT, bufsize: 1410, do: 1]]
       ...> )
+      %DNS.Msg{
+        header: %DNS.Msg.Hdr{
+          id: 0,
+          qr: 0,
+          opcode: 0,
+          aa: 0,
+          tc: 0,
+          rd: 1,
+          ra: 0,
+          z: 0,
+          ad: 0,
+          cd: 0,
+          rcode: 0,
+          qdc: 1,
+          anc: 0,
+          nsc: 0,
+          arc: 1,
+          wdata: ""
+        },
+        question: [
+          %DNS.Msg.Qtn{
+            name: "host.domain.tld",
+            type: :A,
+            class: 1,
+            wdata: ""
+          }
+        ],
+        answer: [],
+        authority: [],
+        additional: [
+          %DNS.Msg.RR{
+            name: "",
+            type: :OPT,
+            class: 1410,
+            ttl: 32768,
+            rdlen: 0,
+            rdata: "",
+            rdmap: %{bufsize: 1410, do: 1, opts: [], version: 0, xrcode: 0, z: 0},
+            wdata: ""
+          }
+        ],
+        wdata: ""
+      }
 
   """
   @spec new(Keyword.t()) :: t()
@@ -161,61 +204,5 @@ defmodule Msg do
   defp do_decode_section(n, offset, msg, fun, acc) do
     {offset, elm} = fun.(offset, msg)
     do_decode_section(n - 1, offset, msg, fun, [elm | acc])
-  end
-
-  # [[ RESOLVE ]]
-
-  @doc """
-  Tries to resolve and Return a `Msg` for given `name` and `type`.
-
-  Options include:
-  - `rd`, defaults to 1 (recursion desired, true)
-  - `id`, defaults to 0 (used to link replies to requests)
-  - `opcode`, defaults to 0
-  - `bufsize`, defaults to 1410 if edns0 is used
-  - `do`, defaults to 0 (dnssec ok, false)
-  - `cd`, defaults to 0 (dnssec check disable, fals)
-  - `nameserver`, defaults to `{{127,0,0,53}, 53}`
-
-  If any of the `bufsize, do or cd` options is used, a pseudo-RR
-  is added to the additonal section of the `Msg`.
-
-
-  """
-  @spec resolve(binary, type) :: t
-  def resolve(name, type, opts \\ []) do
-    {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do, :cd])
-    {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode])
-    qtn_opts = [name: name, type: type]
-    edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, :OPT)]
-
-    msg =
-      new(qtn: [qtn_opts], hdr: hdr_opts, add: edns_opts)
-      |> IO.inspect(label: :query)
-      |> encode()
-
-    send_udp(msg.wdata, opts)
-    |> case do
-      {:error, reason} -> {:error, reason}
-      response -> decode(response)
-    end
-  end
-
-  # [[ SEND/RECV MSG ]]
-
-  def send_udp(msg, opts \\ []) do
-    nameserver = Keyword.get(opts, :nameserver, {{127, 0, 0, 53}, 53})
-    {:ok, sock} = :gen_udp.open(0, [:binary, active: false, recbuf: 4000])
-    :ok = :gen_udp.send(sock, nameserver, msg)
-
-    timeout_ms = 500
-
-    case :gen_udp.recv(sock, 0, timeout_ms) do
-      {:ok, {_address, _port, response}} ->
-        response
-
-      {:error, reason} ->
-        {:error, reason}
-    end
   end
 end
