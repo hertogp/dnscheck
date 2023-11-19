@@ -1,7 +1,7 @@
 defmodule DNS.Msg.Error do
   @moduledoc """
-  `t/0` provides information on errors encountered when
-  encoding or decoding a `t:DNS.Msg/0`.
+  `t:DNS.Msg.Error.t/0` provides information on errors encountered when
+  encoding or decoding a `t:DNS.Msg.t/0`.
 
   """
   defexception [:reason, :data]

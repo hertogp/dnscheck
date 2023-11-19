@@ -48,15 +48,15 @@ defmodule DNS.Msg do
   @type type :: non_neg_integer | binary | atom
 
   @doc ~S"""
-  Create a new `t:Msg.t/0` struct.
+  Create a new `t:DNS.Msg.t/0` struct.
 
   TODO:
-  A new Msg.t should take options:
-  - hdr: [], options for the header
-  - qtn: [], options for questions, 1 at a time
-  - ans: [], options for answer RRs, 1 at a time
-  - aut: [], options for authority RRs, 1 at a time
-  - add: [], options for additional RRs, 1 at a time
+  A new `t:DNS.Msg.t/0` should take options:
+  - hdr: [], options for `t:Hdr.t/0` header
+  - qtn: [], options for `t:Qtn.t/0` questions, 1 at a time
+  - ans: [], options for `t:RR.t/0` answer RRs, 1 at a time
+  - aut: [], options for `t:RR.t/0` authority RRs, 1 at a time
+  - add: [], options for `t:RR.t/0` additional RRs, 1 at a time
 
   ## Examples
 
