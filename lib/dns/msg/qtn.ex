@@ -1,6 +1,7 @@
-defmodule MsgQtn do
-  import DNS.Terms
-  import DNS.Fields
+defmodule DNS.Msg.Qtn do
+  import DNS.Msg.Terms
+  import DNS.Msg.Fields
+  alias DNS.Msg.Error
 
   # RFC1035, 4.2.1 Question section format
   # The question section is used to carry the "question" in most queries,
@@ -11,7 +12,7 @@ defmodule MsgQtn do
   #       0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
   #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
   #     |                                               |
-  #     /                     name                     /
+  #     /                     name                      /
   #     /                                               /
   #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
   #     |                     type                     |
@@ -40,12 +41,12 @@ defmodule MsgQtn do
   # [[ HELPERS ]]
 
   defp error(reason, data),
-    do: raise(MsgError.exception(reason: reason, data: data))
+    do: raise(Error.exception(reason: reason, data: data))
 
   # [[ new ]]
 
   @doc """
-  Create a MsgQtn struct for given `name` and `opts`.
+  Create a Qtn struct for given `name` and `opts`.
 
   The `name` is assumed to be a length encoded binary domain name.
 
@@ -59,11 +60,11 @@ defmodule MsgQtn do
   def new(opts \\ []),
     do: Enum.reduce(opts, %__MODULE__{}, &do_put/2)
 
-  # [[ put ]]
+  # [[ PUT ]]
 
   @spec put(t(), Keyword.t()) :: t()
   def put(%__MODULE__{} = qtn, opts \\ []),
-    do: Enum.reduce(opts, %{qtn | wdata: nil}, &do_put/2)
+    do: Enum.reduce(opts, %{qtn | wdata: <<>>}, &do_put/2)
 
   defp do_put({k, v}, qtn) when k == :name do
     if is_binary(v),
@@ -78,9 +79,10 @@ defmodule MsgQtn do
   defp do_put({k, v}, qtn) when k == :class,
     do: Map.put(qtn, k, v)
 
-  # [[ encode ]]
+  # [[ ENCODE ]]
+
   @doc """
-  Sets the `:wdata` (wiredata) field of the `MsgQtn` struct.
+  Sets the `:wdata` (wiredata) field of the `Qtn` struct.
 
   """
   @spec encode(t()) :: t()
@@ -93,9 +95,9 @@ defmodule MsgQtn do
 
   # [[ decode ]]
   @doc """
-  Decode a `t:MsgQtn.t/0` struct at given `offset` and `msg`.
+  Decode a `t:DNS.Msg.Qtn.t/0` struct at given `offset` and `msg`.
 
-  Returns `{new_offset, t:MsgQtn.t/0}`.
+  Returns `{new_offset, t:DNS.Msg.Qtn.t/0}`.
 
   """
   @spec decode(offset, binary) :: {offset, t()}
@@ -119,8 +121,8 @@ defmodule MsgQtn do
   end
 end
 
-defimpl Inspect, for: MsgQtn do
-  import DNS.Terms
+defimpl Inspect, for: DNS.Msg.Qtn do
+  import DNS.Msg.Terms
 
   def inspect(qtn, opts) do
     syntax_colors = IO.ANSI.syntax_colors()
@@ -129,6 +131,7 @@ defimpl Inspect, for: MsgQtn do
     qtn
     |> Map.put(:type, "#{encode_rr_type(qtn.type)} (#{qtn.type})")
     |> Map.put(:class, "#{qtn.class} (IN)")
+    |> Map.put(:wdata, "#{Kernel.inspect(qtn.wdata, limit: 10)}")
     |> Inspect.Any.inspect(opts)
   end
 end

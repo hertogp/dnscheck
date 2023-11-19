@@ -1,39 +1,12 @@
-defmodule MsgError do
-  @moduledoc """
-  MsgError provides information on errors encountered.
-
-  """
-  defexception [:reason, :data]
-
-  @typedoc """
-  A DNS Message exception that lists the reason and provides some data.
-
-  """
-  @type t :: %__MODULE__{reason: atom(), data: any()}
-
-  # possible exception reasons
-  @reasons %{
-    efield: "[invalid field]",
-    evalue: "[invalid value]",
-    elabel: "[invalid label]",
-    edname: "[invalid dname]",
-    eedns: "[invalid edns]"
-  }
-
-  def exception(reason, data),
-    do: %__MODULE__{reason: reason, data: data}
-
-  def message(%__MODULE__{reason: reason, data: data}) do
-    category = Map.get(@reasons, reason, "[#{inspect(reason)}]")
-    "#{category} #{inspect(data)}"
-  end
-end
-
 defmodule Msg do
   @moduledoc """
   Encode or decode a DNS message.
 
   """
+
+  alias DNS.Msg.Hdr
+  alias DNS.Msg.Qtn
+  alias DNS.Msg.RR
 
   # see RFC10135, section 4
   # The top level format of message is divided
@@ -53,14 +26,21 @@ defmodule Msg do
   #
   #     where RR = <<NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA>>=
   #     NAME, RDATA are variable length
+  #
+  # TODO: add nameserver component somewhere that:
+  # - registers ns IP, ns Port, start/stop time in ms
+  # ;; Query time: 3 msec
+  # ;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)
+  # ;; WHEN: Sun Nov 19 07:44:06 CET 2023
+  # ;; MSG SIZE  rcvd: 51
   defstruct header: nil, question: [], answer: [], authority: [], additional: [], wdata: <<>>
 
   @type t :: %__MODULE__{
-          header: MsgHdr.t(),
-          question: [MsgQtn.t()],
-          answer: [MsgRR.t()],
-          authority: [MsgRR.t()],
-          additional: [MsgRr.t()],
+          header: Hdr.t(),
+          question: [Qtn.t()],
+          answer: [RR.t()],
+          authority: [RR.t()],
+          additional: [RR.t()],
           wdata: binary
         }
 
@@ -96,10 +76,10 @@ defmodule Msg do
     aut_opts = Keyword.get(opts, :aut, [])
     add_opts = Keyword.get(opts, :add, [])
 
-    question = for o <- qtn_opts, do: MsgQtn.new(o)
-    answer = for o <- ans_opts, do: MsgRR.new(o)
-    authority = for o <- aut_opts, do: MsgRR.new(o)
-    additional = for o <- add_opts, do: MsgRR.new(o)
+    question = for o <- qtn_opts, do: Qtn.new(o)
+    answer = for o <- ans_opts, do: RR.new(o)
+    authority = for o <- aut_opts, do: RR.new(o)
+    additional = for o <- add_opts, do: RR.new(o)
 
     header =
       hdr_opts
@@ -107,7 +87,7 @@ defmodule Msg do
       |> Keyword.put(:anc, length(answer))
       |> Keyword.put(:adc, length(authority))
       |> Keyword.put(:arc, length(additional))
-      |> MsgHdr.new()
+      |> Hdr.new()
 
     %__MODULE__{
       header: header,
@@ -125,11 +105,11 @@ defmodule Msg do
   """
   @spec encode(t) :: t
   def encode(msg) do
-    hdr = MsgHdr.encode(msg.header)
-    qtn = do_encode_section(msg.question, &MsgQtn.encode/1)
-    ans = do_encode_section(msg.answer, &MsgRR.encode/1)
-    aut = do_encode_section(msg.authority, &MsgRR.encode/1)
-    add = do_encode_section(msg.additional, &MsgRR.encode/1)
+    hdr = Hdr.encode(msg.header)
+    qtn = do_encode_section(msg.question, &Qtn.encode/1)
+    ans = do_encode_section(msg.answer, &RR.encode/1)
+    aut = do_encode_section(msg.authority, &RR.encode/1)
+    add = do_encode_section(msg.additional, &RR.encode/1)
 
     wdata =
       hdr.wdata <>
@@ -159,11 +139,11 @@ defmodule Msg do
 
   @spec decode(binary) :: t
   def decode(msg) do
-    {offset, hdr} = MsgHdr.decode(0, msg)
-    {offset, qtn} = do_decode_section(hdr.qdc, offset, msg, &MsgQtn.decode/2, [])
-    {offset, ans} = do_decode_section(hdr.anc, offset, msg, &MsgRR.decode/2, [])
-    {offset, aut} = do_decode_section(hdr.nsc, offset, msg, &MsgRR.decode/2, [])
-    {_offset, add} = do_decode_section(hdr.arc, offset, msg, &MsgRR.decode/2, [])
+    {offset, hdr} = Hdr.decode(0, msg)
+    {offset, qtn} = do_decode_section(hdr.qdc, offset, msg, &Qtn.decode/2, [])
+    {offset, ans} = do_decode_section(hdr.anc, offset, msg, &RR.decode/2, [])
+    {offset, aut} = do_decode_section(hdr.nsc, offset, msg, &RR.decode/2, [])
+    {_offset, add} = do_decode_section(hdr.arc, offset, msg, &RR.decode/2, [])
 
     %__MODULE__{
       header: hdr,
@@ -207,9 +187,7 @@ defmodule Msg do
     {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do, :cd])
     {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode])
     qtn_opts = [name: name, type: type]
-    edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, 41)]
-
-    IO.inspect(edns_opts, label: :edns)
+    edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, :OPT)]
 
     msg =
       new(qtn: [qtn_opts], hdr: hdr_opts, add: edns_opts)

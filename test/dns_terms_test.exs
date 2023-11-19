@@ -1,4 +1,4 @@
-defmodule DNS.TermsTest do
+defmodule DNS.Msg.TermsTest do
   use ExUnit.Case
-  doctest DNS.Terms, import: true
+  doctest DNS.Msg.Terms, import: true
 end

@@ -1,12 +1,14 @@
-defmodule DNS.Fields do
+defmodule DNS.Msg.Fields do
   @moduledoc """
-  Functions to to encode/decode fields in a DNS msg.
+  Functions to to encode/decode fields in a DNS Msg.
   """
+
+  alias DNS.Msg.Error
 
   # [[ HELPERS ]]
 
   defp error(reason, data),
-    do: raise(MsgError.exception(reason: reason, data: data))
+    do: raise(Error.exception(reason: reason, data: data))
 
   # [[ DNAME ]]
 

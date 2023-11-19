@@ -1,4 +1,4 @@
-defmodule MsgRR do
+defmodule DNS.Msg.RR do
   # used in Answer, Authority, and Additional sections
   # Each RR (resource record) has the following format:
   #                                     1  1  1  1  1  1
@@ -30,8 +30,9 @@ defmodule MsgRR do
   # - RDLEN    16b, unsigned integer, is length in octets of the RDATA field.
   # - RDATA    depends on the TYPE/CLASS
 
-  import DNS.Terms
-  import DNS.Fields
+  import DNS.Msg.Terms
+  import DNS.Msg.Fields
+  alias DNS.Msg.Error
 
   defstruct name: "",
             type: :A,
@@ -48,21 +49,25 @@ defmodule MsgRR do
   @type length :: non_neg_integer
 
   @typedoc """
-  A `t:MsgRR.t/0` represents a single DNS RR (resource record).
+  A `t:DNS.Msg.RR.t/0` represents a single DNS RR (resource record).
 
   It's fields are:
   - `name`, the owner's domain name
-  - `type`, the RR type, e.g. 1 to denote an A RR
-  - `class`, the DNS class, usually 1 (for the `IN` class)
-  - `ttl`, the time-to-live for this RR
-  - `rdmap`, contains the decoded fields of `rdata`
-  - `rdlen`, the number of octets in the `rdata` field
-  - `rdata`, part of the RR's wireformat binary that contains the `rdata`
-  - `wdata`, the RR's wireformat binary
+  - `type`, the RR type (default :A)
+  - `class`, the DNS class (default :IN)
+  - `ttl`, the time-to-live for this RR (default 0)
+  - `rdmap`, contains the (decoded) key,value-pairs of `rdata` (defaults `%{}`)
+  - `rdlen`, the number of octets in the `rdata` field (default 0)
+  - `rdata`, RR's rdata in wireformat (defaults to <<>>)
+  - `wdata`, the RR's wireformat binary (defaults to <<>>)
 
-  The `rdlen`, `rdata` and `wdata` fields are calculated and cannot be
-  set via `put/1`, rather they are either taken from the wireformat binary
-  when decoding or calculated from the other fields when encoding an RR.
+  The `rdlen`, `rdata` and `wdata` fields are calculated and cannot be set via
+  `put/1`, rather they are either taken from the wireformat binary when
+  decoding or calculated from the rdmap's key,value-pairs when encoding an RR.
+
+  Note that although `class` is a field in the `t:DNS.Msg.RR.t/0` struct, only `:IN`
+  is supported.  Futhermore, in an EDNS0 pseudo-RR `:OPT` the value of class
+  actually denotes the requestor's udp receive buffer size.
 
   """
   @type t :: %__MODULE__{
@@ -78,7 +83,7 @@ defmodule MsgRR do
 
   # [[ HELPERS ]]
   defp error(reason, data),
-    do: raise(MsgError.exception(reason: reason, data: data))
+    do: raise(Error.exception(reason: reason, data: data))
 
   defp to_num(_, <<>>, _, acc),
     do: acc |> Enum.reverse()
@@ -160,7 +165,7 @@ defmodule MsgRR do
     do: Map.put(rr, k, v)
 
   defp do_put({k, _v}, _rr),
-    do: error(:field, "MsgRR has no #{inspect(k)} field")
+    do: error(:field, "RR has no #{inspect(k)} field")
 
   # [[ EDNS PSEUDO-RR ]]
   # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
@@ -458,7 +463,7 @@ defmodule MsgRR do
       _::binary>> = msg
 
     type = decode_rr_type(type)
-    rr = MsgRR.new(name: name, type: type, class: class, ttl: ttl, rdlen: rdlen)
+    rr = new(name: name, type: type, class: class, ttl: ttl, rdlen: rdlen)
     # need to pass in rdlen as well, since some RR's may have rdlen of 0
     rdmap = decode_rdata(type, offset + 10, rdlen, msg)
     offset = offset + 10 + rdlen
@@ -840,8 +845,8 @@ defmodule MsgRR do
     do: {code, data}
 end
 
-defimpl Inspect, for: MsgRR do
-  import DNS.Terms
+defimpl Inspect, for: DNS.Msg.RR do
+  import DNS.Msg.Terms
 
   def inspect(rr, opts) do
     syntax_colors = IO.ANSI.syntax_colors()
@@ -855,6 +860,8 @@ defimpl Inspect, for: MsgRR do
         :DS -> put_in(rr.rdmap.digest, Base.encode16(rr.rdmap.digest, case: :lower))
         :CDS -> put_in(rr.rdmap.digest, Base.encode16(rr.rdmap.digest, case: :lower))
         :RRSIG -> put_in(rr.rdmap.signature, Base.encode64(rr.rdmap.signature))
+        :DNSKEY -> put_in(rr.rdmap.pubkey, Base.encode64(rr.rdmap.pubkey))
+        :CDNSKEY -> put_in(rr.rdmap.pubkey, Base.encode64(rr.rdmap.pubkey))
         :TLSA -> put_in(rr.rdmap.data, Base.encode16(rr.rdmap.data, case: :lower))
         _ -> rr
       end
@@ -862,6 +869,8 @@ defimpl Inspect, for: MsgRR do
     rr
     |> Map.put(:type, "#{encode_rr_type(rr.type)} (#{rr.type})")
     |> Map.put(:class, "#{rr.class} (#{class})")
+    |> Map.put(:rdata, "#{Kernel.inspect(rr.rdata, limit: 10)}")
+    |> Map.put(:wdata, "#{Kernel.inspect(rr.wdata, limit: 10)}")
     |> Inspect.Any.inspect(opts)
   end
 end

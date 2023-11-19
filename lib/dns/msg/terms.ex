@@ -1,35 +1,36 @@
-defmodule DNS.Terms do
+defmodule DNS.Msg.Terms do
   @moduledoc """
-  Functions to encode/decode DNS terms.
+  Functions to encode/decode DNS Msg terms.
 
   See [IANA DNS Parameters](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml)
 
   """
 
   alias DNS.Utils
+  alias DNS.Msg.Error
 
   # [[ Helpers ]]
 
   defp error(reason, data),
-    do: raise(MsgError.exception(reason: reason, data: data))
+    do: raise(Error.exception(reason: reason, data: data))
 
-  @spec to_number(map, any) :: non_neg_integer
-  defp to_number(map, key) do
+  @spec to_number(map, any, binary) :: non_neg_integer
+  defp to_number(map, key, prefix) do
     case Map.get(map, key) do
-      nil -> error(:eterm, "term #{inspect(key)} not available")
+      nil -> error(:eterm, "#{prefix} #{inspect(key, pretty: true, widht: 0)} not available")
       n when is_integer(n) -> n
       a when is_atom(a) -> Map.get(map, a)
-      _ -> error(:eterm, "malformed terms map: #{inspect(map)}")
+      _ -> error(:eterm, "#{prefix} malformed map: #{inspect(map)}")
     end
   end
 
-  @spec to_atom(map, any) :: atom
-  defp to_atom(map, key) do
+  @spec to_atom(map, any, binary) :: atom
+  defp to_atom(map, key, prefix) do
     case Map.get(map, key) do
-      nil -> error(:eterm, "term #{inspect(key)} not available")
+      nil -> error(:eterm, "#{prefix} #{inspect(key)} not available")
       n when is_integer(n) -> Map.get(map, n)
       a when is_atom(a) -> a
-      _ -> error(:eterm, "malformed terms map: #{inspect(map)}")
+      _ -> error(:eterm, "#{prefix} malformed map: #{inspect(map)}")
     end
   end
 
@@ -75,7 +76,7 @@ defmodule DNS.Terms do
   """
   @spec encode_dns_opcode(any) :: non_neg_integer
   def encode_dns_opcode(opcode),
-    do: to_number(@dns_opcodes, opcode)
+    do: to_number(@dns_opcodes, opcode, "DNS OPCODE")
 
   @doc """
   Given a numeric opcode, return its name, "UNASSIGNED" if not found.
@@ -94,7 +95,7 @@ defmodule DNS.Terms do
   """
   @spec decode_dns_opcode(any) :: atom
   def decode_dns_opcode(opcode),
-    do: to_atom(@dns_opcodes, opcode)
+    do: to_atom(@dns_opcodes, opcode, "DNS OPCODE")
 
   # [[ DNS RCODE ]]
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6
@@ -137,7 +138,9 @@ defmodule DNS.Terms do
   the 4bit RCODE field in the DNS message header, in which case they may occupy
   up to 16 bits.
 
-  See [RFC6895 2.3](https://www.rfc-editor.org/rfc/rfc6895.html#section-2.3)
+  See
+  - [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6)
+  - [RFC6895 2.3](https://www.rfc-editor.org/rfc/rfc6895.html#section-2.3)
 
   ## Examples
 
@@ -147,13 +150,13 @@ defmodule DNS.Terms do
       iex> encode_dns_rcode(0)
       0
 
-      iex> encode_dns_rcode("ABC")
-      nil
+      iex> encode_dns_rcode(:ABC)
+      ** (DNS.Msg.Error) [:eterm] "DNS RCODE :ABC not available"
 
   """
   @spec encode_dns_rcode(any) :: non_neg_integer()
   def encode_dns_rcode(rcode),
-    do: to_number(@dns_rcodes, rcode)
+    do: to_number(@dns_rcodes, rcode, "DNS RCODE")
 
   @doc """
   Given a numeric RCODE, return its atom of nil if not found.
@@ -167,12 +170,12 @@ defmodule DNS.Terms do
       :SERVFAIL
 
       iex> decode_dns_rcode(65535)
-      nil
+      ** (DNS.Msg.Error) [:eterm] "DNS RCODE 65535 not available"
 
   """
   @spec decode_dns_rcode(any) :: atom
   def decode_dns_rcode(rcode),
-    do: to_atom(@dns_rcodes, rcode)
+    do: to_atom(@dns_rcodes, rcode, "DNS RCODE")
 
   # [[ DNS TYPE ]]
   # See:
@@ -232,12 +235,13 @@ defmodule DNS.Terms do
       iex> encode_rr_type(:HTTPS)
       65
 
-      iex> encode_rr_type("ABC")
-      nil
+      iex> encode_rr_type(:ABC)
+      ** (DNS.Msg.Error) [:eterm] "DNS RR TYPE :ABC not available"
+
   """
   @spec encode_rr_type(any) :: non_neg_integer()
   def encode_rr_type(type),
-    do: to_number(@rr_types, type)
+    do: to_number(@rr_types, type, "DNS RR TYPE")
 
   @doc """
   Given a DNS type, return its atom
@@ -254,7 +258,7 @@ defmodule DNS.Terms do
       :HTTPS
 
       iex> decode_rr_type(3)
-      nil
+      ** (DNS.Msg.Error) [:eterm] "DNS RR TYPE 3 not available"
 
 
 
@@ -265,7 +269,7 @@ defmodule DNS.Terms do
   """
   @spec decode_rr_type(any) :: atom
   def decode_rr_type(type),
-    do: to_atom(@rr_types, type)
+    do: to_atom(@rr_types, type, "DNS RR TYPE")
 
   # [[ DNS OPT CODE ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
@@ -294,9 +298,9 @@ defmodule DNS.Terms do
 
   @spec encode_rropt_code(any) :: non_neg_integer()
   def encode_rropt_code(code),
-    do: to_number(@dns_rropt_codes, code)
+    do: to_number(@dns_rropt_codes, code, "EDNS0 OPTCODE")
 
   @spec decode_rropt_code(any) :: atom
   def decode_rropt_code(code),
-    do: to_atom(@dns_rropt_codes, code)
+    do: to_atom(@dns_rropt_codes, code, "EDNS0 OPTCODE")
 end

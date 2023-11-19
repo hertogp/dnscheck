@@ -1,5 +1,6 @@
-defmodule MsgHdr do
-  import DNS.Terms
+defmodule DNS.Msg.Hdr do
+  import DNS.Msg.Terms
+  alias DNS.Msg.Error
   # 12 Bytes containing the following fields: (sec 4.1.1)
   #                                     1  1  1  1  1  1
   #       0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
@@ -40,10 +41,10 @@ defmodule MsgHdr do
   # - https://www.rfc-editor.org/rfc/rfc6895
   #
   # This module defines:
-  # - new/1    -> takes opts, returns MsgHdr
+  # - new/1    -> takes opts, returns Dns.Msg.Hdr
   # - put/3    -> takes (hdr, field, value), returns updated hdr w/ input validation
   # - encode/1 -> takes (hdr),returns a binary (wireformat)
-  # - decode/1 -> takes (bin) returns {MsgHdr, restBin}
+  # - decode/1 -> takes (bin) returns {DNS.Msg.Hdr, restBin}
   defstruct id: 0,
             qr: 0,
             opcode: 0,
@@ -87,9 +88,9 @@ defmodule MsgHdr do
     Enum.reduce(opts, %__MODULE__{}, &do_put/2)
   end
 
-  @spec error(any, any) :: MsgError.t()
+  @spec error(any, any) :: Error.t()
   defp error(reason, data),
-    do: raise(MsgError.exception(reason: reason, data: data))
+    do: raise(Error.exception(reason: reason, data: data))
 
   @doc """
   Sets a field value with value validation.
@@ -182,8 +183,8 @@ defmodule MsgHdr do
   end
 end
 
-defimpl Inspect, for: MsgHdr do
-  import DNS.Terms
+defimpl Inspect, for: DNS.Msg.Hdr do
+  import DNS.Msg.Terms
 
   def inspect(hdr, opts) do
     syntax_colors = IO.ANSI.syntax_colors()
