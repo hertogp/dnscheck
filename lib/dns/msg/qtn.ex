@@ -53,7 +53,7 @@ defmodule DNS.Msg.Qtn do
   Options include:
   - `name`, defaults to ""
   - `type`, defaults to 1 (QUERY)
-  - `class, defaults to 1 (IN class)
+  - `class`, defaults to 1 (IN class)
 
   """
   @spec new(Keyword.t()) :: t()
