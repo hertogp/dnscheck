@@ -116,7 +116,7 @@ defmodule DNS.Msg.Qtn do
   @spec to_string(t) :: binary
   def to_string(%__MODULE__{} = qtn) do
     "#{qtn.name}" <>
-      "\t#{qtn.class}" <>
+      "\t#{decode_dns_class(qtn.class)}" <>
       "\t#{decode_rr_type(qtn.type)}"
   end
 end
@@ -129,8 +129,8 @@ defimpl Inspect, for: DNS.Msg.Qtn do
     opts = Map.put(opts, :syntax_colors, syntax_colors)
 
     qtn
-    |> Map.put(:type, "#{encode_rr_type(qtn.type)} (#{qtn.type})")
-    |> Map.put(:class, "#{qtn.class} (IN)")
+    |> Map.put(:type, "#{qtn.type} (#{encode_rr_type(qtn.type)})")
+    |> Map.put(:class, "#{qtn.class} (#{encode_dns_class(qtn.class)})")
     |> Map.put(:wdata, "#{Kernel.inspect(qtn.wdata, limit: 10)}")
     |> Inspect.Any.inspect(opts)
   end

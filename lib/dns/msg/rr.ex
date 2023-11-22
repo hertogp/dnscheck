@@ -867,8 +867,8 @@ defimpl Inspect, for: DNS.Msg.RR do
       end
 
     rr
-    |> Map.put(:type, "#{encode_rr_type(rr.type)} (#{rr.type})")
-    |> Map.put(:class, "#{rr.class} (#{class})")
+    |> Map.put(:type, "#{rr.type} (#{encode_rr_type(rr.type)})")
+    |> Map.put(:class, "#{class} (#{rr.class})")
     |> Map.put(:rdata, "#{Kernel.inspect(rr.rdata, limit: 10)}")
     |> Map.put(:wdata, "#{Kernel.inspect(rr.wdata, limit: 10)}")
     |> Inspect.Any.inspect(opts)

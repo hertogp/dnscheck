@@ -18,7 +18,11 @@ defmodule DNS.Msg.Error do
     evalue: "[invalid value]",
     elabel: "[invalid label]",
     edname: "[invalid dname]",
-    eedns: "[invalid edns]"
+    eedns: "[invalid edns]",
+    eclass: "[invalid class]",
+    ercode: "[invalid (x)rcode]",
+    eopcode: "[invalid opcode]",
+    errtype: "[invalid RR type]"
   }
 
   def exception(reason, data),

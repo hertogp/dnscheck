@@ -4,7 +4,7 @@ defmodule DNS.Msg.Hdr do
 
   @moduledoc """
 
-  Low level functions to create, encode or decode a `t:Dns.Msg.Hdr` struct.
+  Low level functions to create, encode or decode a `t:DNS.Msg.Hdr.t/0` struct.
 
   A DNS header consists of 12 bytes containing the following fields:
 
@@ -57,6 +57,11 @@ defmodule DNS.Msg.Hdr do
             wdata: <<>>
 
   @typedoc """
+  A `bit` is either `0` or `1`.
+  """
+  @type bit :: 0 | 1
+
+  @typedoc """
   A `t:DNS.Msg.Hdr.t/0` struct represents part of a `t:DNS.Msg.t/0` message.
 
   It fields include:
@@ -81,15 +86,15 @@ defmodule DNS.Msg.Hdr do
   """
   @type t :: %__MODULE__{
           id: non_neg_integer,
-          qr: non_neg_integer,
+          qr: bit,
           opcode: non_neg_integer,
-          aa: non_neg_integer,
-          tc: non_neg_integer,
-          rd: non_neg_integer,
-          ra: non_neg_integer,
+          aa: bit,
+          tc: bit,
+          rd: bit,
+          ra: bit,
           z: non_neg_integer,
-          ad: non_neg_integer,
-          cd: non_neg_integer,
+          ad: bit,
+          cd: bit,
           rcode: non_neg_integer,
           qdc: non_neg_integer,
           anc: non_neg_integer,
@@ -98,19 +103,30 @@ defmodule DNS.Msg.Hdr do
           wdata: binary
         }
 
+  # [[ HELPERS ]]
+
+  @spec error(any, any) :: Error.t()
+  defp error(reason, data),
+    do: raise(Error.exception(reason: reason, data: data))
+
+  # [[ API ]]
+
   @typedoc """
   A non-negative offset into a DNS message's wireformat
   """
   @type offset :: non_neg_integer
 
-  @spec new(Keyword.t()) :: t()
-  def new(opts \\ []) do
-    Enum.reduce(opts, %__MODULE__{}, &do_put/2)
-  end
+  @doc """
+  Return `t:DNS.Msg.Hdr.t/0` struct in accordance with given `opts`.
 
-  @spec error(any, any) :: Error.t()
-  defp error(reason, data),
-    do: raise(Error.exception(reason: reason, data: data))
+  The default for option-`rd` is `1`, all other options default to
+  `0` of `<<>>`.
+
+
+  """
+  @spec new(Keyword.t()) :: t()
+  def new(opts \\ []),
+    do: Enum.reduce(opts, %__MODULE__{}, &do_put/2)
 
   @doc """
   Sets a field value with value validation.
@@ -118,47 +134,38 @@ defmodule DNS.Msg.Hdr do
   Raises ArgumentError is value is out of bounds.
 
   Values for fields `opcode:` and `rcode:` can be given as either a
-  numeric value, or their mnemonic name (like "SERVFAIL" or :SERVFAIL)
+  numeric value, or their mnemonic atom name (:SERVFAIL)
 
   """
   @spec put(t(), Keyword.t()) :: t()
   def put(%__MODULE__{} = hdr, opts \\ []),
-    do: Enum.reduce(opts, %{hdr | wdata: nil}, &do_put/2)
+    do: Enum.reduce(opts, %{hdr | wdata: <<>>}, &do_put/2)
 
-  # don't these two fields
+  # skip setting protected/calculated fields
   defp do_put({k, _}, hdr) when k in [:__struct__, :wdata],
     do: hdr
 
   # check 1bit values
   defp do_put({k, v}, hdr) when k in [:qr, :aa, :tc, :rd, :ra, :z, :ad, :cd] do
     if v in 0..1,
-      do: Map.replace(hdr, k, v),
-      else: error(:evalue, "#{k} not in 0..1, got #{inspect(v)}")
+      do: Map.put(hdr, k, v),
+      else: error(:evalue, "bit field #{k} not in 0..1, got #{inspect(v)}")
   end
 
-  # check 4bit value
-  defp do_put({k, v}, hdr) when k == :opcode do
-    case encode_dns_opcode(v) do
-      nil -> error(:evalue, "#{k} not in 0..15, got #{inspect(v)}")
-      v -> Map.put(hdr, k, v)
-    end
-  end
+  defp do_put({k, v}, hdr) when k == :opcode,
+    do: Map.put(hdr, k, encode_dns_opcode(v))
 
-  # check 4bit value
-  defp do_put({k, v}, hdr) when k == :rcode do
-    case encode_dns_rcode(v) do
-      nil -> error(:evalue, "#{k} not in 0..15, got #{inspect(v)}")
-      v -> Map.put(hdr, k, v)
-    end
-  end
+  defp do_put({k, v}, hdr) when k == :rcode,
+    do: Map.put(hdr, k, encode_dns_rcode(v))
 
   # check 16bit values
   defp do_put({k, v}, hdr) when k in [:id, :qdc, :anc, :nsc, :arc] do
     if v in 0..65535,
       do: Map.put(hdr, k, v),
-      else: error(:evalue, "#{k} not in 0..65535, got #{inspect(v)}")
+      else: error(:evalue, "DNS.Msg.Hdr field #{k} not in 0..65535, got #{inspect(v)}")
   end
 
+  # silently ignore other crap
   defp do_put({_k, _v}, hdr),
     do: hdr
 

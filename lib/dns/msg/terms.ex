@@ -1,8 +1,16 @@
 defmodule DNS.Msg.Terms do
   @moduledoc """
-  Functions to encode/decode DNS Msg terms.
+  Low level functions to convert between field names (atoms) and their numeric values.
 
-  See [IANA DNS Parameters](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml)
+  In general:
+  - encoders return a non negative number, while
+  - decoders return a `:NAME`, if possible.
+
+  Both encoders and decoders take either an atom (e.g. `:A`) or a non negative number (e.g. `1`).
+  A given name must exist, otherwise an error is raised.  Likewise, a number must be in range for the
+  given field, otherwise an error is raised.
+
+  See [IANA - DNS Parameters](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml)
 
   """
 
@@ -14,38 +22,130 @@ defmodule DNS.Msg.Terms do
   defp error(reason, data),
     do: raise(Error.exception(reason: reason, data: data))
 
-  @spec to_number(map, any, binary) :: non_neg_integer
-  defp to_number(map, key, prefix) do
+  @spec do_encode(map, atom | non_neg_integer, atom, Range.t()) :: non_neg_integer
+  defp do_encode(_map, key, label, range) when is_integer(key) do
+    if key in range,
+      do: key,
+      else: error(label, "valid range is #{inspect(range)}, got: #{key}")
+  end
+
+  defp do_encode(map, key, label, _range) when is_atom(key) do
     case Map.get(map, key) do
-      nil -> error(:eterm, "#{prefix} #{inspect(key, pretty: true, widht: 0)} not available")
-      n when is_integer(n) -> n
-      a when is_atom(a) -> Map.get(map, a)
-      _ -> error(:eterm, "#{prefix} malformed map: #{inspect(map)}")
+      nil -> error(label, "#{key} is unknown")
+      num -> num
     end
   end
 
-  @spec to_atom(map, any, binary) :: atom
-  defp to_atom(map, key, prefix) do
-    case Map.get(map, key) do
-      nil -> error(:eterm, "#{prefix} #{inspect(key)} not available")
-      n when is_integer(n) -> Map.get(map, n)
-      a when is_atom(a) -> a
-      _ -> error(:eterm, "#{prefix} malformed map: #{inspect(map)}")
+  defp do_encode(_map, key, label, _range),
+    do: error(label, "Expected an atom or non neg number, got: #{inspect(key)}")
+
+  @spec do_decode(map, atom | non_neg_integer, atom, Range.t()) :: atom | non_neg_integer
+  defp do_decode(map, key, label, _range) when is_atom(key) do
+    if Map.has_key?(map, key),
+      do: key,
+      else: error(label, "#{key} is unknown")
+  end
+
+  defp do_decode(map, key, label, range) when is_integer(key) do
+    if key in range do
+      case Map.get(map, key) do
+        nil -> key
+        name -> name
+      end
+    else
+      error(label, "valid range is #{inspect(range)}, got: #{key}")
     end
   end
+
+  defp do_decode(_map, key, label, _range),
+    do: error(label, "Expected an atom or non neg number, got: #{inspect(key)}")
 
   # [[ DNS CLASS ]]
-  # Only :IN (1) is supported
-  @spec encode_dns_class(any) :: non_neg_integer
-  def encode_dns_class(class) when is_integer(class),
-    do: class
+  @dns_classes %{
+                 RESERVED: 0,
+                 IN: 1,
+                 CH: 3,
+                 HS: 4,
+                 NONE: 254,
+                 ANY: 255
+               }
+               |> Utils.normalize_name_map()
 
-  def encode_dns_class(_),
-    do: 1
+  @doc """
+  Encode a DNS class to its numeric value.
 
-  @spec decode_dns_class(any) :: atom
-  def decode_dns_class(class) when is_integer(class), do: class
-  def decode_dns_class(_), do: :IN
+  Note that although the class is usually `:IN` (1), there are cases when the
+  `class` field in an RR is used for other purposes, e.g. in a EDNS0 pseudo-RR
+  where the class field is used to denote the requestor's acceptable buffer
+  size for udp payloads.
+
+  Known DNS classes include:
+  ```
+  #{inspect(Map.filter(@dns_classes, fn {k, _} -> is_atom(k) end), pretty: true, width: 10)}
+  ```
+
+  See [IANA - DNS CLASSes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-2)
+
+  ## Examples
+
+      # Internet class
+      iex> encode_dns_class(:IN)
+      1
+
+      # rfc2136
+      iex> encode_dns_class(:NONE)
+      254
+
+      # rfc1035
+      iex> encode_dns_class(:ANY)
+      255
+
+      # or just use the number, e.g. in an EDNS0 pseudo-RR
+      iex> encode_dns_class(1410)
+      1410
+
+      # raises when given an unknown name/atom
+      iex> encode_dns_class(:ABBA)
+      ** (DNS.Msg.Error) [invalid class] "ABBA is unknown"
+
+      # raises on invalid values
+      iex> encode_dns_class(65536)
+      ** (DNS.Msg.Error) [invalid class] "valid range is 0..65535, got: 65536"
+
+
+  """
+  @spec encode_dns_class(atom | non_neg_integer) :: non_neg_integer
+  def encode_dns_class(class),
+    do: do_encode(@dns_classes, class, :eclass, 0..65535)
+
+  @doc """
+  Decode a DNS class to its name, if possible.
+
+  See `encode_dns_class/1` for the names available .
+
+  ## Examples
+
+      iex> decode_dns_class(1)
+      :IN
+
+      iex> decode_dns_class(1410)
+      1410
+
+      iex> decode_dns_class(:IN)
+      :IN
+
+      # raises on unknown names
+      iex> decode_dns_class(:ABBA)
+      ** (DNS.Msg.Error) [invalid class] "ABBA is unknown"
+
+      # raises on invalid values
+      iex> decode_dns_class(65536)
+      ** (DNS.Msg.Error) [invalid class] "valid range is 0..65535, got: 65536"
+
+  """
+  @spec decode_dns_class(atom | non_neg_integer) :: atom | non_neg_integer()
+  def decode_dns_class(class),
+    do: do_decode(@dns_classes, class, :eclass, 0..65535)
 
   # [[ DNS OPCODES ]]
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5
@@ -61,28 +161,46 @@ defmodule DNS.Msg.Terms do
                |> Utils.normalize_name_map()
 
   @doc """
-  Given a DNS opcode, return its number or nil if not found
+  Encode a DNS opcode to its numeric value.
 
-  Known names include: :QUERY, :IQUERY (obsolete), :STATUS, :NOTIFY, :UPDATE
-  and :DSO (DNS Stateful Operations)
+  Known classes include:
+  ```
+  #{inspect(Map.filter(@dns_opcodes, fn {k, _} -> is_atom(k) end), pretty: true, width: 10)}
+  ```
 
-  See [IANA DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
+  See [IANA - DNS Opcodes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
 
   ## Examples
 
       iex> encode_dns_opcode(:QUERY)
       0
 
+      iex> encode_dns_opcode(0)
+      0
+
+      # keep it raw
+      iex> encode_dns_opcode(7)
+      7
+
+      # raises on unknown names
+      iex> encode_dns_opcode(:ABC)
+      ** (DNS.Msg.Error) [invalid opcode] "ABC is unknown"
+
+      # raises on invalid values
+      iex> encode_dns_opcode(16)
+      ** (DNS.Msg.Error) [invalid opcode] "valid range is 0..15, got: 16"
+
   """
-  @spec encode_dns_opcode(any) :: non_neg_integer
+  @spec encode_dns_opcode(atom | non_neg_integer) :: non_neg_integer
   def encode_dns_opcode(opcode),
-    do: to_number(@dns_opcodes, opcode, "DNS OPCODE")
+    do: do_encode(@dns_opcodes, opcode, :eopcode, 0..15)
 
   @doc """
-  Given a numeric opcode, return its name, "UNASSIGNED" if not found.
+  Decode a DNS opcode to its name, if possible.
 
-  Only codes `[0..2, 4..6]` are known at the moment.
-  See [IANA DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
+  See `encode_dns_opcode/1` for the names available.
+
+  See [IANA - DNS Opcodes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
 
   ## Examples
 
@@ -92,10 +210,22 @@ defmodule DNS.Msg.Terms do
       iex> decode_dns_opcode(:UPDATE)
       :UPDATE
 
+      # keep it raw
+      iex> decode_dns_opcode(7)
+      7
+
+      # raises on unknown names
+      iex> decode_dns_opcode(:FOO_BAR)
+      ** (DNS.Msg.Error) [invalid opcode] "FOO_BAR is unknown"
+
+      # raises on invalid values
+      iex> decode_dns_opcode(16)
+      ** (DNS.Msg.Error) [invalid opcode] "valid range is 0..15, got: 16"
+
   """
-  @spec decode_dns_opcode(any) :: atom
+  @spec decode_dns_opcode(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_dns_opcode(opcode),
-    do: to_atom(@dns_opcodes, opcode, "DNS OPCODE")
+    do: do_decode(@dns_opcodes, opcode, :eopcode, 0..15)
 
   # [[ DNS RCODE ]]
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6
@@ -128,18 +258,19 @@ defmodule DNS.Msg.Terms do
               |> Utils.normalize_name_map()
 
   @doc """
-  Given a DNS rcode, return its number or nil if not found
+  Encode a DNS RCODE to its numeric value.
 
-  If `rcode` is numeric, returns that number if known, nil otherwise.
-  If `rcode` is lower/uppercase name of uppercase atom, returns the associated
-  numeric value if known, nil otherwise.
+  Known rcodes include:
+  ```
+  #{inspect(Map.filter(@dns_rcodes, fn {k, _} -> is_atom(k) end), pretty: true, width: 10)}
+  ```
 
-  Note that DNS `rcode`s occur in several places in a DNS message, not just in
-  the 4bit RCODE field in the DNS message header, in which case they may occupy
-  up to 16 bits.
+  Note that DNS RCODEs occur not only in the DNS header, but also in TSIG RRs, TKEY RRs
+  and the EDNS0 pseudo-RR provides an 8-bit extension.  So the actual range of values for
+  an rcode is `0..65535`, i.e. an unsigned 16 bit integer.
 
   See
-  - [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6)
+  - [IANA - DNS RCODEs](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6)
   - [RFC6895 2.3](https://www.rfc-editor.org/rfc/rfc6895.html#section-2.3)
 
   ## Examples
@@ -150,16 +281,24 @@ defmodule DNS.Msg.Terms do
       iex> encode_dns_rcode(0)
       0
 
+      # raises on unknown names
       iex> encode_dns_rcode(:ABC)
-      ** (DNS.Msg.Error) [:eterm] "DNS RCODE :ABC not available"
+      ** (DNS.Msg.Error) [invalid (x)rcode] "ABC is unknown"
+
+      # raises on invalid values
+      iex> encode_dns_rcode(65536)
+      ** (DNS.Msg.Error) [invalid (x)rcode] "valid range is 0..65535, got: 65536"
+
 
   """
-  @spec encode_dns_rcode(any) :: non_neg_integer()
+  @spec encode_dns_rcode(atom | non_neg_integer) :: non_neg_integer()
   def encode_dns_rcode(rcode),
-    do: to_number(@dns_rcodes, rcode, "DNS RCODE")
+    do: do_encode(@dns_rcodes, rcode, :ercode, 0..65535)
 
   @doc """
-  Given a numeric RCODE, return its atom of nil if not found.
+  Decode an DNS RCODE to its name, if possible.
+
+  See `encode_dns_rcode/1` for the names available .
 
   ## Examples
 
@@ -169,13 +308,18 @@ defmodule DNS.Msg.Terms do
       iex> decode_dns_rcode(:SERVFAIL)
       :SERVFAIL
 
-      iex> decode_dns_rcode(65535)
-      ** (DNS.Msg.Error) [:eterm] "DNS RCODE 65535 not available"
+      # raises on unknown names
+      iex> decode_dns_rcode(:OKIDOKI)
+      ** (DNS.Msg.Error) [invalid (x)rcode] "OKIDOKI is unknown"
+
+      # raises on invalid values
+      iex> decode_dns_rcode(65536)
+      ** (DNS.Msg.Error) [invalid (x)rcode] "valid range is 0..65535, got: 65536"
 
   """
-  @spec decode_dns_rcode(any) :: atom
+  @spec decode_dns_rcode(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_dns_rcode(rcode),
-    do: to_atom(@dns_rcodes, rcode, "DNS RCODE")
+    do: do_decode(@dns_rcodes, rcode, :ercode, 0..65535)
 
   # [[ DNS TYPE ]]
   # See:
@@ -214,15 +358,20 @@ defmodule DNS.Msg.Terms do
             |> Utils.normalize_name_map()
 
   @doc """
-  Given a DNS RR type, return its number, or nil if not found.
+  Encode an RR type to its numeric value.
 
   DNS types have 3 different subcategories: data (RR)types, Query types and
   Meta-Types.  Hence, they occur in various places including as query types, RR
   types and also in `types covered` fields in some RR's RDATA portion.
+
   Normally the value `0` is reserved, except in the `types covered` field of
-  a SIG RR. The caller will have to be aware of its context when encoding
+  an RRSIG RR. The caller will have to be aware of its context when encoding
   or decoding TYPEs.
 
+  Known RR types include:
+  ```
+  #{inspect(Map.filter(@rr_types, fn {k, _} -> is_atom(k) end), pretty: true, width: 10)}
+  ```
   See:
   - [IANA DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
   - [RFC6895, sec 3](https://www.rfc-editor.org/rfc/rfc6895.html#section-3)
@@ -235,16 +384,23 @@ defmodule DNS.Msg.Terms do
       iex> encode_rr_type(:HTTPS)
       65
 
+      # raises on unknown name
       iex> encode_rr_type(:ABC)
-      ** (DNS.Msg.Error) [:eterm] "DNS RR TYPE :ABC not available"
+      ** (DNS.Msg.Error) [invalid RR type] "ABC is unknown"
+
+      # raises on invalid value
+      iex> encode_rr_type(65536)
+      ** (DNS.Msg.Error) [invalid RR type] "valid range is 0..65535, got: 65536"
 
   """
-  @spec encode_rr_type(any) :: non_neg_integer()
+  @spec encode_rr_type(atom | non_neg_integer) :: non_neg_integer()
   def encode_rr_type(type),
-    do: to_number(@rr_types, type, "DNS RR TYPE")
+    do: do_encode(@rr_types, type, :errtype, 0..65535)
 
   @doc """
-  Given a DNS type, return its atom
+  Decode an RR type to its name, if possible.
+
+  See `encode_rr_type/1` for the names available .
 
   ## Examples
 
@@ -257,19 +413,26 @@ defmodule DNS.Msg.Terms do
       iex> decode_rr_type(:HTTPS)
       :HTTPS
 
+      # 3 is in range, so returned as-is
       iex> decode_rr_type(3)
-      ** (DNS.Msg.Error) [:eterm] "DNS RR TYPE 3 not available"
+      3
 
+      # raises on unknown name
+      iex> decode_rr_type(:ABC)
+      ** (DNS.Msg.Error) [invalid RR type] "ABC is unknown"
 
+      # raises on invalid value
+      iex> decode_rr_type(65536)
+      ** (DNS.Msg.Error) [invalid RR type] "valid range is 0..65535, got: 65536"
 
   See:
-  - [IANA DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
+  - [IANA - DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
   - [RFC3597](https://www.rfc-editor.org/rfc/rfc3597#section-5)
 
   """
-  @spec decode_rr_type(any) :: atom
+  @spec decode_rr_type(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_rr_type(type),
-    do: to_atom(@rr_types, type, "DNS RR TYPE")
+    do: do_decode(@rr_types, type, :errtype, 0..65535)
 
   # [[ DNS OPT CODE ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
@@ -296,11 +459,64 @@ defmodule DNS.Msg.Terms do
                    }
                    |> Utils.normalize_name_map()
 
-  @spec encode_rropt_code(any) :: non_neg_integer()
-  def encode_rropt_code(code),
-    do: to_number(@dns_rropt_codes, code, "EDNS0 OPTCODE")
+  @doc """
+  Encode a EDNS0 OPT-RR Code to its numeric value.
 
-  @spec decode_rropt_code(any) :: atom
+  Known OPT Codes include:
+  ```
+  #{inspect(Map.filter(@dns_rropt_codes, fn {k, _} -> is_atom(k) end), pretty: true, width: 10)}
+  ```
+
+  ## Examples
+
+      iex> encode_rropt_code(:NSID)
+      3
+
+      # keeping it raw
+      iex> encode_rropt_code(99)
+      99
+
+      # raises on unknown name
+      iex> encode_rropt_code(:ABC)
+      ** (DNS.Msg.Error) [invalid edns] "ABC is unknown"
+
+      # raises on invalid values
+      iex> encode_rropt_code(65536)
+      ** (DNS.Msg.Error) [invalid edns] "valid range is 0..65535, got: 65536"
+
+  """
+  @spec encode_rropt_code(atom | non_neg_integer) :: non_neg_integer()
+  def encode_rropt_code(code),
+    do: do_encode(@dns_rropt_codes, code, :eedns, 0..65535)
+
+  @doc """
+  Decode an EDNS0 OPT-RR Code to its name, if possible.
+
+  See `encode_rropt_code/1` for known names.
+
+  ## Examples
+
+      iex> decode_rropt_code(3)
+      :NSID
+
+      iex> decode_rropt_code(:NSID)
+      :NSID
+
+      # keep it raw
+      iex> decode_rropt_code(4)
+      4
+
+      # raises on unknown name
+      iex> decode_rropt_code(:ABC)
+      ** (DNS.Msg.Error) [invalid edns] "ABC is unknown"
+
+      # raises on invalid values
+      iex> decode_rropt_code(65536)
+      ** (DNS.Msg.Error) [invalid edns] "valid range is 0..65535, got: 65536"
+
+
+  """
+  @spec decode_rropt_code(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_rropt_code(code),
-    do: to_atom(@dns_rropt_codes, code, "EDNS0 OPTCODE")
+    do: do_decode(@dns_rropt_codes, code, :eedns, 0..65535)
 end
