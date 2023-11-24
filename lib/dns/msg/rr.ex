@@ -113,11 +113,11 @@ defmodule DNS.Msg.RR do
   def put(rr, opts)
 
   def put(%__MODULE__{} = rr, opts) do
-    {class, opts} = Keyword.pop(opts, :class, rr.class)
+    # ensure decode_rdata func's can match on type as an atom
     {type, opts} = Keyword.pop(opts, :type, rr.type)
     type = decode_rr_type(type)
 
-    rr = %{rr | class: class, type: type}
+    rr = %{rr | type: type}
 
     # class might already be set to requestor's udp buffer size
     # so check only type (kinda obsoletes all NON-IN protocol families)
@@ -131,26 +131,27 @@ defmodule DNS.Msg.RR do
     do: rr
 
   # bypass for OPT RR whose dname="" and class=bufsize, ttl=coded flags
-  defp do_put({k, v}, %__MODULE__{type: 41} = rr),
-    do: Map.put(rr, k, v)
+  # defp do_put({k, v}, %__MODULE__{type: 41} = rr),
+  #   do: Map.put(rr, k, v)
 
   defp do_put({k, v}, rr) when k == :name do
     # TODO: make & use dname_valid?(v)
     # - OPT RR has root name (either "" or "."), so need to accomodate that
-    if [] != dname_to_labels(v),
-      do: Map.put(rr, k, v),
-      else: error(:evalue, "#{k}, got #{inspect(v)}")
+    # - query might have rd=1 and request NS's for "."
+    Map.put(rr, k, v)
   end
 
   defp do_put({k, v}, rr) when k == :type,
     do: Map.put(rr, k, decode_rr_type(v))
 
   defp do_put({k, v}, rr) when k == :class,
-    do: Map.put(rr, k, v)
+    do: Map.put(rr, k, decode_dns_class(v))
 
-  # signed 32 bit range is -2**31..2**31
+  # signed 32 bit range is -(2**31)..(2**31-1)
+  # rfc1035, 3.2.1 says its a 32 bit signed integer, and erlang seems to agree:
+  # - https://github.com/dnsimple/dns_erlang/blob/main/src/dns.erl#L236C48-L236C61
   defp do_put({k, v}, rr) when k == :ttl do
-    if v in -2_147_483_648..2_147_483_648,
+    if v in -2_147_483_648..2_147_483_647,
       do: Map.put(rr, k, v),
       else: error(:evalue, "#{k}, got #{inspect(v)}")
   end
@@ -463,6 +464,7 @@ defmodule DNS.Msg.RR do
       _::binary>> = msg
 
     type = decode_rr_type(type)
+    # class = decode_dns_class(class)
     rr = new(name: name, type: type, class: class, ttl: ttl, rdlen: rdlen)
     # need to pass in rdlen as well, since some RR's may have rdlen of 0
     rdmap = decode_rdata(type, offset + 10, rdlen, msg)
@@ -846,12 +848,12 @@ defmodule DNS.Msg.RR do
 end
 
 defimpl Inspect, for: DNS.Msg.RR do
-  import DNS.Msg.Terms
+  # import DNS.Msg.Terms
 
   def inspect(rr, opts) do
     syntax_colors = IO.ANSI.syntax_colors()
     opts = Map.put(opts, :syntax_colors, syntax_colors)
-    class = if rr.type == :OPT, do: "requestor's bufsize", else: :IN
+    # class = if rr.type == :OPT, do: "requestor's bufsize", else: :IN
 
     # presentation of some rdmap's values
     rr =
@@ -867,8 +869,8 @@ defimpl Inspect, for: DNS.Msg.RR do
       end
 
     rr
-    |> Map.put(:type, "#{rr.type} (#{encode_rr_type(rr.type)})")
-    |> Map.put(:class, "#{class} (#{rr.class})")
+    # |> Map.put(:type, "#{rr.type} (#{encode_rr_type(rr.type)})")
+    # |> Map.put(:class, "#{class} (#{rr.class})")
     |> Map.put(:rdata, "#{Kernel.inspect(rr.rdata, limit: 10)}")
     |> Map.put(:wdata, "#{Kernel.inspect(rr.wdata, limit: 10)}")
     |> Inspect.Any.inspect(opts)

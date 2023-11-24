@@ -77,7 +77,7 @@ defmodule DNS.Msg.Qtn do
     do: Map.put(qtn, k, decode_rr_type(v))
 
   defp do_put({k, v}, qtn) when k == :class,
-    do: Map.put(qtn, k, v)
+    do: Map.put(qtn, k, decode_dns_class(v))
 
   # [[ ENCODE ]]
 
@@ -88,7 +88,7 @@ defmodule DNS.Msg.Qtn do
   @spec encode(t()) :: t()
   def encode(%__MODULE__{} = qtn) do
     dname = encode_dname(qtn.name)
-    class = 1
+    class = encode_dns_class(qtn.class)
     type = encode_rr_type(qtn.type)
     %{qtn | wdata: <<dname::binary, type::16, class::16>>}
   end
@@ -122,15 +122,11 @@ defmodule DNS.Msg.Qtn do
 end
 
 defimpl Inspect, for: DNS.Msg.Qtn do
-  import DNS.Msg.Terms
-
   def inspect(qtn, opts) do
     syntax_colors = IO.ANSI.syntax_colors()
     opts = Map.put(opts, :syntax_colors, syntax_colors)
 
     qtn
-    |> Map.put(:type, "#{qtn.type} (#{encode_rr_type(qtn.type)})")
-    |> Map.put(:class, "#{qtn.class} (#{encode_dns_class(qtn.class)})")
     |> Map.put(:wdata, "#{Kernel.inspect(qtn.wdata, limit: 10)}")
     |> Inspect.Any.inspect(opts)
   end

@@ -104,7 +104,7 @@ defmodule DNS.Msg.Terms do
       iex> encode_dns_class(1410)
       1410
 
-      # raises when given an unknown name/atom
+      # raises on unknown names
       iex> encode_dns_class(:ABBA)
       ** (DNS.Msg.Error) [invalid class] "ABBA is unknown"
 
@@ -384,7 +384,7 @@ defmodule DNS.Msg.Terms do
       iex> encode_rr_type(:HTTPS)
       65
 
-      # raises on unknown name
+      # raises on unknown names
       iex> encode_rr_type(:ABC)
       ** (DNS.Msg.Error) [invalid RR type] "ABC is unknown"
 
@@ -417,7 +417,7 @@ defmodule DNS.Msg.Terms do
       iex> decode_rr_type(3)
       3
 
-      # raises on unknown name
+      # raises on unknown names
       iex> decode_rr_type(:ABC)
       ** (DNS.Msg.Error) [invalid RR type] "ABC is unknown"
 
@@ -476,7 +476,7 @@ defmodule DNS.Msg.Terms do
       iex> encode_rropt_code(99)
       99
 
-      # raises on unknown name
+      # raises on unknown names
       iex> encode_rropt_code(:ABC)
       ** (DNS.Msg.Error) [invalid edns] "ABC is unknown"
 
@@ -506,7 +506,7 @@ defmodule DNS.Msg.Terms do
       iex> decode_rropt_code(4)
       4
 
-      # raises on unknown name
+      # raises on unknown names
       iex> decode_rropt_code(:ABC)
       ** (DNS.Msg.Error) [invalid edns] "ABC is unknown"
 

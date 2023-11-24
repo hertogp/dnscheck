@@ -67,7 +67,7 @@ defmodule DNS.Msg.Fields do
       |> Enum.map(fn label -> {byte_size(label), label} end)
 
     size = Enum.reduce(labels, Enum.count(labels) - 1, fn {n, _}, acc -> n + acc end)
-    if size > 255, do: raise("dname > 255 octets")
+    if size > 255, do: error(:edname, "dname > 255 octets")
     if Enum.any?(labels, fn {n, _} -> n < 1 end), do: error(:elabel, "empty label")
     if Enum.any?(labels, fn {n, _} -> n > 63 end), do: error(:elabel, "label > 63 octets")
 

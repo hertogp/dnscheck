@@ -4,7 +4,7 @@ defmodule DNS.Msg.Hdr do
 
   @moduledoc """
 
-  Low level functions to create, encode or decode a `t:DNS.Msg.Hdr.t/0` struct.
+  Low level functions to create, encode or decode a `Hdr` `t:t/0` struct.
 
   A DNS header consists of 12 bytes containing the following fields:
 
@@ -25,10 +25,9 @@ defmodule DNS.Msg.Hdr do
       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
   ```
 
-  See `t:DNS.Msg.Hdr.t/0` for the meaning of the fields.  Some have meaning
-  only in requests (like `rd`), others only in replies (like `ra`).  Usually,
-  request-flags are copied back into the header, by the nameserver, when
-  creating a reply.
+  Some fields have meaning only in requests (like `rd`), others only in replies
+  (like `ra`).  Usually, request-flags are copied back into the header, by the
+  nameserver, when creating a reply.
 
   See also:
   - [rfc1035 - Domain names](ttps://www.rfc-editor.org/rfc/rfc1035)
@@ -62,11 +61,11 @@ defmodule DNS.Msg.Hdr do
   @type bit :: 0 | 1
 
   @typedoc """
-  A `t:DNS.Msg.Hdr.t/0` struct represents part of a `t:DNS.Msg.t/0` message.
+  A `t:DNS.Msg.Hdr.t/0` struct that represents the first part of a `t:DNS.Msg.t/0` message.
 
   It fields include:
 
-  - `id`, set in a request, copied into a reply (links replies to earlier requests)
+  - `id`, set in a request, copied into a reply (links replies to requests)
   - `qr`, set to 0 in a request, to 1 in a reply
   - `opcode`, defaults to 0 (QUERY), see [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
   - `aa`, set to 1 in a reply to indicate an authoritative answer
@@ -87,7 +86,7 @@ defmodule DNS.Msg.Hdr do
   @type t :: %__MODULE__{
           id: non_neg_integer,
           qr: bit,
-          opcode: non_neg_integer,
+          opcode: atom | non_neg_integer,
           aa: bit,
           tc: bit,
           rd: bit,
@@ -95,7 +94,7 @@ defmodule DNS.Msg.Hdr do
           z: non_neg_integer,
           ad: bit,
           cd: bit,
-          rcode: non_neg_integer,
+          rcode: atom | non_neg_integer,
           qdc: non_neg_integer,
           anc: non_neg_integer,
           nsc: non_neg_integer,
@@ -112,16 +111,15 @@ defmodule DNS.Msg.Hdr do
   # [[ API ]]
 
   @typedoc """
-  A non-negative offset into a DNS message's wireformat
+  A non-negative offset into a DNS message's wireformat.
   """
   @type offset :: non_neg_integer
 
   @doc """
-  Return `t:DNS.Msg.Hdr.t/0` struct in accordance with given `opts`.
+  Return `Hdr` `t:t/0` struct in accordance with given `opts`.
 
   The default for option-`rd` is `1`, all other options default to
-  `0` of `<<>>`.
-
+  `0` or `<<>>`.
 
   """
   @spec new(Keyword.t()) :: t()
@@ -153,10 +151,10 @@ defmodule DNS.Msg.Hdr do
   end
 
   defp do_put({k, v}, hdr) when k == :opcode,
-    do: Map.put(hdr, k, encode_dns_opcode(v))
+    do: Map.put(hdr, k, decode_dns_opcode(v))
 
   defp do_put({k, v}, hdr) when k == :rcode,
-    do: Map.put(hdr, k, encode_dns_rcode(v))
+    do: Map.put(hdr, k, decode_dns_rcode(v))
 
   # check 16bit values
   defp do_put({k, v}, hdr) when k in [:id, :qdc, :anc, :nsc, :arc] do
@@ -168,8 +166,6 @@ defmodule DNS.Msg.Hdr do
   # silently ignore other crap
   defp do_put({_k, _v}, hdr),
     do: hdr
-
-  # do: error(:efield, "#{inspect(k)}, #{inspect(v)}")
 
   @spec encode(t) :: t
   def encode(%__MODULE__{} = hdr) do
@@ -183,9 +179,9 @@ defmodule DNS.Msg.Hdr do
   end
 
   @spec decode(offset, binary) :: {offset, t}
-  def decode(offset, wdata) do
+  def decode(offset, msg) do
     <<_::binary-size(offset), id::16, qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, z::1, ad::1,
-      cd::1, rcode::4, qdc::16, anc::16, nsc::16, arc::16, _::binary>> = wdata
+      cd::1, rcode::4, qdc::16, anc::16, nsc::16, arc::16, _::binary>> = msg
 
     hdr =
       new(
@@ -206,28 +202,24 @@ defmodule DNS.Msg.Hdr do
         arc: arc
       )
 
-    {12, %{hdr | wdata: :binary.part(wdata, {0, 12})}}
+    {12, %{hdr | wdata: :binary.part(msg, {0, 12})}}
   end
 end
 
-defimpl Inspect, for: DNS.Msg.Hdr do
-  import DNS.Msg.Terms
-
-  def inspect(hdr, opts) do
-    syntax_colors = IO.ANSI.syntax_colors()
-    opts = Map.put(opts, :syntax_colors, syntax_colors)
-    qr = if hdr.qr == 0, do: "request", else: "response"
-
-    hdr
-    |> Map.put(:opcode, "#{hdr.opcode} (#{decode_dns_opcode(hdr.opcode)})")
-    |> Map.put(:rcode, "#{hdr.rcode} (#{decode_dns_rcode(hdr.rcode)})")
-    |> Map.put(:qr, "#{hdr.qr} (#{qr})")
-    |> Map.put(:aa, "#{hdr.aa}, (authoritative answer: #{hdr.aa == 1})")
-    |> Map.put(:ad, "#{hdr.ad}, (authentic data: #{hdr.ad == 1})")
-    |> Map.put(:rd, "#{hdr.rd}, (recursion desired: #{hdr.rd == 1})")
-    |> Map.put(:ra, "#{hdr.ra}, (recursion available: #{hdr.ra == 1})")
-    |> Map.put(:tc, "#{hdr.tc}, (truncated: #{hdr.tc == 1})")
-    |> Map.put(:cd, "#{hdr.tc}, (check disabled: #{hdr.cd == 1})")
-    |> Inspect.Any.inspect(opts)
-  end
-end
+# defimpl Inspect, for: DNS.Msg.Hdr do
+#   def inspect(hdr, opts) do
+#     syntax_colors = IO.ANSI.syntax_colors()
+#     opts = Map.put(opts, :syntax_colors, syntax_colors)
+#     qr = if hdr.qr == 0, do: "request", else: "response"
+#
+#     hdr
+#     |> Map.put(:qr, "#{hdr.qr} (#{qr})")
+#     |> Map.put(:aa, "#{hdr.aa}, (authoritative answer: #{hdr.aa == 1})")
+#     |> Map.put(:ad, "#{hdr.ad}, (authentic data: #{hdr.ad == 1})")
+#     |> Map.put(:rd, "#{hdr.rd}, (recursion desired: #{hdr.rd == 1})")
+#     |> Map.put(:ra, "#{hdr.ra}, (recursion available: #{hdr.ra == 1})")
+#     |> Map.put(:tc, "#{hdr.tc}, (truncated: #{hdr.tc == 1})")
+#     |> Map.put(:cd, "#{hdr.tc}, (check disabled: #{hdr.cd == 1})")
+#     |> Inspect.Any.inspect(opts)
+#   end
+# end
