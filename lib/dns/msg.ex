@@ -88,7 +88,7 @@ defmodule DNS.Msg do
           %DNS.Msg.Qtn{
             name: "host.domain.tld",
             type: :A,
-            class: 1,
+            class: :IN,
             wdata: ""
           }
         ],
