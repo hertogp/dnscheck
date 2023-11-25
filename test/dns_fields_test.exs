@@ -4,23 +4,23 @@ defmodule DNS.Msg.FieldsTest do
 
   import DNS.Msg.Fields
 
-  test "DNAME - decode_dname" do
+  test "DNAME - dname_decode" do
     # normal case
     msg = "stuff" <> <<7, ?E, ?x, ?A, ?m, ?P, ?l, ?E, 3, ?c, ?O, ?m, 0>> <> "more stuff"
-    assert {18, "ExAmPlE.cOm"} == decode_dname(5, msg)
+    assert {18, "ExAmPlE.cOm"} == dname_decode(5, msg)
     <<_::binary-size(18), rest::binary>> = msg
     assert "more stuff" == rest
 
     # name compression, the <<192, 0>> points back to start
     msg = <<3, ?n, ?e, ?t, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>
-    assert {15, "example.net"} == decode_dname(5, msg)
+    assert {15, "example.net"} == dname_decode(5, msg)
 
     msg = <<3, ?n, ?e, ?t, 192, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>
-    assert_raise DNS.Msg.Error, fn -> decode_dname(6, msg) end
+    assert_raise DNS.Msg.Error, fn -> dname_decode(6, msg) end
 
     # not <<0>> terminated, raises
     msg = "stuff" <> <<7, ?E, ?x, ?A, ?m, ?P, ?l, ?E, 3, ?c, ?O, ?m>> <> "more stuff"
-    assert_raise DNS.Msg.Error, fn -> decode_dname(5, msg) end
+    assert_raise DNS.Msg.Error, fn -> dname_decode(5, msg) end
   end
 
   test "DNAME - dname_to_labels" do
@@ -86,21 +86,21 @@ defmodule DNS.Msg.FieldsTest do
     assert false == dname_valid?(name)
   end
 
-  test "DNAME - encode_dname" do
+  test "DNAME - dname_encode" do
     # normal cases
-    assert <<0>> == encode_dname("")
-    assert <<0>> == encode_dname(".")
-    assert <<7, "example", 3, "com", 0>> = encode_dname("example.com")
-    assert <<7, "eXampLe", 3, "cOm", 0>> = encode_dname("eXampLe.cOm")
+    assert <<0>> == dname_encode("")
+    assert <<0>> == dname_encode(".")
+    assert <<7, "example", 3, "com", 0>> = dname_encode("example.com")
+    assert <<7, "eXampLe", 3, "cOm", 0>> = dname_encode("eXampLe.cOm")
 
     # raises on empty labels
-    assert_raise DNS.Msg.Error, fn -> encode_dname("example..com") end
-    assert_raise DNS.Msg.Error, fn -> encode_dname(".example.com") end
-    assert_raise DNS.Msg.Error, fn -> encode_dname("example.com..") end
+    assert_raise DNS.Msg.Error, fn -> dname_encode("example..com") end
+    assert_raise DNS.Msg.Error, fn -> dname_encode(".example.com") end
+    assert_raise DNS.Msg.Error, fn -> dname_encode("example.com..") end
 
     # raises on labels too long
     name = String.duplicate("a", 64) <> ".com"
-    assert_raise DNS.Msg.Error, fn -> encode_dname(name) end
+    assert_raise DNS.Msg.Error, fn -> dname_encode(name) end
 
     # raises on name too long
     name =
@@ -110,23 +110,23 @@ defmodule DNS.Msg.FieldsTest do
       |> Kernel.<>(".abcdefghijklmnopqrstuv")
 
     assert 254 = String.length(name)
-    assert_raise DNS.Msg.Error, fn -> encode_dname(name) end
+    assert_raise DNS.Msg.Error, fn -> dname_encode(name) end
   end
 
-  test "DNAME - reverse_dname" do
+  test "DNAME - dname_reverse" do
     # normal cases
-    assert "com.example" == reverse_dname("example.com")
-    assert "com.example.www" == reverse_dname("www.example.com")
-    assert "com.example.www" == reverse_dname("www.example.com.")
+    assert "com.example" == dname_reverse("example.com")
+    assert "com.example.www" == dname_reverse("www.example.com")
+    assert "com.example.www" == dname_reverse("www.example.com.")
 
     # raises on empty labels
-    assert_raise DNS.Msg.Error, fn -> reverse_dname("example..com") end
-    assert_raise DNS.Msg.Error, fn -> reverse_dname(".example.com") end
-    assert_raise DNS.Msg.Error, fn -> reverse_dname("example.com..") end
+    assert_raise DNS.Msg.Error, fn -> dname_reverse("example..com") end
+    assert_raise DNS.Msg.Error, fn -> dname_reverse(".example.com") end
+    assert_raise DNS.Msg.Error, fn -> dname_reverse("example.com..") end
 
     # raises on labels too long
     name = String.duplicate("a", 64) <> ".com"
-    assert_raise DNS.Msg.Error, fn -> reverse_dname(name) end
+    assert_raise DNS.Msg.Error, fn -> dname_reverse(name) end
 
     # raises on name too long
     name =
@@ -136,6 +136,6 @@ defmodule DNS.Msg.FieldsTest do
       |> Kernel.<>(".abcdefghijklmnopqrstuv")
 
     assert 254 = String.length(name)
-    assert_raise DNS.Msg.Error, fn -> reverse_dname(name) end
+    assert_raise DNS.Msg.Error, fn -> dname_reverse(name) end
   end
 end

@@ -1,6 +1,7 @@
 defmodule DNS.Msg do
   @moduledoc """
-  Encode or decode a DNS message.
+  Low level functions to create, Encode or decode a `DNS.Msg` `t:/0` struct
+  representing a DNS message..
 
   """
 

@@ -240,7 +240,7 @@ defmodule DNS.Msg.RR do
 
   @spec encode(t) :: t
   def encode(%__MODULE__{} = rr) do
-    name = encode_dname(rr.name)
+    name = dname_encode(rr.name)
     class = encode_dns_class(rr.class)
     type = encode_rr_type(rr.type)
     rdata = encode_rdata(rr.type, rr.rdmap)
@@ -273,12 +273,12 @@ defmodule DNS.Msg.RR do
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
   def encode_rdata(:NS, %{name: name}),
-    do: encode_dname(name)
+    do: dname_encode(name)
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
   def encode_rdata(:CNAME, %{name: name}),
-    do: encode_dname(name)
+    do: dname_encode(name)
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
@@ -290,8 +290,8 @@ defmodule DNS.Msg.RR do
       |> Map.put_new(:expire, 1_209_600)
       |> Map.put_new(:minimum, 86400)
 
-    mname = encode_dname(mname)
-    rname = encode_dname(rname)
+    mname = dname_encode(mname)
+    rname = dname_encode(rname)
 
     <<mname::binary, rname::binary, serial::32, rdmap.refresh::32, rdmap.retry::32,
       rdmap.expire::32, rdmap.minimum::32>>
@@ -300,11 +300,11 @@ defmodule DNS.Msg.RR do
   # IN PTR (12)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
   def encode_rdata(:PTR, %{name: name}),
-    do: encode_dname(name)
+    do: dname_encode(name)
 
   # IN MX (15)
   def encode_rdata(:MX, %{name: name, pref: pref}),
-    do: <<pref::16>> <> encode_dname(name)
+    do: <<pref::16>> <> dname_encode(name)
 
   # IN TXT (16)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14
@@ -344,7 +344,7 @@ defmodule DNS.Msg.RR do
     expire = rdmap.expiration
     incept = rdmap.inception
     keytag = rdmap.keytag
-    name = encode_dname(rdmap.name)
+    name = dname_encode(rdmap.name)
     sig = rdmap.signature
 
     <<type::16, algo::8, labels::8, ttl::32, expire::32, incept::32, keytag::16, name::binary,
@@ -354,7 +354,7 @@ defmodule DNS.Msg.RR do
   # IN NSEC (47)
   # https://www.rfc-editor.org/rfc/rfc4034#section-4
   def encode_rdata(:NSEC, %{name: name, bitmap: bitmap}) do
-    name = encode_dname(name)
+    name = dname_encode(name)
     <<name::binary, bitmap::bitstring>>
   end
 
@@ -458,7 +458,7 @@ defmodule DNS.Msg.RR do
 
   @spec decode(offset, binary) :: {offset, t}
   def decode(offset, msg) do
-    {offset, name} = decode_dname(offset, msg)
+    {offset, name} = dname_decode(offset, msg)
 
     <<_::binary-size(offset), type::16, class::16, ttl::32, rdlen::16, rdata::binary-size(rdlen),
       _::binary>> = msg
@@ -492,22 +492,22 @@ defmodule DNS.Msg.RR do
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
   def decode_rdata(:NS, offset, _rdlen, msg) do
-    {_, name} = decode_dname(offset, msg)
+    {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
   def decode_rdata(:CNAME, offset, _rdlen, msg) do
-    {_, name} = decode_dname(offset, msg)
+    {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
   def decode_rdata(:SOA, offset, _rdlen, msg) do
-    {offset, mname} = decode_dname(offset, msg)
-    {offset, rname} = decode_dname(offset, msg)
+    {offset, mname} = dname_decode(offset, msg)
+    {offset, rname} = dname_decode(offset, msg)
 
     <<_::binary-size(offset), serial::32, refresh::32, retry::32, expire::32, minimum::32,
       _::binary>> = msg
@@ -526,7 +526,7 @@ defmodule DNS.Msg.RR do
   # IN PTR (12)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
   def decode_rdata(:PTR, offset, _rdlen, msg) do
-    {_, name} = decode_dname(offset, msg)
+    {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
@@ -534,7 +534,7 @@ defmodule DNS.Msg.RR do
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
   def decode_rdata(:MX, offset, _rdlen, msg) do
     <<_::binary-size(offset), pref::16, _::binary>> = msg
-    {_offset, name} = decode_dname(offset + 2, msg)
+    {_offset, name} = dname_decode(offset + 2, msg)
     %{name: name, pref: pref}
   end
 
@@ -609,7 +609,7 @@ defmodule DNS.Msg.RR do
       rest::binary>> = rdata
 
     # no name compression allowed in RRSIG, so we stay within `rest`
-    {offset, name} = decode_dname(0, rest)
+    {offset, name} = dname_decode(0, rest)
     <<_::binary-size(offset), signature::binary>> = rest
 
     {:ok, notafter} = DateTime.from_unix(notafter, :second)
@@ -632,7 +632,7 @@ defmodule DNS.Msg.RR do
   # https://www.rfc-editor.org/rfc/rfc4034#section-4
   def decode_rdata(:NSEC, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
-    {offset, name} = decode_dname(0, rdata)
+    {offset, name} = dname_decode(0, rdata)
     <<_::binary-size(offset), bitmap::binary>> = rdata
     covers = bitmap_to_rrs(bitmap)
     %{name: name, bitmap: bitmap, covers: covers}

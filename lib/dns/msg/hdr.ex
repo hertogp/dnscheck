@@ -205,21 +205,3 @@ defmodule DNS.Msg.Hdr do
     {12, %{hdr | wdata: :binary.part(msg, {0, 12})}}
   end
 end
-
-# defimpl Inspect, for: DNS.Msg.Hdr do
-#   def inspect(hdr, opts) do
-#     syntax_colors = IO.ANSI.syntax_colors()
-#     opts = Map.put(opts, :syntax_colors, syntax_colors)
-#     qr = if hdr.qr == 0, do: "request", else: "response"
-#
-#     hdr
-#     |> Map.put(:qr, "#{hdr.qr} (#{qr})")
-#     |> Map.put(:aa, "#{hdr.aa}, (authoritative answer: #{hdr.aa == 1})")
-#     |> Map.put(:ad, "#{hdr.ad}, (authentic data: #{hdr.ad == 1})")
-#     |> Map.put(:rd, "#{hdr.rd}, (recursion desired: #{hdr.rd == 1})")
-#     |> Map.put(:ra, "#{hdr.ra}, (recursion available: #{hdr.ra == 1})")
-#     |> Map.put(:tc, "#{hdr.tc}, (truncated: #{hdr.tc == 1})")
-#     |> Map.put(:cd, "#{hdr.tc}, (check disabled: #{hdr.cd == 1})")
-#     |> Inspect.Any.inspect(opts)
-#   end
-# end

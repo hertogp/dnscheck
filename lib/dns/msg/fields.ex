@@ -1,6 +1,6 @@
 defmodule DNS.Msg.Fields do
   @moduledoc """
-  Low level functions to to encode/decode common fields in a DNS Msg.
+  Low level functions to encode/decode common fields in a DNS Msg.
   """
 
   alias DNS.Msg.Error
@@ -33,21 +33,18 @@ defmodule DNS.Msg.Fields do
 
   ## Examples
 
-      iex> decode_dname(5, <<"stuff", 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 3, ?c, ?o, ?m, 0, "more stuff">>)
+      iex> dname_decode(5, <<"stuff", 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 3, ?c, ?o, ?m, 0, "more stuff">>)
       {18, "example.com"}
 
-      iex> decode_dname(5, <<3, ?n, ?e, ?t, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>)
+      iex> dname_decode(5, <<3, ?n, ?e, ?t, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>)
       {15, "example.net"}
 
-      iex> decode_dname(6, <<3, ?n, ?e, ?t, 192, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>)
-      ** (DNS.Msg.Error) [invalid dname] "domain name compression loop at offset 4"
-
   """
-  @spec decode_dname(non_neg_integer, binary) :: {non_neg_integer, binary}
-  def decode_dname(offset, msg) when is_binary(msg),
-    do: decode_dname(offset, msg, <<>>, %{})
+  @spec dname_decode(non_neg_integer, binary) :: {non_neg_integer, binary}
+  def dname_decode(offset, msg) when is_binary(msg),
+    do: dname_decode(offset, msg, <<>>, %{})
 
-  defp decode_dname(offset, msg, name, seen) do
+  defp dname_decode(offset, msg, name, seen) do
     # note: OPT RR (EDNS0) MUST have root name (i.e. "" encoded as <<0>>)
     <<_::binary-size(offset), bin::binary>> = msg
 
@@ -61,13 +58,13 @@ defmodule DNS.Msg.Fields do
             do: <<label::binary>>,
             else: <<name::binary, ?., label::binary>>
 
-        decode_dname(offset + n + 1, msg, name, Map.put(seen, offset, []))
+        dname_decode(offset + n + 1, msg, name, Map.put(seen, offset, []))
 
       <<3::2, ptr::14, _::binary>> ->
         if Map.has_key?(seen, ptr),
           do: error(:edname, "domain name compression loop at offset #{offset}")
 
-        {_, name} = decode_dname(ptr, msg, name, Map.put(seen, ptr, []))
+        {_, name} = dname_decode(ptr, msg, name, Map.put(seen, ptr, []))
         {offset + 2, name}
 
       _ ->
@@ -213,26 +210,26 @@ defmodule DNS.Msg.Fields do
 
   ## Examples
 
-      iex> encode_dname(".")
+      iex> dname_encode(".")
       <<0::8>>
 
-      iex> encode_dname("")
+      iex> dname_encode("")
       <<0::8>>
 
-      iex> encode_dname("acdc.au")
+      iex> dname_encode("acdc.au")
       <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
 
-      iex> encode_dname("acdc.au.")
+      iex> dname_encode("acdc.au.")
       <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
 
       # happily encode an otherwise illegal name
-      iex> encode_dname("acdc.-au-.")
+      iex> dname_encode("acdc.-au-.")
       <<4, 97, 99, 100, 99, 4, 45, 97, 117, 45, 0>>
 
   """
   # https://www.rfc-editor.org/rfc/rfc1035, sec 2.3.1, 3.1
-  @spec encode_dname(binary) :: binary
-  def encode_dname(dname) when is_binary(dname) do
+  @spec dname_encode(binary) :: binary
+  def dname_encode(dname) when is_binary(dname) do
     dname
     |> dname_to_labels()
     |> Enum.map(fn label -> <<String.length(label)::8, label::binary>> end)
@@ -247,19 +244,19 @@ defmodule DNS.Msg.Fields do
 
   ## Examples
 
-      iex> reverse_dname("example.com")
+      iex> dname_reverse("example.com")
       "com.example"
 
       # trailing dot is ignored
-      iex> reverse_dname("example.com.")
+      iex> dname_reverse("example.com.")
       "com.example"
 
-      iex> reverse_dname(".example.com")
+      iex> dname_reverse(".example.com")
       ** (DNS.Msg.Error) [:dname] "empty label"
 
   """
-  @spec reverse_dname(binary) :: binary
-  def reverse_dname(name) do
+  @spec dname_reverse(binary) :: binary
+  def dname_reverse(name) do
     name =
       case name do
         <<>> -> [name]

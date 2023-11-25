@@ -3,27 +3,33 @@ defmodule DNS.Msg.Qtn do
   import DNS.Msg.Fields
   alias DNS.Msg.Error
 
-  # RFC1035, 4.2.1 Question section format
-  # The question section is used to carry the "question" in most queries,
-  # i.e., the parameters that define what is being asked.  The section
-  # contains QDCOUNT (usually 1) entries, each of the following format:
-  #
-  #                                     1  1  1  1  1  1
-  #       0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                                               |
-  #     /                     name                      /
-  #     /                                               /
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                     type                     |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                     class                    |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #
-  # - name, domain name (series of length encoded labels)
-  # - type, 2 octets, type of qtn
-  # - class, 2 octets, class of qtn, usally IN (1)
-  #
+  @moduledoc """
+
+  Low level functions to create, encode or decode a `Qtn` `t:t/0` struct,
+  as outlined in [RFC1035, 4.2.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.2).
+
+  The question section of a `t:DNS.Msg.t/0` is used to carry the "question" in most queries, i.e.,
+  the parameters that define what is being asked.  The section contains QDCOUNT
+  (usually 1) entries, each of the following format:
+
+  ```
+         0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       |                                               |
+       /                     NAME                      /
+       /                                               /
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       |                     TYPE                      |
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       |                     CLASS                     |
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  ```
+
+  - name, domain name (series of length encoded labels)
+  - type, 2 octets, type of qtn
+  - class, 2 octets, class of qtn, usally IN (1)
+
+  """
 
   defstruct name: "", type: 1, class: 1, wdata: <<>>
 
@@ -87,7 +93,7 @@ defmodule DNS.Msg.Qtn do
   """
   @spec encode(t()) :: t()
   def encode(%__MODULE__{} = qtn) do
-    dname = encode_dname(qtn.name)
+    dname = dname_encode(qtn.name)
     class = encode_dns_class(qtn.class)
     type = encode_rr_type(qtn.type)
     %{qtn | wdata: <<dname::binary, type::16, class::16>>}
@@ -103,7 +109,7 @@ defmodule DNS.Msg.Qtn do
   @spec decode(offset, binary) :: {offset, t()}
   def decode(offset, msg) do
     # offset2 - offset might not equal byte_size(name) due to name compression
-    {offset2, name} = decode_dname(offset, msg)
+    {offset2, name} = dname_decode(offset, msg)
     <<_::binary-size(offset2), type::16, class::16, _::binary>> = msg
 
     wdata = :binary.part(msg, {offset, offset2 - offset + 4})
