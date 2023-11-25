@@ -11,20 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [ ] DNS.Msg
     - [ ] documentation
-    - [ ] tests
+    - [ ] unit tests
     - [ ] accessor functions for `t:DNS.Msg.t/0` struct.
     - [x] clean up lib/dns/msg.ex and move funcs to lib/dns.ex
 - [ ] DNS.Msg.Hdr
     - [ ] documentation
-    - [ ] tests
+    - [ ] unit tests
 - [ ] DNS.Msg.Qtn
     - [ ] documentation
-    - [ ] tests
+    - [ ] unit tests
 - [ ] DNS.Msg.RR
     - [ ] documentation
-    - [ ] tests
+    - [ ] unit tests
     - [x] get a bunch of rdata de/encoders for relevant RR's
-    - [x] move MsgXX into DNS.Msg.xx and files under lib/dns/msg/xx.ex
+    - [x] move MsgXYZ into DNS.Msg.Xyz and files under lib/dns/msg/xyz.ex
+- [ ] DNS.Msg.Terms
+    - [x] documentation
+    - [x] unit tests
+- [x] DNS.Msg.Terms
+    - [x] documentation
+    - [x] unit tests
 - [ ] DNS
     - [ ] handle timeout & retires in Dns.resolve
     - [ ] handle a list of nameservers to try, rather than one
