@@ -64,6 +64,74 @@ defmodule DNS.Msg.Qtn do
   defp error(reason, data),
     do: raise(Error.exception(reason: reason, data: data))
 
+  # [[ DECODE ]]
+
+  @doc """
+  Decode a `Qtn` `t:t/0` struct at given `offset` in `msg`.
+
+  Returns {`new_offset`, `t:t/0`}, where `new_offset` can be used to read the
+  rest of the message.  Uses `DNS.Msg.Fields.dname_decode/2`.
+
+  ## Example
+
+      iex> msg = <<"stuff", 7, "example", 3, "com", 0, 1::16, 1::16, "more stuff">>
+      iex> {offset, qtn} = decode(5, msg)
+      iex> qtn
+      %DNS.Msg.Qtn{
+        name: "example.com",
+        type: :A,
+        class: :IN,
+        wdata: <<7, "example", 3, "com", 0, 1::16, 1::16>>
+      }
+      iex> <<_::binary-size(offset), rest::binary>> = msg
+      iex> rest
+      "more stuff"
+
+  """
+  @spec decode(offset, binary) :: {offset, t()}
+  def decode(offset, msg) do
+    # offset2 - offset might not equal byte_size(name) due to name compression
+    {offset2, name} = dname_decode(offset, msg)
+    <<_::binary-size(offset2), type::16, class::16, _::binary>> = msg
+
+    wdata = :binary.part(msg, {offset, offset2 - offset + 4})
+    qtn = new(name: name, type: type, class: class)
+
+    # new(..) will not set calculated wdata-field
+    {offset2 + 4, %{qtn | wdata: wdata}}
+  end
+
+  # [[ ENCODE ]]
+
+  @doc """
+  Sets the `:wdata` (wiredata) field of the `Qtn` struct.
+
+  ## Example
+
+      iex> q = new(name: "example.com")
+      %DNS.Msg.Qtn{
+         name: "example.com",
+         type: :A,
+         class: :IN,
+         wdata: ""
+       }
+      iex> encode(q)
+      %DNS.Msg.Qtn{
+         name: "example.com",
+         type: :A,
+         class: :IN,
+         wdata: <<7, "example", 3, "com", 0, 1::16, 1::16>>
+       }
+
+  """
+  @spec encode(t()) :: t()
+  def encode(%__MODULE__{} = qtn) do
+    dname = dname_encode(qtn.name)
+    class = encode_dns_class(qtn.class)
+    type = encode_rr_type(qtn.type)
+    %{qtn | wdata: <<dname::binary, type::16, class::16>>}
+  end
+
   # [[ NEW ]]
 
   @doc """
@@ -135,16 +203,19 @@ defmodule DNS.Msg.Qtn do
         wdata: ""
       }
 
+      iex> new() |> put(name: "example.123")
+      ** (DNS.Msg.Error) [invalid dname] "got: example.123"
+
   """
   @spec put(t(), Keyword.t()) :: t()
   def put(%__MODULE__{} = qtn, opts \\ []),
     do: Enum.reduce(opts, %{qtn | wdata: <<>>}, &do_put/2)
 
   @spec do_put({atom, any}, t()) :: t()
-  defp do_put({k, v}, qtn) when k == :name do
-    if is_binary(v),
+  defp do_put({k, v}, qtn) when k == :name and is_binary(v) do
+    if dname_valid?(v),
       do: Map.put(qtn, k, v),
-      else: error(:evalue, "#{k} not binary, got: #{inspect(v)}")
+      else: error(:edname, "got: #{v}")
   end
 
   defp do_put({k, v}, qtn) when k == :type,
@@ -156,74 +227,6 @@ defmodule DNS.Msg.Qtn do
   # ignore options we donot need or know
   defp do_put(_, qtn),
     do: qtn
-
-  # [[ ENCODE ]]
-
-  @doc """
-  Sets the `:wdata` (wiredata) field of the `Qtn` struct.
-
-  ## Example
-
-      iex> q = new(name: "example.com")
-      %DNS.Msg.Qtn{
-         name: "example.com",
-         type: :A,
-         class: :IN,
-         wdata: ""
-       }
-      iex> encode(q)
-      %DNS.Msg.Qtn{
-         name: "example.com",
-         type: :A,
-         class: :IN,
-         wdata: <<7, "example", 3, "com", 0, 1::16, 1::16>>
-       }
-
-  """
-  @spec encode(t()) :: t()
-  def encode(%__MODULE__{} = qtn) do
-    dname = dname_encode(qtn.name)
-    class = encode_dns_class(qtn.class)
-    type = encode_rr_type(qtn.type)
-    %{qtn | wdata: <<dname::binary, type::16, class::16>>}
-  end
-
-  # [[ DECODE ]]
-
-  @doc """
-  Decode a `Qtn` `t:t/0` struct at given `offset` in `msg`.
-
-  Returns {`new_offset`, `t:t/0`}, where `new_offset` can be used to read the
-  rest of the message.  Uses `DNS.Msg.Fields.dname_decode/2`.
-
-  ## Example
-
-      iex> msg = <<"stuff", 7, "example", 3, "com", 0, 1::16, 1::16, "more stuff">>
-      iex> {offset, qtn} = decode(5, msg)
-      iex> qtn
-      %DNS.Msg.Qtn{
-        name: "example.com",
-        type: :A,
-        class: :IN,
-        wdata: <<7, "example", 3, "com", 0, 1::16, 1::16>>
-      }
-      iex> <<_::binary-size(offset), rest::binary>> = msg
-      iex> rest
-      "more stuff"
-
-  """
-  @spec decode(offset, binary) :: {offset, t()}
-  def decode(offset, msg) do
-    # offset2 - offset might not equal byte_size(name) due to name compression
-    {offset2, name} = dname_decode(offset, msg)
-    <<_::binary-size(offset2), type::16, class::16, _::binary>> = msg
-
-    wdata = :binary.part(msg, {offset, offset2 - offset + 4})
-    qtn = new(name: name, type: type, class: class)
-
-    # new(..) will not set calculated wdata-field
-    {offset2 + 4, %{qtn | wdata: wdata}}
-  end
 end
 
 defimpl Inspect, for: DNS.Msg.Qtn do

@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - [ ] implement List.Chars.to_string
 - [ ] DNS.Msg.Qtn
     - [ ] documentation
-    - [ ] unit tests
+    - [x] unit tests
     - [ ] implement List.Chars.to_string
 - [ ] DNS.Msg.RR
     - [ ] documentation
