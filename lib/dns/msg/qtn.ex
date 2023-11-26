@@ -141,7 +141,7 @@ defmodule DNS.Msg.Qtn do
   # [[ NEW ]]
 
   @doc ~S"""
-  Creates a Qtn `t:t/0` struct for given `name` and `opts`.
+  Creates a `Qtn` `t:t/0` struct for given `opts`.
 
   Options include:
   - `name`, a valid domain name, defaults to ""

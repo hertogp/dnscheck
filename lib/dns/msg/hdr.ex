@@ -6,6 +6,8 @@ defmodule DNS.Msg.Hdr do
 
   Low level functions to create, encode or decode a `Hdr` `t:t/0` struct.
 
+  Its main use is by `DNS.Msg` when creating queries or decoding a reply.
+
   A DNS header consists of 12 bytes containing the following fields:
 
   ```
@@ -55,15 +57,16 @@ defmodule DNS.Msg.Hdr do
             arc: 0,
             wdata: <<>>
 
-  @typedoc """
-  A `bit` is either `0` or `1`.
-  """
+  @typedoc "A `bit` is either `0` or `1`."
   @type bit :: 0 | 1
 
-  @typedoc """
-  A `t:DNS.Msg.Hdr.t/0` struct that represents the first part of a `t:DNS.Msg.t/0` message.
+  @typedoc "A non-negative offset into a DNS message."
+  @type offset :: non_neg_integer
 
-  It fields include:
+  @typedoc """
+  A struct that represents the header of a DNS message.
+
+  Its fields include:
 
   - `id`, set in a request, copied into a reply (links replies to requests)
   - `qr`, set to 0 in a request, to 1 in a reply
@@ -110,13 +113,8 @@ defmodule DNS.Msg.Hdr do
 
   # [[ API ]]
 
-  @typedoc """
-  A non-negative offset into a DNS message's wireformat.
-  """
-  @type offset :: non_neg_integer
-
   @doc """
-  Return `Hdr` `t:t/0` struct in accordance with given `opts`.
+  Creates a `Hdr` `t:t/0` struct for given `opts`.
 
   The default for option-`rd` is `1`, all other options default to
   `0` or `<<>>`.
@@ -127,12 +125,12 @@ defmodule DNS.Msg.Hdr do
     do: Enum.reduce(opts, %__MODULE__{}, &do_put/2)
 
   @doc """
-  Sets a field value with value validation.
+  Sets `t:t/0`-fields for given `opts`, if the key refers to a field.
 
   Raises ArgumentError is value is out of bounds.
 
   Values for fields `opcode:` and `rcode:` can be given as either a
-  numeric value, or their mnemonic atom name (:SERVFAIL)
+  numeric value, or their mnemonic atom name (e.g. :SERVFAIL)
 
   """
   @spec put(t(), Keyword.t()) :: t()
@@ -167,6 +165,10 @@ defmodule DNS.Msg.Hdr do
   defp do_put({_k, _v}, hdr),
     do: hdr
 
+  @doc """
+  Sets the `wdata` (wiredata) field of the `Hdr` struct.
+
+  """
   @spec encode(t) :: t
   def encode(%__MODULE__{} = hdr) do
     hdr
@@ -178,6 +180,10 @@ defmodule DNS.Msg.Hdr do
     )
   end
 
+  @doc """
+  Decodes a `Hdr` `t:t/0` struct at given `offset` in DNS `msg`.
+
+  """
   @spec decode(offset, binary) :: {offset, t}
   def decode(offset, msg) do
     <<_::binary-size(offset), id::16, qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, z::1, ad::1,
