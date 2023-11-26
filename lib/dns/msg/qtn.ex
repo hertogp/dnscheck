@@ -179,11 +179,12 @@ defmodule DNS.Msg.Qtn do
       iex> q.wdata
       <<7, "example", 3, "123", 0, 1::16, 1::16>>
 
-  For convenience, a simple `String.Chars` implementation is available.
+    For convenience, a simple `String.Chars` implementation is available (adds
+    the root dot)
 
       iex> q = new(name: "example.com")
       iex> "#{q}"
-      "example.com\tIN\tA"
+      "example.com.\tIN\tA"
 
   """
   @spec new(Keyword.t()) :: t()
@@ -243,7 +244,7 @@ end
 
 defimpl String.Chars, for: DNS.Msg.Qtn do
   def to_string(qtn),
-    do: "#{qtn.name}\t#{qtn.class}\t#{qtn.type}"
+    do: "#{qtn.name}.\t#{qtn.class}\t#{qtn.type}"
 end
 
 defimpl Inspect, for: DNS.Msg.Qtn do

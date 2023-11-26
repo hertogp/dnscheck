@@ -100,6 +100,6 @@ defmodule DNS.Msg.QtnTest do
 
   test "String.chars implementation" do
     q = new(name: "example.com")
-    assert "example.com\tIN\tA" == "#{q}"
+    assert "example.com.\tIN\tA" == "#{q}"
   end
 end
