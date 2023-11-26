@@ -9,7 +9,7 @@ defmodule DNS.Msg.Qtn do
 
   As per
   [RFC1035](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.2), the
-  question section of a `t:DNS.Msg.t/0` is used to carry the "question" in most
+  question section of a DNS message is used to carry the "question" in most
   queries, i.e., the parameters that define what is being asked.  The section
   contains QDCOUNT (usually 1) entries, each of the following format:
 
@@ -26,7 +26,7 @@ defmodule DNS.Msg.Qtn do
        +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
   ```
 
-  - `NAME`, `n` octets, the domain name being queried, as a length-encoded sequence of labels
+  - `NAME`, `n` octets, the domain name being queried, as a sequence of length-encoded labels
   - `TYPE`, 2 octets, the RR type of the record being queried
   - `CLASS`, 2 octets, the DNS class of the record being queried, usally IN (1)
 
@@ -37,15 +37,19 @@ defmodule DNS.Msg.Qtn do
 
   defstruct name: "", type: :A, class: :IN, wdata: <<>>
 
+  @typedoc "A non negative offset into a DNS message."
   @type offset :: non_neg_integer
-  @type type :: non_neg_integer
-  @type class :: non_neg_integer
+
+  @typedoc "An atom name (if known) or a 16 bit number."
+  @type type :: atom | non_neg_integer
+
+  @typedoc "An atom name (if known) or a 16 bit number."
+  @type class :: atom | non_neg_integer
 
   @typedoc """
-  A `t:DNS.Msg.Qtn.t/0` struct is part of the question section of a
-  `t:DNS.Msg.t/0` message.
+  A struct which represents a single question in a DNS message.
 
-  The fields include:
+  Its fields include:
   - `name`, the domain name being queried (default "")
   - `type`, the type of RR record being queried (default `:A`)
   - `class`, the DNS class of the record being queried, (default `:IN`)
@@ -67,7 +71,7 @@ defmodule DNS.Msg.Qtn do
   # [[ DECODE ]]
 
   @doc """
-  Decode a `Qtn` `t:t/0` struct at given `offset` in `msg`.
+  Decodes a `Qtn` `t:t/0` struct at given `offset` in `msg`.
 
   Returns {`new_offset`, `t:t/0`}, where `new_offset` can be used to read the
   rest of the message.  Uses `DNS.Msg.Fields.dname_decode/2`.
@@ -135,11 +139,11 @@ defmodule DNS.Msg.Qtn do
   # [[ NEW ]]
 
   @doc ~S"""
-  Create a Qtn `t:t/0` struct for given `name` and `opts`.
+  Creates a Qtn `t:t/0` struct for given `name` and `opts`.
 
   Options include:
   - `name`, a valid domain name, defaults to ""
-  - `type`, 16 bit number, defaults to 1 (QUERY)
+  - `type`, 16 bit number, defaults to 1 (A)
   - `class`, 16 bit number, defaults to 1 (IN class)
 
   Any options that are not known or needed are silently ignored.
