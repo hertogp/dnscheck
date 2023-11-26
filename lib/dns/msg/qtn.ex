@@ -7,6 +7,8 @@ defmodule DNS.Msg.Qtn do
 
   Low level functions to create, encode or decode a `Qtn` `t:t/0` struct.
 
+  Its main use is by `DNS.Msg` when creating queries or decoding a reply.
+
   As per
   [RFC1035](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.2), the
   question section of a DNS message is used to carry the "question" in most
