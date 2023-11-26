@@ -102,7 +102,7 @@ defmodule DNS.Msg.Fields do
       ** (DNS.Msg.Error) [:dname] "empty label"
 
   """
-  def dname_to_labels(name) do
+  def dname_to_labels(name) when is_binary(name) do
     labels =
       case name do
         <<>> -> []
@@ -123,6 +123,9 @@ defmodule DNS.Msg.Fields do
 
     labels
   end
+
+  def dname_to_labels(noname),
+    do: error(:dname, "#{inspect(noname)}")
 
   @doc """
   Checks whether a domain name is valid, or not.
@@ -178,7 +181,12 @@ defmodule DNS.Msg.Fields do
         labels == [] ->
           true
 
+        # ascii check
         name != for(<<c <- name>>, c < 128, into: "", do: <<c>>) ->
+          false
+
+        # ldh check, cannot start/end with hyphen though
+        tld != for(<<c <- tld>>, c in @ldh, into: "", do: <<c>>) ->
           false
 
         String.starts_with?(tld, "-") ->
@@ -187,10 +195,8 @@ defmodule DNS.Msg.Fields do
         String.ends_with?(tld, "-") ->
           false
 
+        # tld all numeric?
         tld == for(<<c <- tld>>, c in ?0..?9, into: "", do: <<c>>) ->
-          false
-
-        tld != for(<<c <- tld>>, c in @ldh, into: "", do: <<c>>) ->
           false
 
         true ->
@@ -200,6 +206,9 @@ defmodule DNS.Msg.Fields do
       _ -> false
     end
   end
+
+  def dname_valid?(_),
+    do: false
 
   @doc """
   Encode a domain name as a length-encoded binary string.
@@ -237,6 +246,9 @@ defmodule DNS.Msg.Fields do
     |> Kernel.<>(<<0>>)
   end
 
+  def dname_encode(noname),
+    do: error(:edname, "#{inspect(noname)}")
+
   @doc """
   Given a domain name, reverse its labels.
 
@@ -256,7 +268,7 @@ defmodule DNS.Msg.Fields do
 
   """
   @spec dname_reverse(binary) :: binary
-  def dname_reverse(name) do
+  def dname_reverse(name) when is_binary(name) do
     name =
       case name do
         <<>> -> [name]
@@ -270,4 +282,7 @@ defmodule DNS.Msg.Fields do
 
     name
   end
+
+  def dname_reverse(noname),
+    do: error(:dname, "#{inspect(noname)}")
 end

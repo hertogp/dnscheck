@@ -212,7 +212,7 @@ defmodule DNS.Msg.Qtn do
     do: Enum.reduce(opts, %{qtn | wdata: <<>>}, &do_put/2)
 
   @spec do_put({atom, any}, t()) :: t()
-  defp do_put({k, v}, qtn) when k == :name and is_binary(v) do
+  defp do_put({k, v}, qtn) when k == :name do
     if dname_valid?(v),
       do: Map.put(qtn, k, v),
       else: error(:edname, "got: #{v}")
