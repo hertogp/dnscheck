@@ -137,15 +137,13 @@ defmodule DNS.Msg.Qtn do
   @doc """
   Create a Qtn `t:t/0` struct for given `name` and `opts`.
 
-  The `name` is assumed to be a length encoded binary domain name.
-
   Options include:
-  - `name`, defaults to ""
-  - `type`, defaults to 1 (QUERY)
-  - `class`, defaults to 1 (IN class)
+  - `name`, a valid domain name, defaults to ""
+  - `type`, 16 bit number, defaults to 1 (QUERY)
+  - `class`, 16 bit number, defaults to 1 (IN class)
 
   Any options that are not known or needed are silently ignored.
-  Note that this cannot be used to set the `wdata` field
+  Note that this cannot be used to set the `wdata` field.
 
   ## Examples
 
@@ -165,13 +163,21 @@ defmodule DNS.Msg.Qtn do
         wdata: ""
       }
 
-      iex> new(name: "example.com", type: :AAAA)
-      %DNS.Msg.Qtn{
-        name: "example.com",
-        type: :AAAA,
-        class: :IN,
-        wdata: ""
-      }
+  `new/1` will raise on errors to help prevent creating malformed DNS messages
+  that would only result in `FORMERROR`'s.
+
+      iex> new(name: "example.123")
+      ** (DNS.Msg.Error) [invalid dname] "example.123"
+
+  But if you want to see how nameservers respond to illegal names, you can set
+  the name manually before encoding, since `encode/1` uses `DNS.Msg.Fields.dname_encode/1` which
+  checks only for name/label lengths.
+
+      iex> q = %{new() | name: "example.123"}
+      %DNS.Msg.Qtn{name: "example.123", type: :A, class: :IN, wdata: ""}
+      iex> q = encode(q)
+      iex> q.wdata
+      <<7, "example", 3, "123", 0, 1::16, 1::16>>
 
   """
   @spec new(Keyword.t()) :: t()
@@ -204,7 +210,7 @@ defmodule DNS.Msg.Qtn do
       }
 
       iex> new() |> put(name: "example.123")
-      ** (DNS.Msg.Error) [invalid dname] "got: example.123"
+      ** (DNS.Msg.Error) [invalid dname] "example.123"
 
   """
   @spec put(t(), Keyword.t()) :: t()
@@ -215,7 +221,7 @@ defmodule DNS.Msg.Qtn do
   defp do_put({k, v}, qtn) when k == :name do
     if dname_valid?(v),
       do: Map.put(qtn, k, v),
-      else: error(:edname, "got: #{v}")
+      else: error(:edname, "#{v}")
   end
 
   defp do_put({k, v}, qtn) when k == :type,
