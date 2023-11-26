@@ -134,7 +134,7 @@ defmodule DNS.Msg.Qtn do
 
   # [[ NEW ]]
 
-  @doc """
+  @doc ~S"""
   Create a Qtn `t:t/0` struct for given `name` and `opts`.
 
   Options include:
@@ -178,6 +178,12 @@ defmodule DNS.Msg.Qtn do
       iex> q = encode(q)
       iex> q.wdata
       <<7, "example", 3, "123", 0, 1::16, 1::16>>
+
+  For convenience, a simple `String.Chars` implementation is available.
+
+      iex> q = new(name: "example.com")
+      iex> "#{q}"
+      "example.com\tIN\tA"
 
   """
   @spec new(Keyword.t()) :: t()
@@ -233,6 +239,11 @@ defmodule DNS.Msg.Qtn do
   # ignore options we donot need or know
   defp do_put(_, qtn),
     do: qtn
+end
+
+defimpl String.Chars, for: DNS.Msg.Qtn do
+  def to_string(qtn),
+    do: "#{qtn.name}\t#{qtn.class}\t#{qtn.type}"
 end
 
 defimpl Inspect, for: DNS.Msg.Qtn do

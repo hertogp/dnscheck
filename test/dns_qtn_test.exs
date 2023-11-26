@@ -97,4 +97,9 @@ defmodule DNS.Msg.QtnTest do
     assert_raise DNS.Msg.Error, fn -> put(q, type: 65536) end
     assert_raise DNS.Msg.Error, fn -> put(q, class: 65536) end
   end
+
+  test "String.chars implementation" do
+    q = new(name: "example.com")
+    assert "example.com\tIN\tA" == "#{q}"
+  end
 end
