@@ -42,7 +42,7 @@ defmodule DNS.Msg.Hdr do
   """
   defstruct id: 0,
             qr: 0,
-            opcode: 0,
+            opcode: :QUERY,
             aa: 0,
             tc: 0,
             rd: 1,
@@ -50,7 +50,7 @@ defmodule DNS.Msg.Hdr do
             z: 0,
             ad: 0,
             cd: 0,
-            rcode: 0,
+            rcode: :NOERROR,
             qdc: 0,
             anc: 0,
             nsc: 0,
@@ -117,7 +117,37 @@ defmodule DNS.Msg.Hdr do
   Creates a `Hdr` `t:t/0` struct for given `opts`.
 
   The default for option-`rd` is `1`, all other options default to
-  `0` or `<<>>`.
+  `0` or `<<>>`.  Raises when given improper values for a given field.
+
+  Note that in the `Hdr` `t:t/0` struct, both `opcode` and `rcode` are
+  4 bit fields which limits what can be assigned.
+
+  ## Examples
+
+      # new won't touch wdata, even when asked
+      iex> new(wdata: "ignored")
+      %DNS.Msg.Hdr{
+        id: 0,
+        qr: 0,
+        opcode: :QUERY,
+        aa: 0,
+        tc: 0,
+        rd: 1,
+        ra: 0,
+        z: 0,
+        ad: 0,
+        cd: 0,
+        rcode: :NOERROR,
+        qdc: 0,
+        anc: 0,
+        nsc: 0,
+        arc: 0,
+        wdata: ""
+      }
+
+      iex> new(opcode: 16)
+      ** (DNS.Msg.Error) [invalid opcode] "valid range is 0..15, got: 16"
+
 
   """
   @spec new(Keyword.t()) :: t()
@@ -127,10 +157,42 @@ defmodule DNS.Msg.Hdr do
   @doc """
   Sets `t:t/0`-fields for given `opts`, if the key refers to a field.
 
-  Raises ArgumentError is value is out of bounds.
+  Raises `DNS.Msg.Error` if a value is out of bounds.
 
-  Values for fields `opcode:` and `rcode:` can be given as either a
-  numeric value, or their mnemonic atom name (e.g. :SERVFAIL)
+  Values for fields `opcode:` and `rcode:` can be given as either a numeric
+  value, or their mnemonic atom name (e.g. :SERVFAIL).  See
+  `DNS.Msg.Terms.encode_dns_opcode/1` and `DNS.Msg.Terms.encode_dns_rcode/1`
+  for known names.  Note that in a header `rcode` is limited to the range of
+  0..15.
+
+  Ignores `:wdata` since that should be set via `encode/1`, which is called
+  by `DNS.Msg.encode/1` when constructing the wire format of a DNS message.
+
+  ## Examples
+
+      iex> new() |> put(qr: 1, opcode: :QUERY, rcode: 3, wdata: "ignored")
+      %DNS.Msg.Hdr{
+        id: 0,
+        qr: 1,
+        opcode: :QUERY,
+        aa: 0,
+        tc: 0,
+        rd: 1,
+        ra: 0,
+        z: 0,
+        ad: 0,
+        cd: 0,
+        rcode: :NXDOMAIN,
+        qdc: 0,
+        anc: 0,
+        nsc: 0,
+        arc: 0,
+        wdata: ""
+      }
+
+      # in a header, an rcode should fit in 4 bites
+      iex> new() |> put(rcode: 16)
+      ** (DNS.Msg.Error) [invalid (x)rcode] "valid range is 0..15, got: 16"
 
   """
   @spec put(t(), Keyword.t()) :: t()
@@ -145,47 +207,91 @@ defmodule DNS.Msg.Hdr do
   defp do_put({k, v}, hdr) when k in [:qr, :aa, :tc, :rd, :ra, :z, :ad, :cd] do
     if v in 0..1,
       do: Map.put(hdr, k, v),
-      else: error(:evalue, "bit field #{k} not in 0..1, got #{inspect(v)}")
+      else: error(:evalue, "Hdr.#{k} valid range 0..1,  got: #{inspect(v)}")
   end
 
+  # opcode & rcode store atom's if possible, numbers otherwise
+  # in case we have a valid value, but no known name
   defp do_put({k, v}, hdr) when k == :opcode,
     do: Map.put(hdr, k, decode_dns_opcode(v))
 
-  defp do_put({k, v}, hdr) when k == :rcode,
-    do: Map.put(hdr, k, decode_dns_rcode(v))
+  defp do_put({k, v}, hdr) when k == :rcode do
+    # encode_dns_rcode accepts extended rcodes as well, so check for v in 0..15
+    if encode_dns_rcode(v) in 0..15,
+      do: Map.put(hdr, k, decode_dns_rcode(v)),
+      else: error(:ercode, "valid range is 0..15, got: #{inspect(v)}")
+  end
 
   # check 16bit values
   defp do_put({k, v}, hdr) when k in [:id, :qdc, :anc, :nsc, :arc] do
     if v in 0..65535,
       do: Map.put(hdr, k, v),
-      else: error(:evalue, "DNS.Msg.Hdr field #{k} not in 0..65535, got #{inspect(v)}")
+      else: error(:evalue, "Hdr #{k} valid range 0..65535, got #{inspect(v)}")
   end
 
-  # silently ignore other crap
+  # silently ignore unknown options
   defp do_put({_k, _v}, hdr),
     do: hdr
 
   @doc """
   Sets the `wdata` (wiredata) field of the `Hdr` struct.
 
+  ## Example
+
+      iex> h = new(qr: 1, rcode: :NXDOMAIN) |> encode()
+      iex> h.wdata
+      <<0, 0, 129, 3, 0, 0, 0, 0, 0, 0, 0, 0>>
+
   """
   @spec encode(t) :: t
   def encode(%__MODULE__{} = hdr) do
+    opcode = encode_dns_opcode(hdr.opcode)
+    rcode = encode_dns_rcode(hdr.rcode)
+
     hdr
     |> Map.put(
       :wdata,
-      <<hdr.id::16, hdr.qr::1, hdr.opcode::4, hdr.aa::1, hdr.tc::1, hdr.rd::1, hdr.ra::1,
-        hdr.z::1, hdr.ad::1, hdr.cd::1, hdr.rcode::4, hdr.qdc::16, hdr.anc::16, hdr.nsc::16,
-        hdr.arc::16>>
+      <<hdr.id::16, hdr.qr::1, opcode::4, hdr.aa::1, hdr.tc::1, hdr.rd::1, hdr.ra::1, hdr.z::1,
+        hdr.ad::1, hdr.cd::1, rcode::4, hdr.qdc::16, hdr.anc::16, hdr.nsc::16, hdr.arc::16>>
     )
   end
 
   @doc """
   Decodes a `Hdr` `t:t/0` struct at given `offset` in DNS `msg`.
 
+  Upon success, returns {`new_offset`, `t:t/0`}, where `new_offset` can be used
+  to read the rest of the message (if any).  The `wdata`-field is set to the series
+  of octets read during decoding.
+
+  Given `offset` defaults to `0`, since the header is normally found at the start of
+  a DNS message.
+
+  ## Example
+
+      iex> decode(<<0, 0, 129, 3, 0, 0, 0, 0, 0, 0, 0, 0>>)
+      {12,
+       %DNS.Msg.Hdr{
+         id: 0,
+         qr: 1,
+         opcode: :QUERY,
+         aa: 0,
+         tc: 0,
+         rd: 1,
+         ra: 0,
+         z: 0,
+         ad: 0,
+         cd: 0,
+         rcode: :NXDOMAIN,
+         qdc: 0,
+         anc: 0,
+         nsc: 0,
+         arc: 0,
+         wdata: <<0, 0, 129, 3, 0, 0, 0, 0, 0, 0, 0, 0>>
+       }}
+
   """
   @spec decode(offset, binary) :: {offset, t}
-  def decode(offset, msg) do
+  def decode(offset \\ 0, msg) do
     <<_::binary-size(offset), id::16, qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, z::1, ad::1,
       cd::1, rcode::4, qdc::16, anc::16, nsc::16, arc::16, _::binary>> = msg
 
@@ -193,7 +299,7 @@ defmodule DNS.Msg.Hdr do
       new(
         id: id,
         qr: qr,
-        opcode: opcode,
+        opcode: decode_dns_opcode(opcode),
         aa: aa,
         tc: tc,
         rd: rd,
@@ -201,7 +307,7 @@ defmodule DNS.Msg.Hdr do
         z: z,
         ad: ad,
         cd: cd,
-        rcode: rcode,
+        rcode: decode_dns_rcode(rcode),
         qdc: qdc,
         anc: anc,
         nsc: nsc,

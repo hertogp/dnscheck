@@ -69,7 +69,7 @@ defmodule DNS.Msg do
         header: %DNS.Msg.Hdr{
           id: 0,
           qr: 0,
-          opcode: 0,
+          opcode: :QUERY,
           aa: 0,
           tc: 0,
           rd: 1,
@@ -77,7 +77,7 @@ defmodule DNS.Msg do
           z: 0,
           ad: 0,
           cd: 0,
-          rcode: 0,
+          rcode: :NOERROR,
           qdc: 1,
           anc: 0,
           nsc: 0,

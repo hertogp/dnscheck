@@ -7,8 +7,11 @@ defmodule Dnscheck do
 
   """
   def resolve(name, type, opts \\ []) do
-    nameservers = Keyword.get(opts, :nameservers, [{{8, 8, 8, 8}, 53}])
+    opts =
+      opts
+      |> Keyword.put(:nameservers, [{{8, 8, 8, 8}, 53}])
+      |> Keyword.put(:edns, 0)
 
-    :inet_res.resolve(name, :in, type, edns: 0, dnssec_ok: true, nameservers: nameservers)
+    :inet_res.resolve(name, :in, type, opts)
   end
 end
