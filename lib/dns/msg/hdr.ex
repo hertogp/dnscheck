@@ -155,7 +155,7 @@ defmodule DNS.Msg.Hdr do
     do: Enum.reduce(opts, %__MODULE__{}, &do_put/2)
 
   @doc """
-  Sets `t:t/0`-fields for given `opts`, if the key refers to a field.
+  Sets `Hdr` `t:t/0` fields for given `opts`, if the key refers to a field.
 
   Raises `DNS.Msg.Error` if a value is out of bounds.
 
@@ -190,7 +190,7 @@ defmodule DNS.Msg.Hdr do
         wdata: ""
       }
 
-      # in a header, an rcode should fit in 4 bites
+      # in a header, an rcode value should fit in 4 bites
       iex> new() |> put(rcode: 16)
       ** (DNS.Msg.Error) [invalid (x)rcode] "valid range is 0..15, got: 16"
 
@@ -234,7 +234,7 @@ defmodule DNS.Msg.Hdr do
     do: hdr
 
   @doc """
-  Sets the `wdata` (wiredata) field of the `Hdr` struct.
+  Sets the `:wdata` (wiredata) field of the `Hdr` `t:t/0` struct.
 
   ## Example
 

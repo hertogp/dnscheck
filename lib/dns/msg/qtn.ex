@@ -75,8 +75,9 @@ defmodule DNS.Msg.Qtn do
   @doc """
   Decodes a `Qtn` `t:t/0` struct at given `offset` in `msg`.
 
-  Returns {`new_offset`, `t:t/0`}, where `new_offset` can be used to read the
-  rest of the message.  Uses `DNS.Msg.Fields.dname_decode/2`.
+  Upon success, returns {`new_offset`, `t:t/0`}, where `new_offset` can be used
+  to read the rest of the message (if any).  The `wdata`-field is set to the series
+  of octets read during decoding.
 
   ## Example
 
@@ -110,7 +111,7 @@ defmodule DNS.Msg.Qtn do
   # [[ ENCODE ]]
 
   @doc """
-  Sets the `:wdata` (wiredata) field of the `Qtn` struct.
+  Sets the `:wdata` (wiredata) field of the `Qtn` `t:t/0` struct.
 
   ## Example
 
@@ -200,9 +201,12 @@ defmodule DNS.Msg.Qtn do
   # [[ PUT ]]
 
   @doc """
-  Sets `t:t/0`-field(s) for given `opts`, if the key refers to a field.
+  Sets `Qtn` `t:t/0` fields for given `opts`, if the key refers to a field.
 
-  Ignores unknown keys.
+  Raises `DNS.Msg.Error` if a value is out of bounds.
+
+  Ignores `:wdata` since that should be set via `encode/1`, which is called
+  by `DNS.Msg.encode/1` when constructing the wire format of a DNS message.
 
   ## Examples
 
