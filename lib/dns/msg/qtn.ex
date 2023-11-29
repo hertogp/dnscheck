@@ -42,10 +42,10 @@ defmodule DNS.Msg.Qtn do
   @typedoc "A non negative offset into a DNS message."
   @type offset :: non_neg_integer
 
-  @typedoc "An atom name (if known) or a 16 bit number."
+  @typedoc "The DNS RR's type, either a number or a [known name](`DNS.Msg.Terms.encode_rr_type/1`)"
   @type type :: atom | non_neg_integer
 
-  @typedoc "An atom name (if known) or a 16 bit number."
+  @typedoc "The DNS RR's class, either a number or a [known name](`DNS.Msg.Terms.encode_dns_class/1`)"
   @type class :: atom | non_neg_integer
 
   @typedoc """

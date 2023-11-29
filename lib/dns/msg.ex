@@ -102,7 +102,7 @@ defmodule DNS.Msg do
             ttl: 32768,
             rdlen: 0,
             rdata: "",
-            rdmap: %{bufsize: 1410, do: 1, opts: [], version: 0, xrcode: 0, z: 0},
+            rdmap: %{bufsize: 1410, do: 1, opts: [], version: 0, xrcode: :NOERROR, z: 0},
             wdata: ""
           }
         ],
@@ -144,7 +144,7 @@ defmodule DNS.Msg do
   # [[ ENCODE MSG ]]
 
   @doc """
-  Sets `wdata`-fields of the `t:Msg.t/0` sections .
+  Sets `wdata`-field of the `Msg` `t:t/0` struct and its sections.
   """
   @spec encode(t) :: t
   def encode(msg) do

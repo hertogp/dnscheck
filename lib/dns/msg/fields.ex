@@ -16,14 +16,14 @@ defmodule DNS.Msg.Fields do
   defp do_labels(a, l, <<?.>>), do: add_label(a, l)
   defp do_labels(a, l, <<?., rest::binary>>), do: do_labels(add_label(a, l), <<>>, rest)
   defp do_labels(a, l, <<c::8, rest::binary>>), do: do_labels(a, <<l::binary, c::8>>, rest)
-  defp add_label(_a, l) when byte_size(l) > 63, do: error(:dname, "label > 63")
-  defp add_label(_a, l) when byte_size(l) < 1, do: error(:dname, "empty label")
+  defp add_label(_a, l) when byte_size(l) > 63, do: error(:edname, "label > 63")
+  defp add_label(_a, l) when byte_size(l) < 1, do: error(:edname, "empty label")
   defp add_label(a, l), do: [l | a]
 
   # [[ DNAME ]]
 
   @doc """
-  Decode a length-encoded domain name from given `msg` binary, starting at the zero-based `offset`.
+  Decodes a length-encoded domain name from given `msg` binary, starting at the zero-based `offset`.
 
   Returns `{new_offset, name}`, if successful.  The `new_offset` can be used to
   read more stuff from the binary.
@@ -73,7 +73,7 @@ defmodule DNS.Msg.Fields do
   end
 
   @doc """
-  Given a domain name, return its labels in a list.
+  Creates a list of labels for Given a domain `name`.
 
   An error is raised when:
   - the name exceeds 255 characters, or
@@ -99,7 +99,7 @@ defmodule DNS.Msg.Fields do
       []
 
       iex> dname_to_labels(".example.com")
-      ** (DNS.Msg.Error) [:dname] "empty label"
+      ** (DNS.Msg.Error) [invalid dname] "empty label"
 
   """
   def dname_to_labels(name) when is_binary(name) do
@@ -125,10 +125,10 @@ defmodule DNS.Msg.Fields do
   end
 
   def dname_to_labels(noname),
-    do: error(:dname, "#{inspect(noname)}")
+    do: error(:edname, "#{inspect(noname)}")
 
   @doc """
-  Checks whether a domain name is valid, or not.
+  Checks whether a domain `name` is valid, or not.
 
   This checks for the following:
   - name's length is in 0..253
@@ -156,9 +156,6 @@ defmodule DNS.Msg.Fields do
        false
 
        iex> dname_valid?("example.-om")
-       false
-
-       iex> dname_valid?("example.co-")
        false
 
        iex> dname_valid?("example..com")
@@ -211,7 +208,7 @@ defmodule DNS.Msg.Fields do
     do: false
 
   @doc """
-  Encode a domain name as a length-encoded binary string.
+  Encodes a domain `name` as a length-encoded binary string.
 
   An argument error will be raised when:
   - the name length exceeds 255 characters (ignoring any trailing '.')
@@ -238,8 +235,8 @@ defmodule DNS.Msg.Fields do
   """
   # https://www.rfc-editor.org/rfc/rfc1035, sec 2.3.1, 3.1
   @spec dname_encode(binary) :: binary
-  def dname_encode(dname) when is_binary(dname) do
-    dname
+  def dname_encode(name) when is_binary(name) do
+    name
     |> dname_to_labels()
     |> Enum.map(fn label -> <<String.length(label)::8, label::binary>> end)
     |> Enum.join()
@@ -250,7 +247,7 @@ defmodule DNS.Msg.Fields do
     do: error(:edname, "#{inspect(noname)}")
 
   @doc """
-  Given a domain name, reverse its labels.
+  Reverses the labels for given a domain `name`.
 
   Raises an error if the name is too long or has empty labels.
 
@@ -264,7 +261,7 @@ defmodule DNS.Msg.Fields do
       "com.example"
 
       iex> dname_reverse(".example.com")
-      ** (DNS.Msg.Error) [:dname] "empty label"
+      ** (DNS.Msg.Error) [invalid dname] "empty label"
 
   """
   @spec dname_reverse(binary) :: binary
@@ -278,11 +275,11 @@ defmodule DNS.Msg.Fields do
       |> Enum.join(".")
 
     if String.length(name) > 253,
-      do: error(:dname, "name > 253 characters")
+      do: error(:edname, "name > 253 characters")
 
     name
   end
 
   def dname_reverse(noname),
-    do: error(:dname, "#{inspect(noname)}")
+    do: error(:edname, "#{inspect(noname)}")
 end

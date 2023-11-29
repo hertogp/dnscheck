@@ -25,6 +25,7 @@ defmodule Dnscheck.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:pfx, "~> 0.14"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:benchee, "~> 1.0", only: :dev, runtime: false},

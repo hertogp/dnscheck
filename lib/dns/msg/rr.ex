@@ -1,38 +1,54 @@
 defmodule DNS.Msg.RR do
-  # used in Answer, Authority, and Additional sections
-  # Each RR (resource record) has the following format:
-  #                                     1  1  1  1  1  1
-  #       0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                                               |
-  #     /                                               /
-  #     /                      NAME                     /
-  #     |                                               |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                      TYPE                     |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                     CLASS                     |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                      TTL                      |
-  #     |                                               |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  #     |                     RDLEN                     |
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--|
-  #     /                     RDATA                     /
-  #     /                                               /
-  #     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-  # where:
-  # - NAME     a length encoded owner domain name
-  # - TYPE     16b, an RR TYPE code
-  # - CLASS    16b, an RR CLASS code
-  # - TTL      32b *signed* integer indicating max cache time
-  #            TTL=0 means no caching: i.e. use RR only in current transaction
-  # - RDLEN    16b, unsigned integer, is length in octets of the RDATA field.
-  # - RDATA    depends on the TYPE/CLASS
+  @moduledoc """
+  Low level functions to create, encode or decode an `RR` `t:t/0` struct.
+
+  Resource Records (RRs) are found in the Answer, Authority, and Additional
+  sections of a DNS message.
+
+  Each RR has the following format:
+
+  ```
+         0  1  2  3  4  5  6  7  8  9  0 11 12 13 14 15
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       /                      NAME                     /
+       /                                               /
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       |                      TYPE                     |
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       |                     CLASS                     |
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       |                      TTL                      |
+       |                                               |
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+       |                     RDLEN                     |
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--|
+       /                     RDATA                     /
+       /                                               /
+       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  ```
+  where:
+  - `NAME`,     is a length encoded owner domain name
+  - `TYPE`,     is a 16 bit unsigned integer, an RR TYPE code
+  - `CLASS`,    is a 16 bit unsigned integer, usually an RR CLASS code
+  - `TTL`,      is a 32 bit *signed* integer, indicating max cache time
+  - `RDLEN`,    is a 16 bit unsigned integer, the length in octets of the RDATA field.
+  - `RDATA`,    interpretation depends on the RR TYPE and CLASS
+
+  """
+
+  # TODO:
+  # - add rfc references
+  # - https://www.rfc-editor.org/rfc/rfc5890 (Internationlized Domain Names for
+  #   Applications (IDNA)
+  # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
+  # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
+  # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
 
   import DNS.Msg.Terms
   import DNS.Msg.Fields
   alias DNS.Msg.Error
+
+  @user DNS.Msg.RR.User
 
   defstruct name: "",
             type: :A,
@@ -43,31 +59,30 @@ defmodule DNS.Msg.RR do
             rdata: <<>>,
             wdata: <<>>
 
+  @typedoc "The DNS RR's class, either a number or a [known name](`DNS.Msg.Terms.encode_dns_class/1`)"
   @type class :: atom | non_neg_integer
-  @type type :: atom
+
+  @typedoc "The DNS RR's type, either a number or a [known name](`DNS.Msg.Terms.encode_rr_type/1`)"
+  @type type :: atom | non_neg_integer
+
+  @typedoc "A non negative offset into a DNS message."
   @type offset :: non_neg_integer
+
+  @typedoc "a non negative number indicating the length of `rdata`"
   @type length :: non_neg_integer
 
   @typedoc """
-  A `t:DNS.Msg.RR.t/0` represents a single DNS RR (resource record).
+  A `RR` `t:t/0` struct represents a single DNS RR (resource record).
 
   It's fields are:
-  - `name`, the owner's domain name
-  - `type`, the RR type (default :A)
-  - `class`, the DNS class (default :IN)
+  - `name`, the owner's domain name (default "")
+  - `type`, the RR type (default `:A`)
+  - `class`, the DNS class (default `:IN`)
   - `ttl`, the time-to-live for this RR (default 0)
-  - `rdmap`, contains the (decoded) key,value-pairs of `rdata` (defaults `%{}`)
+  - `rdmap`, contains the (decoded) key,value-pairs of `rdata` (default `%{}`)
   - `rdlen`, the number of octets in the `rdata` field (default 0)
-  - `rdata`, RR's rdata in wireformat (defaults to <<>>)
-  - `wdata`, the RR's wireformat binary (defaults to <<>>)
-
-  The `rdlen`, `rdata` and `wdata` fields are calculated and cannot be set via
-  `put/1`, rather they are either taken from the wireformat binary when
-  decoding or calculated from the rdmap's key,value-pairs when encoding an RR.
-
-  Note that although `class` is a field in the `t:DNS.Msg.RR.t/0` struct, only `:IN`
-  is supported.  Futhermore, in an EDNS0 pseudo-RR `:OPT` the value of class
-  actually denotes the requestor's udp receive buffer size.
+  - `rdata`, RR's rdata in wireformat (default `<<>>`)
+  - `wdata`, the RR's wireformat binary (default `<<>>`)
 
   """
   @type t :: %__MODULE__{
@@ -75,16 +90,24 @@ defmodule DNS.Msg.RR do
           type: type,
           class: class,
           ttl: non_neg_integer,
-          rdlen: non_neg_integer,
           rdmap: map,
+          rdlen: non_neg_integer,
           rdata: binary,
           wdata: binary
         }
+
+  # [[ GUARDS ]]
+
+  defguardp is_u8(n) when n in 0..255
+  defguardp is_u16(n) when n in 0..65535
+  defguardp is_u32(n) when n in 0..4_294_967_295
+  defguardp is_s32(n) when n in -2_147_483_648..2_147_483_647
 
   # [[ HELPERS ]]
   defp error(reason, data),
     do: raise(Error.exception(reason: reason, data: data))
 
+  # NSEC (3) bitmap conversion to list of RR type numbers
   defp to_num(_, <<>>, _, acc),
     do: acc |> Enum.reverse()
 
@@ -102,18 +125,147 @@ defmodule DNS.Msg.RR do
     |> List.flatten()
   end
 
+  # used to check rdmap for mandatory fields when encoding an RR
+  # convencience func that also gives consistent, clear error messages
+  defp required(type, map, field, check \\ fn _ -> true end) do
+    v = Map.get(map, field) || error(:erdmap, "#{type} RR missing #{field}, got: #{inspect(map)}")
+
+    if check.(v),
+      do: v,
+      else: error(:erdmap, "#{type} RR, got: #{inspect(map)}")
+  end
+
   # [[ NEW ]]
 
+  @doc """
+  Creates an `RR` `t:t/0` struct for given `opts`.
+
+  Known options include:
+  - `:name`, must be a binary (default `""`)
+  - `:type`, an [atom](`DNS.Msg.Terms.encode_rr_type/1`) or an unsigned 16 bit number (default `:A`)
+  - `:class`, an [atom](`DNS.Msg.Terms.encode_dns_class/1`) or an unsigned 16 bit number (default `:IN`)
+  - `:ttl`, a signed 32 bit integer (default `0`)
+  - `:rdmap`, a map with `key,value`-pairs (to be encoded later, default `%{}`)
+
+  Anything else is silently ignored, including `:rdlen`, `:rdata` and `:wdata`
+  since those fields are set when decoding a DNS message or encoding an RR
+  struct.  The `:rdmap`, if provided, is set as-is.  Its `key,value`-pairs
+  are checked upon invoking `encode/1`.
+
+  The `:type` option takes either a number or a known [name](`DNS.Msg.Terms.encode_rr_type/1`).
+  A number will be replaced by its known name (if possible), which makes it
+  easier when inspecting an RR. The same holds true for `:class`
+  [names](`DNS.Msg.Terms.encode_dns_class/1`).
+
+  ## [EDNS0](https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2)
+
+  The EDNS0 pseudo-RR (type: :OPT (41)) is a little bit different and
+  recognizes only these options:
+
+  - `:xrcode`, an 8 bit unsigned integer (or known [name](`DNS.Msg.Terms.encode_dns_rcode/1`), default 0)
+  - `:version`, an 8 bit unsigned integer (default 0)
+  - `:do`, EDNS0's DNSSEC OK bit, either 0 or 1 (default 1).
+  - `:z`, a 15 bit unsigned integer (default 0)
+  - `:bufsize`, 16 bit unsigned integer denoting requestor's udp recv buffer size (default 1410)
+  - `:opts`, a list of `[{code, rdata}]` options.
+
+  The first 4 options are encoded in the pseudo-RR's `:ttl`-field.
+  The `:bufsize` option is stored in the pseudo-RR's `:class`-field.
+
+  Some [EDNS0
+  options](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
+  can also be specified by [name](`DNS.Msg.Terms.encode_rropt_code/1`) but only
+  a small set is currently supported by this library: `:NSID`, `COOKIE` and `EXPIRE`.
+
+  These options are also listed in the RR's `rdmap`, even though they're not part
+  of the pseudo-RR's `rdata`.
+
+
+  ## Examples
+
+      # default values, while ignoring some fields
+      iex> new(rdata: "ignored", wdata: "ignored", unknown: "ignored")
+      %DNS.Msg.RR{
+        name: "",
+        type: :A,
+        class: :IN,
+        ttl: 0,
+        rdlen: 0,
+        rdmap: %{},
+        rdata: "",
+        wdata: ""
+      }
+
+      iex> new(type: :AAAA, name: "example.com", rdmap: %{ip: "acdc:1971::1"})
+      %DNS.Msg.RR{
+        name: "example.com",
+        type: :AAAA,
+        class: :IN,
+        ttl: 0,
+        rdlen: 0,
+        rdmap: %{ip: "acdc:1971::1"},
+        rdata: "",
+        wdata: ""
+      }
+
+      # EDNS0 pseudo-RR
+      iex> new(type: :OPT, bufsize: 1410, xrcode: 16, do: 1)
+      %DNS.Msg.RR{
+        name: "",
+        type: :OPT,
+        class: 1410,
+        ttl: 268468224,
+        rdlen: 0,
+        rdmap: %{bufsize: 1410, do: 1, opts: [], version: 0, xrcode: :BADVERS, z: 0},
+        rdata: "",
+        wdata: ""
+      }
+
+      iex> new(name: 123)
+      ** (DNS.Msg.Error) [invalid dname] "123"
+
+  """
   @spec new(Keyword.t()) :: t
   def new(opts \\ []),
     do: put(%__MODULE__{}, opts)
 
   # [[ PUT ]]
+
+  @doc """
+  Sets `RR` `t:t/0` fields for given `opts`, if the key refers to a field.
+
+  Ignores unknown options as well as the `rdlen`, `rdata` and `wdata` options.
+  Those fields are set upon decoding a DNS message binary or when encoding an
+  RR struct.  Note that whenever `put/2` is used, the `rdlen`, `rdata` and
+  `wdata` fields are cleared.
+
+  Raises `DNS.Msg.Error` if a value is out of bounds.
+
+  See `new/1` for possible options and when using `type: 41` as an option.
+
+  ## Examples
+
+      iex> new() |> put(name: "example.com", type: :NS)
+      %DNS.Msg.RR{
+        name: "example.com",
+        type: :NS,
+        class: :IN,
+        ttl: 0,
+        rdlen: 0,
+        rdmap: %{},
+        rdata: "",
+        wdata: ""
+      }
+
+      iex> new() |> put(type: 65536)
+      ** (DNS.Msg.Error) [invalid RR type] "valid range is 0..65535, got: 65536"
+
+  """
   @spec put(t(), Keyword.t()) :: t
   def put(rr, opts)
 
   def put(%__MODULE__{} = rr, opts) do
-    # ensure decode_rdata func's can match on type as an atom
+    # ensure (native) decode_rdata func's can match on type as an atom
     {type, opts} = Keyword.pop(opts, :type, rr.type)
     type = decode_rr_type(type)
 
@@ -126,47 +278,46 @@ defmodule DNS.Msg.RR do
       else: Enum.reduce(opts, %{rr | rdata: <<>>, wdata: <<>>, rdlen: 0}, &do_put/2)
   end
 
-  # skip calculated fields
+  # skip calculated fields, note: :type is popped in put/2
   defp do_put({k, _v}, rr) when k in [:__struct__, :rdlen, :rdata, :wdata],
     do: rr
 
-  # bypass for OPT RR whose dname="" and class=bufsize, ttl=coded flags
-  # defp do_put({k, v}, %__MODULE__{type: 41} = rr),
-  #   do: Map.put(rr, k, v)
-
   defp do_put({k, v}, rr) when k == :name do
-    # TODO: make & use dname_valid?(v)
-    # - OPT RR has root name (either "" or "."), so need to accomodate that
-    # - query might have rd=1 and request NS's for "."
-    Map.put(rr, k, v)
+    if dname_valid?(v),
+      do: Map.put(rr, k, v),
+      else: error(:edname, "#{inspect(v)}")
   end
 
-  defp do_put({k, v}, rr) when k == :type,
-    do: Map.put(rr, k, decode_rr_type(v))
-
-  defp do_put({k, v}, rr) when k == :class,
-    do: Map.put(rr, k, decode_dns_class(v))
+  defp do_put({k, v}, rr) when k == :class do
+    if is_u16(encode_dns_class(v)),
+      do: Map.put(rr, k, decode_dns_class(v)),
+      else: error(:evalue, "#{k}, got: #{inspect(v)}")
+  end
 
   # signed 32 bit range is -(2**31)..(2**31-1)
   # rfc1035, 3.2.1 says its a 32 bit signed integer, and erlang seems to agree:
   # - https://github.com/dnsimple/dns_erlang/blob/main/src/dns.erl#L236C48-L236C61
   defp do_put({k, v}, rr) when k == :ttl do
-    if v in -2_147_483_648..2_147_483_647,
+    if is_s32(v),
       do: Map.put(rr, k, v),
       else: error(:evalue, "#{k}, got #{inspect(v)}")
   end
 
   defp do_put({k, v}, rr) when k == :rdlen do
-    if v in 0..65535,
+    if is_u16(v),
       do: Map.put(rr, k, v),
       else: error(:evalue, "#{k}, got #{inspect(v)}")
   end
 
-  defp do_put({k, v}, rr) when k == :rdmap and is_map(v),
-    do: Map.put(rr, k, v)
+  defp do_put({k, v}, rr) when k == :rdmap do
+    if is_map(v),
+      do: Map.put(rr, k, v),
+      else: error(:erdmap, "expected a map, got: #{inspect(v)}")
+  end
 
-  defp do_put({k, _v}, _rr),
-    do: error(:field, "RR has no #{inspect(k)} field")
+  # ignore unknown options
+  defp do_put(_, rr),
+    do: rr
 
   # [[ EDNS PSEUDO-RR ]]
   # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
@@ -174,70 +325,157 @@ defmodule DNS.Msg.RR do
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-13
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-14
-  @doc """
-  Creates a pseudo-RR for EDNS0 using the given `opts`.
-
-  EDNS0 `opts` include:
-  - `xrcode`, extended rcode, defaults to 0
-  - `version`, defaults to 0 (the only valid value at the moment)
-  - `do`, set or clear the DO-bit (DNSSEC OK bit)
-  - `z`, defaults to 0 (currently the only defined value)
-  - `bufsize`, the requestor's udp buffer size (default 1410, sets the RR's class)
-  - `opts`, a list of EDNS0 options (`[{code, data}]`) to include (defaults to [])
-
-  The first 4 options are encoded into the RR's `ttl` field, `bufsize` is used
-  to set the `class` field.  Which is why this is a pseudo-RR.  The list of
-  `opt` (if any) should contain `[{code, data}]`, see:
-    [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
-    for EDNS0 OPT codes of which currently only:
-  - `3`, [NSID](https://www.rfc-editor.org/rfc/rfc5001#section-2.3)
-  - `9`, [Expiry](https://www.rfc-editor.org/rfc/rfc7314.html#section-2)
-  - `10`, [Cookie](https://www.rfc-editor.org/rfc/rfc7873.html#section-4)
-
-  are implemented.
-  """
+  # @doc """
+  # Creates a pseudo-RR for EDNS0 using the given `opts`.
+  #
+  # EDNS0 `opts` include:
+  # - `xrcode`, extended rcode, defaults to 0
+  # - `version`, defaults to 0 (the only valid value at the moment)
+  # - `do`, set or clear the DO-bit (DNSSEC OK bit)
+  # - `z`, defaults to 0 (currently the only defined value)
+  # - `bufsize`, the requestor's udp buffer size (default 1410, sets the RR's class)
+  # - `opts`, a list of EDNS0 options (`[{code, data}]`) to include (defaults to [])
+  #
+  # The first 4 options are encoded into the RR's `ttl` field, `bufsize` is used
+  # to set the `class` field.  Which is why this is a pseudo-RR.  The list of
+  # `opt` (if any) should contain `[{code, data}]`, see:
+  #   [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
+  #   for EDNS0 OPT codes of which currently only:
+  # - `3`, [NSID](https://www.rfc-editor.org/rfc/rfc5001#section-2.3)
+  # - `9`, [Expiry](https://www.rfc-editor.org/rfc/rfc7314.html#section-2)
+  # - `10`, [Cookie](https://www.rfc-editor.org/rfc/rfc7873.html#section-4)
+  #
+  # are implemented.
+  # """
   @spec do_edns(Keyword.t()) :: t
-  def do_edns(opts) do
+  defp do_edns(opts) do
     type = :OPT
     class = Keyword.get(opts, :bufsize, 1410)
 
     # construct EDNS(0) TTL
-    xrcode = Keyword.get(opts, :xrcode, 0)
+    xrcode = Keyword.get(opts, :xrcode, 0) |> encode_dns_rcode()
     version = Keyword.get(opts, :version, 0)
     do_bit = Keyword.get(opts, :do, 1)
     z = Keyword.get(opts, :z, 0)
-    <<ttl::32>> = <<xrcode::8, version::8, do_bit::1, z::15>>
 
-    rdmap = Keyword.get(opts, :rdmap, %{})
-    rdata = <<>>
-    rdlen = 0
-    wdata = <<>>
+    ttl =
+      with true <- is_u8(xrcode),
+           true <- is_u8(version),
+           true <- do_bit in 0..1,
+           true <- z in 0..32767 do
+        <<ttl::32>> = <<xrcode::8, version::8, do_bit::1, z::15>>
+        ttl
+      else
+        _ -> error(:erdmap, "invalid value(s) in #{inspect(opts)}")
+      end
+
+    # get opts option
+    edns_opts =
+      Keyword.get(opts, :opts, []) |> Enum.map(fn {opt, dta} -> {decode_rropt_code(opt), dta} end)
 
     # pseudo-rr: add information encoded in class & ttl to rdmap as well
     # even though it's not encoded in this rr's rdata
     rdmap =
-      rdmap
+      Keyword.get(opts, :rdmap, %{})
       |> Map.put(:bufsize, class)
-      |> Map.put(:xrcode, xrcode)
+      |> Map.put(:xrcode, decode_dns_rcode(xrcode))
       |> Map.put(:do, do_bit)
       |> Map.put(:version, version)
       |> Map.put(:z, z)
-      |> Map.put_new(:opts, [])
+      |> Map.put_new(:opts, edns_opts)
 
     %__MODULE__{
       name: "",
       type: type,
       class: class,
       ttl: ttl,
-      rdlen: rdlen,
+      rdlen: 0,
       rdmap: rdmap,
-      rdata: rdata,
-      wdata: wdata
+      rdata: <<>>,
+      wdata: <<>>
     }
   end
 
   # [[ ENCODE RR ]]
 
+  @doc ~S"""
+  Sets the `:rdata` (resource data), `:rdlen` and `:wdata` (wire data) fields of the `RR` `t:t/0` struct.
+
+  This requires the `:rdmap` to have the correct `key,value`-pairs for given
+  `RR` `:type`. Missing `key,value`-pairs or invalid values will cause a
+  `DNS.Msg.Error` to be raised.
+
+  The following table lists the RR type's and their rdmap fields.
+
+      RR TYPE (num)    RDMAP
+      ---------------- --------------------------------------------------------------
+      :A (1)           %{ip: str | {u8, u8, u8, u8}
+      :NS (2)          %{name: str}
+      :CNAME (5)       %{name: str}
+      :SOA (6)         %{mname: str, rname: str, serial: number, refresh: u32 (14400)
+                       retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
+      :PTR (12)        %{name: str}
+      :MX (15)         %{name: str, pref: number}
+      :TXT (16)        %{txt: [str]}
+      :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
+      :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
+      :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
+      :RRSIG (46)      %{type: u16, algo: u8, labels: u8, ttl: u32, expiration: 32
+                       inception: u32, keytag: u16, name: str, signature: str}
+      :NSEC (47)       %{name: str, bitmap: bitstring}
+      :DNSKEY (48)     %{flags: u16, proto: u8, algo: u8, pubkey: str}
+      :NSEC3 (50)      %{algo: u8, flags: u8, iterations: u16, salt: str,
+                       nxt_name: str, bitmap: str}
+      :NSECPARAM3 (51) %{algo: u8, flags: u8, iterations: u16, salt: str}
+      :TLSA (52)       %{usage: u8, selector: u8, type: u8, data: str}
+      :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
+      :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
+      :CAA (257)       %{flags: u8, tag: str, value: str}
+      ---------------- --------------------------------------------------------------
+
+  where:
+  - str, denotes a binary
+  - u<x>, denotes an unsigned number of <x> bits
+  - optional fields have their (default value) listed as well
+
+  When your favorite `RR` type is missing from the table above, you can still encode
+  it by creating a module named `DNS.Msg.RR.User` and provide your own encoder:
+
+  ```
+  defmodule DNS.Msg.RR.User
+
+  @spec encode_rdata(non_neg_integer, map) :: binary
+  def encode(type, rdmap)
+
+  def encode(99, rdmap) do
+    ...
+  end
+
+  ```
+
+  If no encoder is available, neither natively nor in DNS.Msg.RR.User), a
+  `DNS.Msg.Error` is raised. Note that if DNS.Msg.RR.User's `encode_rdata`
+  exists, gets called but fails to match given (numeric) RR type a
+  `FunctionClauseError` will be raised instead.
+
+
+  ## Examples
+
+      iex> rr = new(type: :A, name: "example.com", rdmap: %{ip: {127, 0, 0, 1}})
+      iex> encode(rr)
+      %DNS.Msg.RR{
+        name: "example.com",
+        type: :A,
+        class: :IN,
+        ttl: 0,
+        rdlen: 4,
+        rdmap: %{ip: {127, 0, 0, 1}},
+        rdata: <<127, 0, 0, 1>>,
+        wdata: <<7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109,
+        0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 127, 0, 0, 1>>
+      }
+
+  """
   @spec encode(t) :: t
   def encode(%__MODULE__{} = rr) do
     name = dname_encode(rr.name)
@@ -246,106 +484,156 @@ defmodule DNS.Msg.RR do
     rdata = encode_rdata(rr.type, rr.rdmap)
     rdlen = byte_size(rdata)
 
-    wdata = <<
-      name::binary,
-      type::16,
-      class::16,
-      rr.ttl::32,
-      rdlen::16,
-      rdata::binary
-    >>
+    wdata =
+      with true <- is_u16(type),
+           true <- is_u16(class),
+           true <- is_u16(rdlen),
+           true <- is_s32(rr.ttl) do
+        <<name::binary, type::16, class::16, rr.ttl::signed-size(32), rdlen::16, rdata::binary>>
+      else
+        _ -> error(:eencode, "RR #{rr.type} could not be encoded: #{inspect(rr)}")
+      end
 
     %{rr | rdlen: rdlen, rdata: rdata, wdata: wdata}
   end
 
   # [[ ENCODE RDATA ]]
-  @spec encode_rdata(type, map) :: binary
-  def encode_rdata(type, rdmap)
 
-  # empty rdmap means a query is being encoded
-  def encode_rdata(_, rdmap) when map_size(rdmap) == 0,
-    do: <<>>
+  @spec encode_rdata(type, map) :: binary
+  defp encode_rdata(type, rdmap)
 
   # IN A (1)
-  def encode_rdata(:A, %{ip: {a, b, c, d}}),
-    do: <<a::8, b::8, c::8, d::8>>
+  defp encode_rdata(:A, m) do
+    ip = required(:A, m, :ip)
+
+    with {:ok, pfx} <- Pfx.parse(ip),
+         :ip4 <- Pfx.type(pfx),
+         {a, b, c, d} <- Pfx.to_tuple(pfx, mask: false) do
+      <<a::8, b::8, c::8, d::8>>
+    else
+      _ ->
+        error(:erdmap, "A RR, got: #{inspect(m)}")
+    end
+  end
 
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
-  def encode_rdata(:NS, %{name: name}),
-    do: dname_encode(name)
+  defp encode_rdata(:NS, m) do
+    required(:NS, m, :name, &is_binary/1) |> dname_encode()
+  end
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
-  def encode_rdata(:CNAME, %{name: name}),
-    do: dname_encode(name)
+  defp encode_rdata(:CNAME, m) do
+    name = required(:CNAME, m, :name, &is_binary/1)
+    dname_encode(name)
+  end
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
-  def encode_rdata(:SOA, %{mname: mname, rname: rname, serial: serial} = rdmap) do
-    rdmap =
-      rdmap
+  defp encode_rdata(:SOA, m) do
+    # supply defaults where needed
+    m =
+      m
       |> Map.put_new(:refresh, 14400)
       |> Map.put_new(:retry, 7200)
       |> Map.put_new(:expire, 1_209_600)
       |> Map.put_new(:minimum, 86400)
 
-    mname = dname_encode(mname)
-    rname = dname_encode(rname)
+    # check values
+    mname = required(:SOA, m, :mname, &is_binary/1) |> dname_encode()
+    rname = required(:SOA, m, :rname, &is_binary/1) |> dname_encode()
+    serial = required(:SOA, m, :serial, &is_u32/1)
+    refresh = required(:SOA, m, :refresh, &is_u32/1)
+    retry = required(:SOA, m, :retry, &is_u32/1)
+    expire = required(:SOA, m, :expire, &is_u32/1)
+    minimum = required(:SOA, m, :minimum, &is_u32/1)
 
-    <<mname::binary, rname::binary, serial::32, rdmap.refresh::32, rdmap.retry::32,
-      rdmap.expire::32, rdmap.minimum::32>>
+    <<mname::binary, rname::binary, serial::32, refresh::32, retry::32, expire::32, minimum::32>>
   end
 
   # IN PTR (12)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
-  def encode_rdata(:PTR, %{name: name}),
-    do: dname_encode(name)
+  defp encode_rdata(:PTR, m) do
+    name = required(:PTR, m, :name, &is_binary/1)
+    dname_encode(name)
+  end
 
   # IN MX (15)
-  def encode_rdata(:MX, %{name: name, pref: pref}),
-    do: <<pref::16>> <> dname_encode(name)
+  # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
+  defp encode_rdata(:MX, m) do
+    pref = required(:MX, m, :pref, &is_u16/1)
+    name = required(:MX, m, :name, &is_binary/1) |> dname_encode()
+    <<pref::16, name::binary>>
+  end
 
   # IN TXT (16)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14
-  def encode_rdata(:TXT, %{txt: data}) when is_list(data) do
-    data
-    |> Enum.map(fn txt -> to_string(txt) end)
-    |> Enum.map(fn txt -> <<String.length(txt)::8, txt::binary>> end)
-    |> Enum.join()
+  # https://www.rfc-editor.org/rfc/rfc1035#section-3.3
+  # - a list of character-strings
+  # - a character-string is <len>characters, whose length <= 256 (incl. len)
+  defp encode_rdata(:TXT, m) do
+    data = required(:TXT, m, :txt, &is_list/1)
+
+    with true <- length(data) > 0,
+         true <- Enum.all?(fn txt -> is_binary(txt) end),
+         true <- Enum.all?(fn txt -> String.length(txt) < 256 end) do
+      data
+      |> Enum.map(fn txt -> <<String.length(txt)::8, txt::binary>> end)
+      |> Enum.join()
+    else
+      _ -> error(:erdmap, "TXT RR, got: #{inspect(m)}")
+    end
   end
 
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14
 
   # IN AAAA (28)
-  def encode_rdata(:AAAA, %{ip: {a, b, c, d, e, f, g, h}}),
-    do: <<a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16>>
+  defp encode_rdata(:AAAA, m) do
+    ip = required(:AAAA, m, :ip)
+
+    with {:ok, pfx} <- Pfx.parse(ip),
+         :ip6 <- Pfx.type(pfx),
+         {a, b, c, d, e, f, g, h} <- Pfx.to_tuple(pfx, mask: false) do
+      <<a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16>>
+    else
+      _ ->
+        error(:erdmap, "AAAA RR, got: #{inspect(m)}")
+    end
+  end
 
   # IN OPT (41)
   # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
-  def encode_rdata(:OPT, rdmap) do
-    opts = Map.get(rdmap, :opts, [])
+  defp encode_rdata(:OPT, m) do
+    m = Map.put_new(m, :opts, [])
+    opts = required(:OPT, m, :opts, &is_list/1)
+
     for {code, data} <- opts, into: "", do: encode_edns_opt(code, data)
   end
 
   # IN DS (43)
   # https://www.rfc-editor.org/rfc/rfc4034#section-5
-  def encode_rdata(:DS, %{keytag: k, algo: a, type: t, digest: d}),
-    do: <<k::16, a::8, t::8, d::binary>>
+  defp encode_rdata(:DS, m) do
+    k = required(:DS, m, :keytag, &is_u16/1)
+    a = required(:DS, m, :algo, &is_u8/1)
+    t = required(:DS, m, :type, &is_u8/1)
+    d = required(:DS, m, :digest, &is_binary/1)
+    <<k::16, a::8, t::8, d::binary>>
+  end
 
   # IN RRSIG (46)
   # https://www.rfc-editor.org/rfc/rfc4034#section-3
-  def encode_rdata(:RRSIG, rdmap) do
-    type = encode_rr_type(rdmap.type)
-    algo = rdmap.algo
-    labels = rdmap.labels
-    ttl = rdmap.ttl
-    expire = rdmap.expiration
-    incept = rdmap.inception
-    keytag = rdmap.keytag
-    name = dname_encode(rdmap.name)
-    sig = rdmap.signature
+  defp encode_rdata(:RRSIG, m) do
+    type = required(:RRSIG, m, :type, fn t -> encode_rr_type(t) |> is_u16 end)
+    algo = required(:RRSIG, m, :algo, &is_u8/1)
+    labels = required(:RRSIG, m, :labels, &is_u8/1)
+    ttl = required(:RRSIG, m, :ttl, &is_s32/1)
+    expire = required(:RRSIG, m, :expiration, &is_u32/1)
+    incept = required(:RRSIG, m, :inception, &is_u32/1)
+    keytag = required(:RRSIG, m, :keytag, &is_u16/1)
+    name = required(:RRSIG, m, :name, &is_binary/1) |> dname_encode()
+    sig = required(:RRSIG, m, :signature, &is_binary/1)
 
     <<type::16, algo::8, labels::8, ttl::32, expire::32, incept::32, keytag::16, name::binary,
       sig::binary>>
@@ -353,56 +641,76 @@ defmodule DNS.Msg.RR do
 
   # IN NSEC (47)
   # https://www.rfc-editor.org/rfc/rfc4034#section-4
-  def encode_rdata(:NSEC, %{name: name, bitmap: bitmap}) do
-    name = dname_encode(name)
-    <<name::binary, bitmap::bitstring>>
+  defp encode_rdata(:NSEC, m) do
+    name = required(:NSEC, m, :name, &is_binary/1) |> dname_encode()
+    bitmap = required(:NSEC, m, :bitmap, &is_binary/1)
+    <<name::binary, bitmap::binary>>
   end
 
   # IN DNSKEY (48)
   # https://www.rfc-editor.org/rfc/rfc4034#section-2
-  def encode_rdata(:DNSKEY, %{flags: flags, proto: proto, algo: algo, pubkey: key}),
-    do: <<flags::16, proto::8, algo::8, key::binary>>
+  defp encode_rdata(:DNSKEY, m) do
+    flags = required(:DNSKEY, m, :flags, &is_u16/1)
+    proto = required(:DNSKEY, m, :proto, &is_u8/1)
+    algo = required(:DNSKEY, m, :algo, &is_u8/1)
+    pubkey = required(:DNSKEY, m, :pubkey, &is_binary/1)
+    <<flags::16, proto::8, algo::8, pubkey::binary>>
+  end
 
   # IN NSEC3 (50)
   # https://www.rfc-editor.org/rfc/rfc5155#section-3.2
-  def encode_rdata(:NSEC3, %{
-        algo: algo,
-        flags: flags,
-        iterations: iter,
-        salt: salt,
-        nxt_name: nxt,
-        bitmap: bmap
-      }) do
-    <<algo::8, flags::8, iter::16, byte_size(salt), salt::binary, byte_size(nxt)::8, nxt::binary,
-      bmap::binary>>
+  defp encode_rdata(:NSEC3, m) do
+    algo = required(:NSEC3, m, :algo, &is_u8/1)
+    flags = required(:NSEC3, m, :flags, &is_u8/1)
+    iterations = required(:NSEC3, m, :iterations, &is_u16/1)
+    salt = required(:NSEC3, m, :salt, &is_binary/1)
+    nxt_name = required(:NSEC3, m, :nxt_name, &is_binary/1)
+    bitmap = required(:NSEC3, m, :bitmap, &is_binary/1)
+
+    <<algo::8, flags::8, iterations::16, byte_size(salt), salt::binary, byte_size(nxt_name)::8,
+      nxt_name::binary, bitmap::binary>>
   end
 
   # IN NSEC3PARAM (51)
   # https://www.rfc-editor.org/rfc/rfc5155#section-4.1
-  def encode_rdata(:NSEC3PARAM, %{
-        algo: algo,
-        flags: flags,
-        iterations: iter,
-        salt: salt
-      }) do
-    <<algo::8, flags::8, iter::16, byte_size(salt)::8, salt::binary>>
+  defp encode_rdata(:NSEC3PARAM, m) do
+    algo = required(:NSEC3, m, :algo, &is_u8/1)
+    flags = required(:NSEC3, m, :flags, &is_u8/1)
+    iterations = required(:NSEC3, m, :iterations, &is_u16/1)
+    salt = required(:NSEC3, m, :salt, &is_binary/1)
+    <<algo::8, flags::8, iterations::16, byte_size(salt)::8, salt::binary>>
   end
 
   # IN TLSA (52)
   # https://www.rfc-editor.org/rfc/rfc6698#section-2
-  def encode_rdata(:TLSA, %{usage: usage, selector: selector, type: type, data: data}),
-    do: <<usage::8, selector::8, type::8, data::binary>>
+  defp encode_rdata(:TLSA, m) do
+    usage = required(:TLSA, m, :usage, &is_u8/1)
+    selector = required(:TSLA, m, :selector, &is_u8/1)
+    type = required(:TSLA, m, :type, &is_u8/1)
+    data = required(:TSLA, m, :data, &is_binary/1)
+    <<usage::8, selector::8, type::8, data::binary>>
+  end
 
   # IN CDS (59)
   # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1
   # e.g. is dnsimple.zone
-  def encode_rdata(:CDS, %{keytag: k, algo: a, type: t, digest: d}),
-    do: <<k::16, a::8, t::8, d::binary>>
+  defp encode_rdata(:CDS, m) do
+    keytag = required(:CDS, m, :keytag, &is_u16/1)
+    algo = required(:CDS, m, :algo, &is_u8/1)
+    type = required(:CDS, m, :type, &is_u8/1)
+    digest = required(:CDS, m, :digest, &is_binary/1)
+    <<keytag::16, algo::8, type::8, digest::binary>>
+  end
 
   # IN CDNSKEY (60)
   # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2
-  def encode_rdata(:CDNSKEY, %{flags: flags, proto: proto, algo: algo, pubkey: key}),
-    do: <<flags::16, proto::8, algo::8, key::binary>>
+  defp encode_rdata(:CDNSKEY, m) do
+    flags = required(:CDNSKEY, m, :flags, &is_u16/1)
+    proto = required(:CDNSKEY, m, :proto, &is_u8/1)
+    algo = required(:CDNSKEY, m, :algo, &is_u8/1)
+    pubkey = required(:CDNSKEY, m, :pubkey, &is_binary/1)
+    <<flags::16, proto::8, algo::8, pubkey::binary>>
+  end
 
   # IN HTTPS (65)
   # IN SPF (99)
@@ -410,36 +718,48 @@ defmodule DNS.Msg.RR do
 
   # IN CAA (257)
   # https://www.rfc-editor.org/rfc/rfc8659#section-4
-  def encode_rdata(:CAA, %{flags: flags, tag: tag, value: val}),
-    do: <<flags::8, byte_size(tag)::8, tag::binary, val::binary>>
-
-  ## [[ catch all ]]
-  def encode_rdata(type, rdmap) do
-    error(:notimp, "cannot encode #{type}: #{inspect(rdmap)}")
+  defp encode_rdata(:CAA, m) do
+    flags = required(:CAA, m, :flags, &is_u8/1)
+    tag = required(:CAA, m, :tag, &is_binary/1)
+    value = required(:CAA, m, :value, &is_binary/1)
+    <<flags::8, byte_size(tag)::8, tag::binary, value::binary>>
   end
 
-  # [[ ENCODE EDNS0 opts (todo) ]]
+  ## [[ catch all ]]
+  defp encode_rdata(type, rdmap) do
+    # ensure we use the RR TYPE number, not a mnemonic
+    with type <- encode_rr_type(type),
+         true <- Code.ensure_loaded?(@user),
+         true <- function_exported?(@user, :encode_rdata, 2),
+         rdata when is_binary(rdata) <- apply(@user, :encode_rdata, [type, rdmap]) do
+      rdata
+    else
+      _ -> error(:erdmap, "RR #{type}, cannot encode rdmap: #{inspect(rdmap)}")
+    end
+  end
+
+  # [[ ENCODE EDNS0 opts ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
-  @doc """
-  Encodes an EDNS0 option to a binary.
+  # @doc """
+  # Encodes an EDNS0 option to a binary.
+  #
+  # """
+  @spec encode_edns_opt(atom | non_neg_integer, any) :: binary
+  defp encode_edns_opt(code, data)
 
-  """
-  @spec encode_edns_opt(non_neg_integer, any) :: binary
-  def encode_edns_opt(code, data)
-
-  def encode_edns_opt(3, data) when is_binary(data) do
+  defp encode_edns_opt(:NSID, data) when is_binary(data) do
     # https://www.rfc-editor.org/rfc/rfc5001
     # In a query, data is supposed to be ""
     len = byte_size(data)
     <<3::16, len::16, data::binary>>
   end
 
-  def encode_edns_opt(9, data) do
+  defp encode_edns_opt(:EXPIRE, data) do
     # https://www.rfc-editor.org/rfc/rfc7314.html#section-2
     <<9::16, 4::16, data::integer-size(32)>>
   end
 
-  def encode_edns_opt(10, {client, server}) do
+  defp encode_edns_opt(:COOKIE, {client, server}) do
     # https://www.rfc-editor.org/rfc/rfc7873.html#section-4
     clen = byte_size(client)
     slen = byte_size(server)
@@ -454,22 +774,83 @@ defmodule DNS.Msg.RR do
     end
   end
 
+  # [[ catch all - todo ]]
+  # defer to DNS.Msg.RR.User.encode_edns_opt/2 if available
+
   # [[ DECODE RR ]]
 
+  @doc """
+  Decodes an `RR` `t:t/0` struct at given `offset` in `msg`.
+
+  Upon success, returns {`new_offset`, `t:t/0`}, where `new_offset` can be used
+  to read the rest of the message (if any).  The `rdlen`, `rdata` and `wdata`-fields
+  are set based on the octets read during decoding.
+
+  See `encode/1` for the list of RR's that can be decoded.  If a decoder is missing,
+  you can provide your own in a #{Module.split(@user) |> Enum.join(".")} module.
+
+  ```
+  defmodule #{Module.split(@user) |> Enum.join(".")}
+
+  @spec decode_rdata(non_neg_integer, non_neg_integer, non_neg_integer, binary) :: map
+  def decode_rdata(type, offset, rdlen, msg)
+
+  def decode_rdata(99, offset, rdlen, msg) do
+    ...
+  end
+
+  # more decoders
+
+  # catch all
+  def decode_rdata(_, _, _, _),
+    do: %{}
+  ```
+
+  The `decode_rdata` is called with:
+  - `type`, the numeric value of type for given RR
+  - `offset`, the start of the `RR` in the DNS `msg`
+  - `rdlen`, as read from the start of the `RR`
+  - `msg`, the entire wire format of the DNS `msg` being decoded.
+
+  Sometimes it's necessary to jump around in the DNS `msg` while decoding
+  a single RR. The `decode_rdata` function should return an `rdmap` with
+  `key,value`-pairs based on the RR being decoded.
+
+  Not being able to decode a specific RR is not a fatal error in which an empty
+  map is returned.  Make sure you have a catch all that simply returns an empty
+  map.
+
+  ## Example
+
+      iex> decode(5, <<"stuff", 7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109,
+      ...>   0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 127, 0, 0, 1, "more stuff">>)
+      {32,
+       %DNS.Msg.RR{
+         name: "example.com",
+         type: :A,
+         class: :IN,
+         ttl: 0,
+         rdlen: 4,
+         rdmap: %{ip: {127, 0, 0, 1}},
+         rdata: <<127, 0, 0, 1>>,
+         wdata: <<7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109,
+                  0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 127, 0, 0, 1>>
+       }}
+  """
   @spec decode(offset, binary) :: {offset, t}
   def decode(offset, msg) do
-    {offset, name} = dname_decode(offset, msg)
+    {offset2, name} = dname_decode(offset, msg)
 
-    <<_::binary-size(offset), type::16, class::16, ttl::32, rdlen::16, rdata::binary-size(rdlen),
+    <<_::binary-size(offset2), type::16, class::16, ttl::32, rdlen::16, rdata::binary-size(rdlen),
       _::binary>> = msg
 
-    type = decode_rr_type(type)
-    # class = decode_dns_class(class)
+    # new will put symbolic name for :type, :class numbers if possible
     rr = new(name: name, type: type, class: class, ttl: ttl, rdlen: rdlen)
     # need to pass in rdlen as well, since some RR's may have rdlen of 0
-    rdmap = decode_rdata(type, offset + 10, rdlen, msg)
-    offset = offset + 10 + rdlen
-    rr = %{rr | rdlen: rdlen, rdmap: rdmap, rdata: rdata, wdata: msg}
+    rdmap = decode_rdata(rr.type, offset2 + 10, rdlen, msg)
+    wdata = :binary.part(msg, {offset, offset2 - offset + 10 + rdlen})
+    rr = %{rr | rdlen: rdlen, rdmap: rdmap, rdata: rdata, wdata: wdata}
+    offset = offset2 + 10 + rdlen
 
     {offset, rr}
   end
@@ -481,31 +862,31 @@ defmodule DNS.Msg.RR do
   # - offset, msg is needed since rdata may contain compressed domain names
 
   @spec decode_rdata(type, offset, length, binary) :: map
-  def decode_rdata(type, offset, rdlen, msg)
+  defp decode_rdata(type, offset, rdlen, msg)
 
   # IN A (1)
-  def decode_rdata(:A, offset, 4, msg) do
+  defp decode_rdata(:A, offset, 4, msg) do
     <<_::binary-size(offset), a::8, b::8, c::8, d::8, _::binary>> = msg
     %{ip: {a, b, c, d}}
   end
 
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
-  def decode_rdata(:NS, offset, _rdlen, msg) do
+  defp decode_rdata(:NS, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
-  def decode_rdata(:CNAME, offset, _rdlen, msg) do
+  defp decode_rdata(:CNAME, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
-  def decode_rdata(:SOA, offset, _rdlen, msg) do
+  defp decode_rdata(:SOA, offset, _rdlen, msg) do
     {offset, mname} = dname_decode(offset, msg)
     {offset, rname} = dname_decode(offset, msg)
 
@@ -525,14 +906,14 @@ defmodule DNS.Msg.RR do
 
   # IN PTR (12)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
-  def decode_rdata(:PTR, offset, _rdlen, msg) do
+  defp decode_rdata(:PTR, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN MX (15)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
-  def decode_rdata(:MX, offset, _rdlen, msg) do
+  defp decode_rdata(:MX, offset, _rdlen, msg) do
     <<_::binary-size(offset), pref::16, _::binary>> = msg
     {_offset, name} = dname_decode(offset + 2, msg)
     %{name: name, pref: pref}
@@ -540,7 +921,7 @@ defmodule DNS.Msg.RR do
 
   # IN TXT (16)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14
-  def decode_rdata(:TXT, offset, rdlen, msg) do
+  defp decode_rdata(:TXT, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     lines =
@@ -551,7 +932,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN AAAA (28)
-  def decode_rdata(:AAAA, offset, 16, msg) do
+  defp decode_rdata(:AAAA, offset, 16, msg) do
     <<_::binary-size(offset), a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16, _::binary>> =
       msg
 
@@ -561,8 +942,8 @@ defmodule DNS.Msg.RR do
   # IN OPT (41) pseudo-rr
   # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
-  def decode_rdata(:OPT, offset, _rdlen, msg) do
-    # OPT RR's class is requestor's bufsize, so ignore it.
+  defp decode_rdata(:OPT, offset, _rdlen, msg) do
+    # OPT RR's class is requestor's bufsize, so read it as such.
     # backup 8 bytes to the start of RR's class and ttl and decode those
     # and the rdlen & rdata fields as well
     offset_class = offset - 8
@@ -586,7 +967,7 @@ defmodule DNS.Msg.RR do
 
   # IN DS (43)
   # https://www.rfc-editor.org/rfc/rfc4034#section-5
-  def decode_rdata(:DS, offset, rdlen, msg) do
+  defp decode_rdata(:DS, offset, rdlen, msg) do
     # digest MUST be presented as case-insensitive hex digits
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
@@ -602,7 +983,7 @@ defmodule DNS.Msg.RR do
 
   # IN RRSIG (46)
   # https://www.rfc-editor.org/rfc/rfc4034#section-3
-  def decode_rdata(:RRSIG, offset, rdlen, msg) do
+  defp decode_rdata(:RRSIG, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<type::16, algo::8, labels::8, ttl::32, notafter::32, notbefore::32, keytag::16,
@@ -630,7 +1011,7 @@ defmodule DNS.Msg.RR do
 
   # IN NSEC (47)
   # https://www.rfc-editor.org/rfc/rfc4034#section-4
-  def decode_rdata(:NSEC, offset, rdlen, msg) do
+  defp decode_rdata(:NSEC, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     {offset, name} = dname_decode(0, rdata)
     <<_::binary-size(offset), bitmap::binary>> = rdata
@@ -640,7 +1021,7 @@ defmodule DNS.Msg.RR do
 
   # IN DNSKEY (48)
   # https://www.rfc-editor.org/rfc/rfc4034#section-2
-  def decode_rdata(:DNSKEY, offset, rdlen, msg) do
+  defp decode_rdata(:DNSKEY, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<flags::16, proto::8, algo::8, pubkey::binary>> = rdata
 
@@ -673,7 +1054,7 @@ defmodule DNS.Msg.RR do
 
   # IN NSEC3 (50)
   # https://www.rfc-editor.org/rfc/rfc5155#section-3.2
-  def decode_rdata(:NSEC3, offset, rdlen, msg) do
+  defp decode_rdata(:NSEC3, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<algo::8, flags::8, iter::16, slen::8, salt::binary-size(slen), hlen::8,
@@ -696,7 +1077,7 @@ defmodule DNS.Msg.RR do
 
   # IN NSEC3PARAM (51)
   # https://www.rfc-editor.org/rfc/rfc5155#section-4.1
-  def decode_rdata(:NSEC3PARAM, offset, rdlen, msg) do
+  defp decode_rdata(:NSEC3PARAM, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<algo::8, flags::8, iter::16, slen::8, salt::binary-size(slen)>> = rdata
 
@@ -711,7 +1092,7 @@ defmodule DNS.Msg.RR do
 
   # IN TLSA (52)
   # https://www.rfc-editor.org/rfc/rfc6698#section-2
-  def decode_rdata(:TLSA, offset, rdlen, msg) do
+  defp decode_rdata(:TLSA, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<usage::8, selector::8, type::8, data::binary>> = rdata
 
@@ -726,7 +1107,7 @@ defmodule DNS.Msg.RR do
   # IN CDS (59)
   # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1
   # e.g. is dnsimple.zone
-  def decode_rdata(:CDS, offset, rdlen, msg) do
+  defp decode_rdata(:CDS, offset, rdlen, msg) do
     # digest MUST be presented as case-insensitive hex digits
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
@@ -742,7 +1123,7 @@ defmodule DNS.Msg.RR do
 
   # IN CDNSKEY (60)
   # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2
-  def decode_rdata(:CDNSKEY, offset, rdlen, msg) do
+  defp decode_rdata(:CDNSKEY, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<flags::16, proto::8, algo::8, pubkey::binary>> = rdata
 
@@ -778,7 +1159,7 @@ defmodule DNS.Msg.RR do
 
   # IN CAA (257)
   # https://www.rfc-editor.org/rfc/rfc8659#section-4
-  def decode_rdata(:CAA, offset, rdlen, msg) do
+  defp decode_rdata(:CAA, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<flags::8, len::8, tag::binary-size(len), value::binary>> = rdata
@@ -794,19 +1175,28 @@ defmodule DNS.Msg.RR do
   end
 
   ## [[ catch all ]]
-  # we donot have a decoder, so simply return an empty map
-  # caller has the chance to do their own decoding
-  def decode_rdata(_, _, _, _),
-    do: %{}
+  # no decoder available: try a user supplied one (if any)
+  # if all fails, simply return an empty map
+  # in which case caller needs to deal with an undecoded RR.
+  defp decode_rdata(type, offset, rdlen, msg) do
+    with type <- encode_rr_type(type),
+         true <- Code.ensure_loaded?(@user),
+         true <- function_exported?(@user, :decode_rdata, 4),
+         rdmap when is_map(rdmap) <- apply(@user, :decode_rdata, [type, offset, rdlen, msg]) do
+      rdmap
+    else
+      _ -> %{}
+    end
+  end
 
   # [[ DECODE ENDS0 opts ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
-  @doc """
-  Decode an EDNS option if we can, keep raw otherwise.
-
-  """
+  # @doc """
+  # Decode an EDNS option if we can, keep raw otherwise.
+  #
+  # """
   @spec decode_edns_opt(non_neg_integer, non_neg_integer, binary) :: {non_neg_integer, any}
-  def decode_edns_opt(code, len, data)
+  defp decode_edns_opt(code, len, data)
   # Note: not sure if decode_ends_opt should get an offset & org msg binary
   # since some options might refer to other parts of the msg (e.g. name
   # compression)?  For now -> we simply decode based on (code, len, data)
@@ -814,7 +1204,7 @@ defmodule DNS.Msg.RR do
   # NSID (3)
   # https://www.rfc-editor.org/rfc/rfc5001#section-2.3
   # could leave it up to the catch all, but hey! we're here aren't we
-  def decode_edns_opt(3, _len, data),
+  defp decode_edns_opt(3, _len, data),
     do: {3, data}
 
   # DAU (5), DHU (6), N3U (7)
@@ -822,7 +1212,7 @@ defmodule DNS.Msg.RR do
 
   # Expire (9)
   # https://www.rfc-editor.org/rfc/rfc7314.html#section-2
-  def decode_edns_opt(9, len, data) do
+  defp decode_edns_opt(9, len, data) do
     <<expiry::binary-size(4)>> = data
 
     if len != 4,
@@ -833,7 +1223,7 @@ defmodule DNS.Msg.RR do
 
   # Cookie (10)
   # https://www.rfc-editor.org/rfc/rfc7873.html#section-4
-  def decode_edns_opt(10, len, data) do
+  defp decode_edns_opt(10, len, data) do
     if len in 8..40 do
       <<client::binary-size(8), server::binary>> = data
       {10, {client, server}}
@@ -843,7 +1233,8 @@ defmodule DNS.Msg.RR do
   end
 
   # catch all: keep what we donot understand as raw values
-  def decode_edns_opt(code, _, data),
+  # TODO: defer to DNS.Msg.RR.decode_edns_opt/2 if available
+  defp decode_edns_opt(code, _, data),
     do: {code, data}
 end
 

@@ -70,7 +70,7 @@ defmodule DNS.Msg.Hdr do
 
   - `id`, set in a request, copied into a reply (links replies to requests)
   - `qr`, set to 0 in a request, to 1 in a reply
-  - `opcode`, defaults to 0 (QUERY), see [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
+  - `opcode`, defaults to :QUERY (0), see [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
   - `aa`, set to 1 in a reply to indicate an authoritative answer
   - `tc`, set to 1 in a reply to indicate a message was truncated
   - `rd`, set to 1 in a query to indicate "recursion desired"
