@@ -43,6 +43,9 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
+  # - drill www.example.com AAAA -w one.q
+  #
+  #   <<0xb2,0x7f,0x01,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x77,0x77,0x77,0x07,0x65,0x78,0x61,0x6d,0x70,0x6c,0x65,0x03,0x63,0x6f,0x6d,0x00,0x00,0x1c,0x00,0x01>>
 
   import DNS.Msg.Terms
   import DNS.Msg.Fields
@@ -98,10 +101,7 @@ defmodule DNS.Msg.RR do
 
   # [[ GUARDS ]]
 
-  defguardp is_u8(n) when n in 0..255
-  defguardp is_u16(n) when n in 0..65535
-  defguardp is_u32(n) when n in 0..4_294_967_295
-  defguardp is_s32(n) when n in -2_147_483_648..2_147_483_647
+  import DNS.Guards
 
   # [[ HELPERS ]]
   defp error(reason, data),
@@ -303,12 +303,6 @@ defmodule DNS.Msg.RR do
       else: error(:evalue, "#{k}, got #{inspect(v)}")
   end
 
-  defp do_put({k, v}, rr) when k == :rdlen do
-    if is_u16(v),
-      do: Map.put(rr, k, v),
-      else: error(:evalue, "#{k}, got #{inspect(v)}")
-  end
-
   defp do_put({k, v}, rr) when k == :rdmap do
     if is_map(v),
       do: Map.put(rr, k, v),
@@ -352,6 +346,9 @@ defmodule DNS.Msg.RR do
     type = :OPT
     class = Keyword.get(opts, :bufsize, 1410)
 
+    unless is_u16(class),
+      do: error(:erdmap, "bufsize range is 0..65535, got: #{inspect(class)}")
+
     # construct EDNS(0) TTL
     xrcode = Keyword.get(opts, :xrcode, 0) |> encode_dns_rcode()
     version = Keyword.get(opts, :version, 0)
@@ -369,9 +366,13 @@ defmodule DNS.Msg.RR do
         _ -> error(:erdmap, "invalid value(s) in #{inspect(opts)}")
       end
 
-    # get opts option
-    edns_opts =
-      Keyword.get(opts, :opts, []) |> Enum.map(fn {opt, dta} -> {decode_rropt_code(opt), dta} end)
+    # get opts options
+    edns_opts = Keyword.get(opts, :opts, [])
+
+    unless Keyword.keyword?(edns_opts),
+      do: error(:erdmap, "ENDS0 opts should be list of {CODE, DATA}, got: %#{inspect(edns_opts)}")
+
+    edns_opts = edns_opts |> Enum.map(fn {opt, dta} -> {decode_rropt_code(opt), dta} end)
 
     # pseudo-rr: add information encoded in class & ttl to rdmap as well
     # even though it's not encoded in this rr's rdata
@@ -751,12 +752,15 @@ defmodule DNS.Msg.RR do
     # https://www.rfc-editor.org/rfc/rfc5001
     # In a query, data is supposed to be ""
     len = byte_size(data)
-    <<3::16, len::16, data::binary>>
+
+    if is_u16(len),
+      do: <<3::16, len::16, data::binary>>,
+      else: error(:eedns, "EDNS NSID too long")
   end
 
-  defp encode_edns_opt(:EXPIRE, data) do
+  defp encode_edns_opt(:EXPIRE, seconds) when is_u32(seconds) do
     # https://www.rfc-editor.org/rfc/rfc7314.html#section-2
-    <<9::16, 4::16, data::integer-size(32)>>
+    <<9::16, 4::16, seconds::integer-size(32)>>
   end
 
   defp encode_edns_opt(:COOKIE, {client, server}) do
@@ -769,13 +773,15 @@ defmodule DNS.Msg.RR do
       <<10::16, len::16, client::binary-size(clen), server::binary-size(slen)>>
     else
       if clen != 8,
-        do: error(:eedns, "optcode 10, invalid client cookie #{inspect(client)}"),
-        else: error(:eedns, "optcode 10, invalid server cookie #{inspect(server)}")
+        do: error(:eedns, "EDNS COOKIE: invalid client cookie #{inspect(client)}"),
+        else: error(:eedns, "EDNS COOKIE: invalid server cookie #{inspect(server)}")
     end
   end
 
   # [[ catch all - todo ]]
   # defer to DNS.Msg.RR.User.encode_edns_opt/2 if available
+  defp encode_edns_opt(code, data),
+    do: error(:eedns, "EDNS0 option #{inspect(code)} unknown or data illegal #{inspect(data)}")
 
   # [[ DECODE RR ]]
 
@@ -831,7 +837,7 @@ defmodule DNS.Msg.RR do
          class: :IN,
          ttl: 0,
          rdlen: 4,
-         rdmap: %{ip: {127, 0, 0, 1}},
+         rdmap: %{ip: "127.0.0.1"},
          rdata: <<127, 0, 0, 1>>,
          wdata: <<7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109,
                   0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 127, 0, 0, 1>>
@@ -847,6 +853,7 @@ defmodule DNS.Msg.RR do
     # new will put symbolic name for :type, :class numbers if possible
     rr = new(name: name, type: type, class: class, ttl: ttl, rdlen: rdlen)
     # need to pass in rdlen as well, since some RR's may have rdlen of 0
+    # |> IO.inspect(label: rr.type)
     rdmap = decode_rdata(rr.type, offset2 + 10, rdlen, msg)
     wdata = :binary.part(msg, {offset, offset2 - offset + 10 + rdlen})
     rr = %{rr | rdlen: rdlen, rdmap: rdmap, rdata: rdata, wdata: wdata}
@@ -867,7 +874,7 @@ defmodule DNS.Msg.RR do
   # IN A (1)
   defp decode_rdata(:A, offset, 4, msg) do
     <<_::binary-size(offset), a::8, b::8, c::8, d::8, _::binary>> = msg
-    %{ip: {a, b, c, d}}
+    %{ip: "#{Pfx.new({a, b, c, d})}"}
   end
 
   # IN NS (2)
@@ -936,7 +943,7 @@ defmodule DNS.Msg.RR do
     <<_::binary-size(offset), a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16, _::binary>> =
       msg
 
-    %{ip: {a, b, c, d, e, f, g, h}}
+    %{ip: "#{Pfx.new({a, b, c, d, e, f, g, h})}"}
   end
 
   # IN OPT (41) pseudo-rr
@@ -953,11 +960,11 @@ defmodule DNS.Msg.RR do
 
     opts =
       for <<code::16, len::16, data::binary-size(len) <- rdata>>,
-        do: decode_edns_opt(code, len, data)
+        do: decode_rropt_code(code) |> decode_edns_opt(len, data)
 
     %{
       bufsize: bufsize,
-      xrcode: xrcode,
+      xrcode: decode_dns_rcode(xrcode),
       version: version,
       do: do_bit,
       z: z,
@@ -1079,6 +1086,7 @@ defmodule DNS.Msg.RR do
   # https://www.rfc-editor.org/rfc/rfc5155#section-4.1
   defp decode_rdata(:NSEC3PARAM, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+
     <<algo::8, flags::8, iter::16, slen::8, salt::binary-size(slen)>> = rdata
 
     %{
@@ -1155,6 +1163,8 @@ defmodule DNS.Msg.RR do
   end
 
   # IN HTTPS (65)
+  # - https://www.rfc-editor.org/rfc/rfc9460.html#name-rdata-wire-format
+
   # IN ANY/* (255)
 
   # IN CAA (257)
@@ -1204,31 +1214,31 @@ defmodule DNS.Msg.RR do
   # NSID (3)
   # https://www.rfc-editor.org/rfc/rfc5001#section-2.3
   # could leave it up to the catch all, but hey! we're here aren't we
-  defp decode_edns_opt(3, _len, data),
-    do: {3, data}
+  defp decode_edns_opt(:NSID, _len, data),
+    do: {:NSID, data}
 
   # DAU (5), DHU (6), N3U (7)
   # https://www.rfc-editor.org/rfc/rfc6975.html#section-3
 
   # Expire (9)
   # https://www.rfc-editor.org/rfc/rfc7314.html#section-2
-  defp decode_edns_opt(9, len, data) do
-    <<expiry::binary-size(4)>> = data
-
+  defp decode_edns_opt(:EXPIRE, len, data) do
     if len != 4,
-      do: IO.puts("EDNS Expiry option illegal len #{inspect(len)}")
+      do: IO.puts("EDNS0 EXPIRE option illegal len #{inspect(len)}")
 
-    {9, expiry}
+    <<expiry::32>> = data
+
+    {:EXPIRE, expiry}
   end
 
   # Cookie (10)
   # https://www.rfc-editor.org/rfc/rfc7873.html#section-4
-  defp decode_edns_opt(10, len, data) do
+  defp decode_edns_opt(:COOKIE, len, data) do
     if len in 8..40 do
       <<client::binary-size(8), server::binary>> = data
-      {10, {client, server}}
+      {:COOKIE, {client, server}}
     else
-      error(:eedns, "optcode 10, invalid DNS cookies in #{inspect(data)}")
+      error(:eedns, "EDNS0 COOKIE, invalid DNS cookies in #{inspect(data)}")
     end
   end
 
