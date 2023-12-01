@@ -208,6 +208,9 @@ defmodule DNS.Msg.RRTest do
     end
   end
 
+  #
+  # [[ DECODE WIRESAMPLES ]]
+  #
   test "A RR - decode" do
     :ok = ensure_testfile("test/data/a-samples", false)
     {tests, []} = Code.eval_file("test/data/a-samples")
@@ -232,8 +235,6 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :ip) end)
       assert Enum.all?(resp.answer, fn a -> :ip4 == Pfx.type(a.rdmap.ip) end)
-
-      # round trip checking fails cause we encode without name compression
     end
   end
 
@@ -255,14 +256,12 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type and
       assert resp.header.anc > 0
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :ip) end)
       assert Enum.all?(resp.answer, fn a -> :ip6 == Pfx.type(a.rdmap.ip) end)
-
-      # round trip checking fails cause we encode without name compression
     end
   end
 
@@ -284,13 +283,11 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type
       assert resp.header.anc > 0
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :name) end)
-
-      # round trip checking fails cause we encode without name compression
     end
   end
 
@@ -312,13 +309,11 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type and
       assert resp.header.anc > 0
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :pubkey) end)
-
-      # round trip checking fails cause we encode without name compression
     end
   end
 
@@ -340,7 +335,7 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type
       assert resp.header.anc > 0, "#{name}, #{type} has #{resp.header.anc} answers"
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
@@ -365,13 +360,11 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type
       assert resp.header.anc > 0
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :name) end)
-
-      # round trip checking fails cause we encode without name compression
     end
   end
 
@@ -393,12 +386,10 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type
       assert resp.header.anc > 0
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
-
-      # round trip checking fails cause we encode without name compression
     end
   end
 
@@ -420,7 +411,7 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type
       assert resp.header.anc > 0
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
@@ -431,8 +422,6 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :retry) end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :expire) end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :minimum) end)
-
-      # round trip checking fails cause we encode without name compression
     end
   end
 
@@ -454,7 +443,7 @@ defmodule DNS.Msg.RRTest do
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
 
-      # all answers should list given name, type and rdmap.ip should exist
+      # all answers should list given name, type
       assert resp.header.anc > 0, "#{name}, #{type} has #{resp.header.anc} answers"
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
