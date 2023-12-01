@@ -82,6 +82,14 @@ defmodule Drill do
     File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
   end
 
+  def generate_tests(fname) when fname == "test/data/caa-samples" do
+    tests =
+      ["google.nl", "sidn.nl", "internet.nl", "google.com"]
+      |> Enum.map(fn name -> drill(name, :CAA) end)
+
+    File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
+  end
+
   def generate_tests(fname) when fname == "test/data/cname-samples" do
     tests =
       ["www.us.gov", "www.azure.com", "www.sidn.nl", "www.aws.com", "www.amazon.com"]
