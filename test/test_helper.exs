@@ -113,4 +113,12 @@ defmodule Drill do
 
     File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
   end
+
+  def generate_tests(fname) when fname == "test/data/txt-samples" do
+    tests =
+      ["google.nl", "google.com", "sidn.nl", "example.com"]
+      |> Enum.map(fn name -> drill(name, :TXT, B: "-b 3000") end)
+
+    File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
+  end
 end
