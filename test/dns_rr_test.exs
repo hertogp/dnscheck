@@ -342,6 +342,31 @@ defmodule DNS.Msg.RRTest do
     end
   end
 
+  test "MX RR - decode" do
+    :ok = ensure_testfile("test/data/mx-samples", false)
+    {tests, []} = Code.eval_file("test/data/mx-samples")
+
+    for {name, type, _output, wiredata} <- tests do
+      resp = DNS.Msg.decode(wiredata)
+
+      # check everything was decoded
+      assert resp.wdata == wiredata
+
+      # header is first 12 bytes
+      assert 12 == byte_size(resp.header.wdata)
+      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
+
+      # All questions should list given name, type
+      assert Enum.all?(resp.question, fn q -> q.name == name end)
+      assert Enum.all?(resp.question, fn q -> q.type == type end)
+
+      # all answers should list given name, type
+      assert resp.header.anc > 0, "#{name}, #{type} has #{resp.header.anc} answers"
+      assert Enum.all?(resp.answer, fn a -> a.name == name end)
+      assert Enum.all?(resp.answer, fn a -> a.type == type end)
+    end
+  end
+
   test "NS RR - decode" do
     :ok = ensure_testfile("test/data/ns-samples", false)
     {tests, []} = Code.eval_file("test/data/ns-samples")
