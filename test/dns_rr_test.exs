@@ -212,7 +212,7 @@ defmodule DNS.Msg.RRTest do
     :ok = ensure_testfile("test/data/a-samples", false)
     {tests, []} = Code.eval_file("test/data/a-samples")
 
-    for {name, type, wiredata} <- tests do
+    for {name, type, _output, wiredata} <- tests do
       resp = DNS.Msg.decode(wiredata)
 
       # check everything was decoded
@@ -241,7 +241,7 @@ defmodule DNS.Msg.RRTest do
     :ok = ensure_testfile("test/data/aaaa-samples", false)
     {tests, []} = Code.eval_file("test/data/aaaa-samples")
 
-    for {name, type, wiredata} <- tests do
+    for {name, type, _output, wiredata} <- tests do
       resp = DNS.Msg.decode(wiredata)
 
       # check everything was decoded
@@ -270,7 +270,7 @@ defmodule DNS.Msg.RRTest do
     :ok = ensure_testfile("test/data/cname-samples", false)
     {tests, []} = Code.eval_file("test/data/cname-samples")
 
-    for {name, type, wiredata} <- tests do
+    for {name, type, _output, wiredata} <- tests do
       resp = DNS.Msg.decode(wiredata)
 
       # check everything was decoded
@@ -298,7 +298,7 @@ defmodule DNS.Msg.RRTest do
     :ok = ensure_testfile("test/data/ns-samples", false)
     {tests, []} = Code.eval_file("test/data/ns-samples")
 
-    for {name, type, wiredata} <- tests do
+    for {name, type, _output, wiredata} <- tests do
       resp = DNS.Msg.decode(wiredata)
 
       # check everything was decoded
@@ -322,11 +322,38 @@ defmodule DNS.Msg.RRTest do
     end
   end
 
+  test "RRSIG RR - decode" do
+    :ok = ensure_testfile("test/data/rrsig-samples", false)
+    {tests, []} = Code.eval_file("test/data/rrsig-samples")
+
+    for {name, type, _output, wiredata} <- tests do
+      resp = DNS.Msg.decode(wiredata)
+
+      # check everything was decoded
+      assert resp.wdata == wiredata
+
+      # header is first 12 bytes
+      assert 12 == byte_size(resp.header.wdata)
+      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
+
+      # All questions should list given name, type
+      assert Enum.all?(resp.question, fn q -> q.name == name end)
+      assert Enum.all?(resp.question, fn q -> q.type == type end)
+
+      # all answers should list given name, type and rdmap.ip should exist
+      assert resp.header.anc > 0
+      assert Enum.all?(resp.answer, fn a -> a.name == name end)
+      assert Enum.all?(resp.answer, fn a -> a.type == type end)
+
+      # round trip checking fails cause we encode without name compression
+    end
+  end
+
   test "SOA RR - decode" do
     :ok = ensure_testfile("test/data/soa-samples", false)
     {tests, []} = Code.eval_file("test/data/soa-samples")
 
-    for {name, type, wiredata} <- tests do
+    for {name, type, _output, wiredata} <- tests do
       resp = DNS.Msg.decode(wiredata)
 
       # check everything was decoded

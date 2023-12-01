@@ -17,6 +17,14 @@ defmodule Drill do
 
   """
 
+  # Black magic
+  # % drill -w wiredata.txt example.com A
+  # - produces wiredata.txt
+  # - no output shown in the console
+  # {output, 0} = System.cmd("drill", ["-w", "wiredata.txt", "example.com", "A"])
+  # - output actually contains the output I expected to see in the console
+  #   mayby some stdin/out redirection behind the scenes?
+
   unless File.exists?(@data_dir),
     do: File.mkdir!(@data_dir)
 
@@ -26,11 +34,20 @@ defmodule Drill do
   Needs a working Internet connection since resolving is against 8.8.8.8, since
   local systemd only handles common record types and no DNSSEC related ones.
   """
-  def drill(name, type, _opts \\ []) do
+  def drill(name, type, opts \\ []) do
     # put a unique number in filename just in case tests run async
+    dopt = Keyword.get(opts, :D, "")
+    bopt = Keyword.get(opts, :B, "") |> String.split()
     nr = System.unique_integer([:positive, :monotonic])
     tmp_file = Path.join(@temp_dir, "drill-#{nr}.txt")
-    System.cmd("drill", [name, "#{type}", "-w", tmp_file, "@8.8.8.8"])
+
+    args =
+      [name, "#{type}", dopt, bopt, "-w", tmp_file, "@8.8.8.8"]
+      |> List.flatten()
+      |> Enum.filter(fn w -> w != "" end)
+
+    {output, 0} = System.cmd("drill", args)
+    output = String.split(output, "\n")
 
     {:ok, wiredata} =
       File.read!(tmp_file)
@@ -39,7 +56,7 @@ defmodule Drill do
       |> Base.decode16(case: :lower)
 
     File.rm!(tmp_file)
-    {name, type, wiredata}
+    {name, type, output, wiredata}
   end
 
   def ensure_testfile(fname, forced \\ false) do
@@ -77,6 +94,14 @@ defmodule Drill do
     tests =
       ["google.nl", "google.com", "sidn.nl", "example.com"]
       |> Enum.map(fn name -> drill(name, :NS) end)
+
+    File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
+  end
+
+  def generate_tests(fname) when fname == "test/data/rrsig-samples" do
+    tests =
+      ["internet.nl", "iana.org", "sidn.nl", "example.com"]
+      |> Enum.map(fn name -> drill(name, :RRSIG, B: "-b 3000") end)
 
     File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
   end
