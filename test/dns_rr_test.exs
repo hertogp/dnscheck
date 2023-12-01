@@ -99,7 +99,6 @@ defmodule DNS.Msg.RRTest do
     # round trip
     {offset, rr2} = RR.decode(0, rr.wdata)
     assert offset == String.length(rr.wdata)
-    IO.inspect(rr2, label: :round)
     assert rr == rr2
 
     # raises when missing fields or invalid rdmap values
@@ -207,12 +206,10 @@ defmodule DNS.Msg.RRTest do
     assert_raise DNS.Msg.Error, fn ->
       RR.new(type: :OPT, opts: [{:COOKIE, {"12345678", cookie_too_long}}]) |> RR.encode()
     end
-
-    IO.inspect(rr, label: :COOKIE)
   end
 
   test "A RR - decode" do
-    :ok = ensure_testfile("test/data/a-samples", true)
+    :ok = ensure_testfile("test/data/a-samples", false)
     {tests, []} = Code.eval_file("test/data/a-samples")
 
     for {name, type, wiredata} <- tests do
@@ -228,13 +225,134 @@ defmodule DNS.Msg.RRTest do
       # All questions should list given name, type
       assert Enum.all?(resp.question, fn q -> q.name == name end)
       assert Enum.all?(resp.question, fn q -> q.type == type end)
-      # IO.inspect(resp, label: :response)
 
       # all answers should list given name, type and rdmap.ip should exist
       assert resp.header.anc > 0
       assert Enum.all?(resp.answer, fn a -> a.name == name end)
       assert Enum.all?(resp.answer, fn a -> a.type == type end)
       assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :ip) end)
+      assert Enum.all?(resp.answer, fn a -> :ip4 == Pfx.type(a.rdmap.ip) end)
+
+      # round trip checking fails cause we encode without name compression
+    end
+  end
+
+  test "AAAA RR - decode" do
+    :ok = ensure_testfile("test/data/aaaa-samples", false)
+    {tests, []} = Code.eval_file("test/data/aaaa-samples")
+
+    for {name, type, wiredata} <- tests do
+      resp = DNS.Msg.decode(wiredata)
+
+      # check everything was decoded
+      assert resp.wdata == wiredata
+
+      # header is first 12 bytes
+      assert 12 == byte_size(resp.header.wdata)
+      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
+
+      # All questions should list given name, type
+      assert Enum.all?(resp.question, fn q -> q.name == name end)
+      assert Enum.all?(resp.question, fn q -> q.type == type end)
+
+      # all answers should list given name, type and rdmap.ip should exist
+      assert resp.header.anc > 0
+      assert Enum.all?(resp.answer, fn a -> a.name == name end)
+      assert Enum.all?(resp.answer, fn a -> a.type == type end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :ip) end)
+      assert Enum.all?(resp.answer, fn a -> :ip6 == Pfx.type(a.rdmap.ip) end)
+
+      # round trip checking fails cause we encode without name compression
+    end
+  end
+
+  test "CNAME RR - decode" do
+    :ok = ensure_testfile("test/data/cname-samples", false)
+    {tests, []} = Code.eval_file("test/data/cname-samples")
+
+    for {name, type, wiredata} <- tests do
+      resp = DNS.Msg.decode(wiredata)
+
+      # check everything was decoded
+      assert resp.wdata == wiredata
+
+      # header is first 12 bytes
+      assert 12 == byte_size(resp.header.wdata)
+      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
+
+      # All questions should list given name, type
+      assert Enum.all?(resp.question, fn q -> q.name == name end)
+      assert Enum.all?(resp.question, fn q -> q.type == type end)
+
+      # all answers should list given name, type and rdmap.ip should exist
+      assert resp.header.anc > 0
+      assert Enum.all?(resp.answer, fn a -> a.name == name end)
+      assert Enum.all?(resp.answer, fn a -> a.type == type end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :name) end)
+
+      # round trip checking fails cause we encode without name compression
+    end
+  end
+
+  test "NS RR - decode" do
+    :ok = ensure_testfile("test/data/ns-samples", false)
+    {tests, []} = Code.eval_file("test/data/ns-samples")
+
+    for {name, type, wiredata} <- tests do
+      resp = DNS.Msg.decode(wiredata)
+
+      # check everything was decoded
+      assert resp.wdata == wiredata
+
+      # header is first 12 bytes
+      assert 12 == byte_size(resp.header.wdata)
+      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
+
+      # All questions should list given name, type
+      assert Enum.all?(resp.question, fn q -> q.name == name end)
+      assert Enum.all?(resp.question, fn q -> q.type == type end)
+
+      # all answers should list given name, type and rdmap.ip should exist
+      assert resp.header.anc > 0
+      assert Enum.all?(resp.answer, fn a -> a.name == name end)
+      assert Enum.all?(resp.answer, fn a -> a.type == type end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :name) end)
+
+      # round trip checking fails cause we encode without name compression
+    end
+  end
+
+  test "SOA RR - decode" do
+    :ok = ensure_testfile("test/data/soa-samples", false)
+    {tests, []} = Code.eval_file("test/data/soa-samples")
+
+    for {name, type, wiredata} <- tests do
+      resp = DNS.Msg.decode(wiredata)
+
+      # check everything was decoded
+      assert resp.wdata == wiredata
+
+      # header is first 12 bytes
+      assert 12 == byte_size(resp.header.wdata)
+      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
+
+      # All questions should list given name, type
+      assert Enum.all?(resp.question, fn q -> q.name == name end)
+      assert Enum.all?(resp.question, fn q -> q.type == type end)
+
+      # all answers should list given name, type and rdmap.ip should exist
+      assert resp.header.anc > 0
+      assert Enum.all?(resp.answer, fn a -> a.name == name end)
+      assert Enum.all?(resp.answer, fn a -> a.type == type end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :mname) end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :rname) end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :serial) end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :refresh) end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :retry) end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :expire) end)
+      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :minimum) end)
+
+      # round trip checking fails cause we encode without name compression
     end
   end
 end
