@@ -90,6 +90,22 @@ defmodule Drill do
     File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
   end
 
+  def generate_tests(fname) when fname == "test/data/dnskey-samples" do
+    tests =
+      ["us.gov", "sidn.nl", "internet.nl", "example.com"]
+      |> Enum.map(fn name -> drill(name, :DNSKEY) end)
+
+    File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
+  end
+
+  def generate_tests(fname) when fname == "test/data/ds-samples" do
+    tests =
+      ["us.gov", "sidn.nl", "internet.nl", "example.com"]
+      |> Enum.map(fn name -> drill(name, :DS) end)
+
+    File.write(fname, "#{@header}#{inspect(tests, limit: :infinity, pretty: true)}")
+  end
+
   def generate_tests(fname) when fname == "test/data/ns-samples" do
     tests =
       ["google.nl", "google.com", "sidn.nl", "example.com"]
