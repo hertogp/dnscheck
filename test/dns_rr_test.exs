@@ -209,295 +209,167 @@ defmodule DNS.Msg.RRTest do
   end
 
   #
-  # [[ DECODE WIRESAMPLES ]]
+  # [[ All types of RRs ]]
   #
-  test "A RR - decode" do
-    :ok = ensure_testfile("test/data/a-samples", false)
-    {tests, []} = Code.eval_file("test/data/a-samples")
+  test "wiredata samples" do
+    # get large set of wiredata samples
+    samples = wire_samples()
+    assert length(samples) > 0, "no wiredata samples found"
 
-    for {name, type, _output, wiredata} <- tests do
+    for {name, type, _output, wiredata} <- samples do
       resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type and rdmap.ip should exist
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :ip) end)
-      assert Enum.all?(resp.answer, fn a -> :ip4 == Pfx.type(a.rdmap.ip) end)
+      assert %DNS.Msg{} = resp, "failed for #{name}, #{type}"
     end
   end
 
-  test "AAAA RR - decode" do
-    :ok = ensure_testfile("test/data/aaaa-samples", false)
-    {tests, []} = Code.eval_file("test/data/aaaa-samples")
+  #
+  # [[ DECODE RRs ]]
+  #
+  # - see test/data/<type>-domain-sample for values used in assert's
+  # - if a sample is "renewed" by forced: true -> DNS might have changed
+  #   in which case the corresponding test needs updating.
+  #
 
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type and
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :ip) end)
-      assert Enum.all?(resp.answer, fn a -> :ip6 == Pfx.type(a.rdmap.ip) end)
-    end
+  test "A RR" do
+    {_name, _type, _output, wiredata} = get_sample("example.com", :A)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 27830 == resp.header.id
+    # question
+    assert 1 == resp.header.qdc
+    q = hd(resp.question)
+    assert "example.com" == q.name
+    assert :A == q.type
+    # answer
+    assert 1 == resp.header.anc
+    rr = hd(resp.answer)
+    assert "93.184.216.34" = rr.rdmap.ip
+    assert 2583 == rr.ttl
   end
 
-  test "CAA RR - decode" do
-    :ok = ensure_testfile("test/data/caa-samples", false)
-    {tests, []} = Code.eval_file("test/data/caa-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :critical) end)
-    end
+  test "AAAA RR" do
+    {_name, _type, _output, wiredata} = get_sample("example.com", :AAAA)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "CNAME RR - decode" do
-    :ok = ensure_testfile("test/data/cname-samples", false)
-    {tests, []} = Code.eval_file("test/data/cname-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :name) end)
-    end
+  test "CAA RR" do
+    {_name, _type, _output, wiredata} = get_sample("google.nl", :CAA)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "DNSKEY RR - decode" do
-    :ok = ensure_testfile("test/data/dnskey-samples", false)
-    {tests, []} = Code.eval_file("test/data/dnskey-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type and
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :pubkey) end)
-    end
+  test "CDNSKEY RR" do
+    {_name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDNSKEY)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "DS RR - decode" do
-    :ok = ensure_testfile("test/data/ds-samples", false)
-    {tests, []} = Code.eval_file("test/data/ds-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type
-      assert resp.header.anc > 0, "#{name}, #{type} has #{resp.header.anc} answers"
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-    end
+  test "CDS RR" do
+    {_name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDS)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "MX RR - decode" do
-    :ok = ensure_testfile("test/data/mx-samples", false)
-    {tests, []} = Code.eval_file("test/data/mx-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type
-      assert resp.header.anc > 0, "#{name}, #{type} has #{resp.header.anc} answers"
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-    end
+  test "C_name RR" do
+    {_name, _type, _output, wiredata} = get_sample("www.sidn.nl", :CNAME)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "NS RR - decode" do
-    :ok = ensure_testfile("test/data/ns-samples", false)
-    {tests, []} = Code.eval_file("test/data/ns-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :name) end)
-    end
+  test "DNSKEY RR" do
+    {_name, _type, _output, wiredata} = get_sample("internet.nl", :DNSKEY)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "RRSIG RR - decode" do
-    :ok = ensure_testfile("test/data/rrsig-samples", false)
-    {tests, []} = Code.eval_file("test/data/rrsig-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-    end
+  test "DS RR" do
+    {_name, _type, _output, wiredata} = get_sample("internet.nl", :DS)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "SOA RR - decode" do
-    :ok = ensure_testfile("test/data/soa-samples", false)
-    {tests, []} = Code.eval_file("test/data/soa-samples")
-
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
-
-      # check everything was decoded
-      assert resp.wdata == wiredata
-
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
-
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
-
-      # all answers should list given name, type
-      assert resp.header.anc > 0
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :mname) end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :rname) end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :serial) end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :refresh) end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :retry) end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :expire) end)
-      assert Enum.all?(resp.answer, fn a -> Map.has_key?(a.rdmap, :minimum) end)
-    end
+  test "MX RR" do
+    {_name, _type, _output, wiredata} = get_sample("sidn.nl", :MX)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 
-  test "TXT RR - decode" do
-    :ok = ensure_testfile("test/data/txt-samples", false)
-    {tests, []} = Code.eval_file("test/data/txt-samples")
+  test "NS RR" do
+    {_name, _type, _output, wiredata} = get_sample("sidn.nl", :NS)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
+  end
 
-    for {name, type, _output, wiredata} <- tests do
-      resp = DNS.Msg.decode(wiredata)
+  test "NSEC RR" do
+    {_name, _type, _output, wiredata} = get_sample("einbeispiel.ch", :NSEC)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
+  end
 
-      # check everything was decoded
-      assert resp.wdata == wiredata
+  test "NSEC3 RR" do
+    {_name, _type, _output, wiredata} = get_sample("x.example.com", :NSEC3)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.nsc > 0, "no authority RRs"
+  end
 
-      # header is first 12 bytes
-      assert 12 == byte_size(resp.header.wdata)
-      assert :binary.part(wiredata, {0, 12}) == resp.header.wdata
+  test "NSEC3PARAM RR" do
+    {_name, _type, _output, wiredata} = get_sample("example.com", :NSEC3PARAM, useD: true)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
+  end
 
-      # All questions should list given name, type
-      assert Enum.all?(resp.question, fn q -> q.name == name end)
-      assert Enum.all?(resp.question, fn q -> q.type == type end)
+  test "OPT RR" do
+    {_name, _type, _output, wiredata} = get_sample("dnssec-failed.org", :OPT, useD: true)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.arc > 0, "no additional RRs"
+  end
 
-      # all answers should list given name, type
-      assert resp.header.anc > 0, "#{name}, #{type} has #{resp.header.anc} answers"
-      assert Enum.all?(resp.answer, fn a -> a.name == name end)
-      assert Enum.all?(resp.answer, fn a -> a.type == type end)
-    end
+  test "PTR RR" do
+    {_name, _type, _output, wiredata} = get_sample("27.27.250.142.in-addr.arpa", :PTR)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
+  end
+
+  test "RRSIG RR" do
+    {_name, _type, _output, wiredata} = get_sample("example.com", :RRSIG, useD: true)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
+  end
+
+  test "SOA RR" do
+    {_name, _type, _output, wiredata} = get_sample("example.com", :SOA)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
+  end
+
+  test "TSLA" do
+    {_name, _type, _output, wiredata} = get_sample("_25._tcp.esa.sidn.nl", :TLSA)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
+  end
+
+  test "TXT RR" do
+    {_name, _type, _output, wiredata} = get_sample("example.com", :TXT)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert resp.header.anc > 0, "no answer RRs"
   end
 end
