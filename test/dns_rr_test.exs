@@ -471,11 +471,18 @@ defmodule DNS.Msg.RRTest do
     {name, type, _output, wiredata} = get_sample("example.com", :NSEC3PARAM, useD: true)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
+    assert 16829 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 2 == length(resp.answer)
-    rr = hd(resp.answer)
+    rr = Enum.filter(resp.answer, fn rr -> rr.type == type end) |> hd()
     assert name == rr.name
     assert type == rr.type
+    assert 0 == rr.ttl
+    assert 1 == rr.rdmap.algo
+    assert 0 == rr.rdmap.flags
+    assert 5 == rr.rdmap.iterations
+    assert 8 == rr.rdmap.salt_len
+    assert "b0148fa0b0ab23b8" == Base.encode16(rr.rdmap.salt, case: :lower)
   end
 
   test "OPT RR" do
