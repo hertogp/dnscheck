@@ -486,21 +486,40 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "OPT RR" do
-    {name, type, _output, wiredata} = get_sample("dnssec-failed.org", :OPT, useD: true)
+    {_name, type, _output, wiredata} = get_sample("dnssec-failed.org", :OPT, useD: true)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    # answer
-    # assert 1 == length(resp.answer)
-    # rr = hd(resp.answer)
-    # assert name == rr.name
-    # assert type == rr.type
+    assert 59961 == resp.header.id, "sample was updated, need to update test!"
+    assert :SERVFAIL == resp.header.rcode
+    assert 0 == length(resp.answer)
+    assert 0 == length(resp.authority)
+    # additional answer
+    assert 1 == length(resp.additional)
+    rr = hd(resp.additional)
+    assert "" == rr.name
+    assert type == rr.type
+    assert 512 == rr.rdmap.bufsize
+    assert 1 == rr.rdmap.do
+    assert 0 == rr.rdmap.version
+    assert 0 == rr.rdmap.z
+    assert :NOERROR == rr.rdmap.xrcode
+    assert length(rr.rdmap.opts) > 0
+    # TODO: decode EXTENDED_DNS_ERRORs and test values here
   end
 
   test "PTR RR" do
-    {_name, _type, _output, wiredata} = get_sample("27.27.250.142.in-addr.arpa", :PTR)
+    {name, type, _output, wiredata} = get_sample("27.27.250.142.in-addr.arpa", :PTR)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 43852 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 1857 == rr.ttl
+    # add trailing dot, since that will have been stripped
+    assert "ra-in-f27.1e100.net." == rr.rdmap.name <> "."
   end
 
   test "RRSIG RR" do
