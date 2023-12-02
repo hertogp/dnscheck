@@ -409,7 +409,7 @@ defmodule DNS.Msg.RR do
   The following table lists the RR type's and their rdmap fields.
 
       RR TYPE (num)    RDMAP
-      ---------------- --------------------------------------------------------------
+      ---------------- ------------------------------------------------------------------
       :A (1)           %{ip: str | {u8, u8, u8, u8}
       :NS (2)          %{name: str}
       :CNAME (5)       %{name: str}
@@ -421,18 +421,18 @@ defmodule DNS.Msg.RR do
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
       :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
-      :RRSIG (46)      %{type: u16, algo: u8, labels: u8, ttl: u32, expiration: 32
+      :RRSIG (46)      %{type: atom | u16, algo: u8, labels: u8, ttl: u32, expiration: 32
                        inception: u32, keytag: u16, name: str, signature: str}
       :NSEC (47)       %{name: str, bitmap: bitstring}
       :DNSKEY (48)     %{flags: u16, proto: u8, algo: u8, pubkey: str}
       :NSEC3 (50)      %{algo: u8, flags: u8, iterations: u16, salt: str,
-                       nxt_name: str, bitmap: str}
+                       next_name: str, bitmap: str}
       :NSECPARAM3 (51) %{algo: u8, flags: u8, iterations: u16, salt: str}
       :TLSA (52)       %{usage: u8, selector: u8, type: u8, data: str}
       :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
       :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
       :CAA (257)       %{flags: u8, tag: str, value: str}
-      ---------------- --------------------------------------------------------------
+      ---------------- ------------------------------------------------------------------
 
   where:
   - str, denotes a binary
