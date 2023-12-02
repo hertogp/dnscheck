@@ -440,18 +440,29 @@ defmodule DNS.Msg.RR do
   - optional fields have their (default value) listed as well
 
   When your favorite `RR` type is missing from the table above, you can still encode
-  it by creating a module named `DNS.Msg.RR.User` and provide your own encoder:
+  it by creating a module named `DNS.Msg.RR.User` and provide your own encoder and
+  maybe raise a somewhat more helpfull exception.
 
   ```
-  defmodule DNS.Msg.RR.User
+  defmodule DNS.Msg.RR.User do
 
-  @spec encode_rdata(non_neg_integer, map) :: binary
-  def encode(type, rdmap)
+    @spec encode_rdata(non_neg_integer, map) :: binary
+    def encode(type, rdmap)
 
-  def encode(99, rdmap) do
-    ...
+    # Example: howto encode RR type 1 (:A) if it were missing
+    def encode(1, rdmap) do
+      ip = Map.get(rdmap, :ip) || raise "error"
+
+      with {:ok, pfx} <- Pfx.parse(ip),
+           :ip4 <- Pfx.type(pfx),
+           {a, b, c, d} <- Pfx.to_tuple(pfx, mask: false) do
+        <<a::8, b::8, c::8, d::8>>
+      else
+        _ ->
+          raise "error"
+      end
+    end
   end
-
   ```
 
   If no encoder is available, neither natively nor in DNS.Msg.RR.User), a
