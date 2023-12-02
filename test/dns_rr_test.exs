@@ -523,10 +523,24 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "RRSIG RR" do
-    {_name, _type, _output, wiredata} = get_sample("example.com", :RRSIG, useD: true)
+    {name, type, _output, wiredata} = get_sample("example.com", :RRSIG, useD: true)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 6603 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 8 == length(resp.answer)
+    rr = Enum.filter(resp.answer, fn rr -> rr.rdmap.type == :A end) |> hd
+    assert name == rr.rdmap.name
+    assert :A == rr.rdmap.type
+    assert 86400 == rr.rdmap.ttl
+    assert 13 == rr.rdmap.algo
+    assert 2 == rr.rdmap.labels
+    assert 46981 == rr.rdmap.keytag
+    assert ~U[2023-11-18 10:16:41Z] == rr.rdmap.notbefore
+    assert ~U[2023-12-09 04:22:10Z] == rr.rdmap.notafter
+
+    assert "MJeJSwqWFQqlcX0DHEUnzR3FLxm/dQK3kLxsiHymrkMBbMlCqb2QEq/FaniudjXilnwBxn9yXu/PLGJ2g1T6Eg==" ==
+             Base.encode64(rr.rdmap.signature)
   end
 
   test "SOA RR" do

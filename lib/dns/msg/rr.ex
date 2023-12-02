@@ -1004,7 +1004,7 @@ defmodule DNS.Msg.RR do
     {:ok, notbefore} = DateTime.from_unix(notbefore, :second)
 
     %{
-      type: type,
+      type: decode_rr_type(type),
       algo: algo,
       labels: labels,
       ttl: ttl,
