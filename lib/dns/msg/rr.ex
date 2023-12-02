@@ -441,7 +441,7 @@ defmodule DNS.Msg.RR do
 
   When your favorite `RR` type is missing from the table above, you can still encode
   it by creating a module named `DNS.Msg.RR.User` and provide your own encoder and
-  maybe raise a somewhat more helpfull exception.
+  maybe raise a somewhat more helpful exception.
 
   ```
   defmodule DNS.Msg.RR.User do
