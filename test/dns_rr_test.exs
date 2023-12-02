@@ -436,7 +436,7 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "NSEC3 RR" do
-    {name, type, _output, wiredata} = get_sample("x.example.com", :NSEC3, useD: true)
+    {_name, type, _output, wiredata} = get_sample("x.example.com", :NSEC3, useD: true)
 
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
@@ -523,7 +523,7 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "RRSIG RR" do
-    {name, type, _output, wiredata} = get_sample("example.com", :RRSIG, useD: true)
+    {name, _type, _output, wiredata} = get_sample("example.com", :RRSIG, useD: true)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 6603 == resp.header.id, "sample was updated, need to update test!"
@@ -544,10 +544,23 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "SOA RR" do
-    {_name, _type, _output, wiredata} = get_sample("example.com", :SOA)
+    {name, type, _output, wiredata} = get_sample("example.com", :SOA)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 62121 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "ns.icann.org" == rr.rdmap.mname
+    assert "noc.dns.icann.org" == rr.rdmap.rname
+    assert 2_022_091_367 == rr.rdmap.serial
+    assert 7200 == rr.rdmap.refresh
+    assert 3600 == rr.rdmap.retry
+    assert 1_209_600 == rr.rdmap.expire
+    assert 3600 == rr.rdmap.minimum
   end
 
   test "TSLA" do
