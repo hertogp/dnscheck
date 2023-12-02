@@ -564,10 +564,22 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "TSLA" do
-    {_name, _type, _output, wiredata} = get_sample("_25._tcp.esa.sidn.nl", :TLSA)
+    {name, type, _output, wiredata} = get_sample("_25._tcp.esa.sidn.nl", :TLSA)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 26213 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 2742 == rr.ttl
+    assert 3 == rr.rdmap.usage
+    assert 1 == rr.rdmap.type
+    assert 1 == rr.rdmap.selector
+
+    assert "6ae547e04f4767c3d9fe27c49747ac8abc5b15bb304aaf712d9d50cb422b7cdd" ==
+             Base.encode16(rr.rdmap.data, case: :lower)
   end
 
   test "TXT RR" do
