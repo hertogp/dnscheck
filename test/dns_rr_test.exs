@@ -436,14 +436,35 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "NSEC3 RR" do
-    {name, type, _output, wiredata} = get_sample("x.example.com", :NSEC3)
+    {name, type, _output, wiredata} = get_sample("x.example.com", :NSEC3, useD: true)
+
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
+    assert 33209 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 0 == length(resp.answer)
-    # rr = hd(resp.answer)
-    # assert name == rr.name
-    # assert type == rr.type
+    assert 6 == length(resp.authority)
+    rrs = Enum.filter(resp.authority, fn rr -> rr.type == :NSEC3 end)
+
+    for rr <- rrs do
+      assert String.ends_with?(rr.name, "example.com")
+      assert type == rr.type
+      assert 3570 == rr.ttl
+      # these are the same for both NSEC3s:
+      assert 1 == rr.rdmap.algo
+      assert 0 == rr.rdmap.flags
+      assert 5 == rr.rdmap.iterations
+      assert 8 == rr.rdmap.salt_len
+
+      case length(rr.rdmap.covers) do
+        4 ->
+          assert [:A, :TXT, :AAAA, :RRSIG] == rr.rdmap.covers
+
+        _ ->
+          assert [:A, :NS, :SOA, :MX, :TXT, :AAAA, :RRSIG, :DNSKEY, :NSEC3PARAM] ==
+                   rr.rdmap.covers
+      end
+    end
   end
 
   test "NSEC3PARAM RR" do
