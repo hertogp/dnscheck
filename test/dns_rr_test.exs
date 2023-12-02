@@ -247,45 +247,45 @@ defmodule DNS.Msg.RRTest do
   #
 
   test "A RR" do
-    {_name, _type, _output, wiredata} = get_sample("example.com", :A)
+    {name, type, _output, wiredata} = get_sample("example.com", :A)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 27830 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
-    assert "93.184.216.34" = rr.rdmap.ip
+    assert name == rr.name
+    assert type == rr.type
     assert 2583 == rr.ttl
-    assert :A == rr.type
+    assert "93.184.216.34" = rr.rdmap.ip
   end
 
   test "AAAA RR" do
-    {_name, _type, _output, wiredata} = get_sample("example.com", :AAAA)
+    {name, type, _output, wiredata} = get_sample("example.com", :AAAA)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 54473 = resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
     assert "2606:2800:220:1:248:1893:25c8:1946" = rr.rdmap.ip
     assert 19877 == rr.ttl
     assert :AAAA == rr.type
   end
 
   test "CAA RR" do
-    {_name, _type, _output, wiredata} = get_sample("google.nl", :CAA)
+    {name, type, _output, wiredata} = get_sample("google.nl", :CAA)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    # header
-    assert 1 == resp.header.anc
     assert 29394 == resp.header.id, "sample was updated, need to update test!"
-    assert :NOERROR == resp.header.rcode
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
-    assert "google.nl" == rr.name
+    assert name == rr.name
+    assert type == rr.type
     assert 21221 == rr.ttl
-    assert :CAA == rr.type
     assert 0 == rr.rdmap.flags
     assert "issue" == rr.rdmap.tag
     assert "pki.goog" == rr.rdmap.value
@@ -296,7 +296,8 @@ defmodule DNS.Msg.RRTest do
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 24524 == resp.header.id, "sample was updated, need to update test!"
-    assert 1 == resp.header.anc
+    # answer
+    assert 1 == length(resp.answer)
     rr = hd(resp.answer)
     assert "dnsimple.zone" == rr.name
     assert 1224 == rr.ttl
@@ -310,13 +311,14 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "CDS RR" do
-    {_name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDS)
+    {name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDS)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 24465 == resp.header.id, "sample was updated, need to update test!"
+    # answer
     assert 1 == resp.header.anc, "no answer RRs"
     rr = hd(resp.answer)
-    assert "dnsimple.zone" == rr.name
+    assert name == rr.name
     assert 880 == rr.ttl
     assert :CDS == rr.type
     assert 8 == rr.rdmap.algo
@@ -327,11 +329,18 @@ defmodule DNS.Msg.RRTest do
              "e43ac6692f70b6ed3dd4021a22610a6213400b11bffc955e13784b315f0e0636"
   end
 
-  test "C_name RR" do
-    {_name, _type, _output, wiredata} = get_sample("www.sidn.nl", :CNAME)
+  test "CNAME RR" do
+    {name, type, _output, wiredata} = get_sample("www.sidn.nl", :CNAME)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 59056 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 882 == rr.ttl
+    assert "sidn.nl" == rr.rdmap.name
   end
 
   test "DNSKEY RR" do
