@@ -394,6 +394,9 @@ defmodule DNS.Msg.RRTest do
     rr = hd(resp.answer)
     assert name == rr.name
     assert type == rr.type
+    assert 300 == rr.ttl
+    assert 5 == rr.rdmap.pref
+    assert "esa.sidn.nl" == rr.rdmap.name
   end
 
   test "NS RR" do
