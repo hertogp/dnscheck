@@ -404,9 +404,14 @@ defmodule DNS.Msg.RRTest do
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     # answer
-    rr = hd(resp.answer)
-    assert name == rr.name
-    assert type == rr.type
+    assert 3 == length(resp.answer)
+
+    for rr <- resp.answer do
+      assert name == rr.name
+      assert type == rr.type
+      assert 3220 == rr.ttl
+      assert String.match?(rr.rdmap.name, ~r/ns\d\.sidn\.nl/)
+    end
   end
 
   test "NSEC RR" do
