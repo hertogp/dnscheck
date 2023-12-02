@@ -250,6 +250,7 @@ defmodule DNS.Msg.RRTest do
     {_name, _type, _output, wiredata} = get_sample("example.com", :A)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
+    assert 27830 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
@@ -262,6 +263,7 @@ defmodule DNS.Msg.RRTest do
     {_name, _type, _output, wiredata} = get_sample("example.com", :AAAA)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
+    assert 54473 = resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
@@ -276,7 +278,7 @@ defmodule DNS.Msg.RRTest do
     assert %DNS.Msg{} = resp
     # header
     assert 1 == resp.header.anc
-    assert 29394 == resp.header.id
+    assert 29394 == resp.header.id, "sample was updated, need to update test!"
     assert :NOERROR == resp.header.rcode
     # answer
     assert 1 == length(resp.answer)
@@ -293,14 +295,36 @@ defmodule DNS.Msg.RRTest do
     {_name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDNSKEY)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 24524 == resp.header.id, "sample was updated, need to update test!"
+    assert 1 == resp.header.anc
+    rr = hd(resp.answer)
+    assert "dnsimple.zone" == rr.name
+    assert 1224 == rr.ttl
+    assert :CDNSKEY == rr.type
+    assert 257 == rr.rdmap.flags
+    assert 8 == rr.rdmap.algo
+    assert 3 == rr.rdmap.proto
+
+    assert Base.encode64(rr.rdmap.pubkey) ==
+             "AwEAAc0xuREyeyj25dvdUQs+xqfnzCouowntvy+vEnsJCqxMt6QHS7Omn7laGOgHDjko9UN/ggYxt5Dq7QVn8kJ3cDqTnPdY2kQ+Mscf1t0axcu3Z4ykloX1VrXJdlsiEymVuNn2ztb1bAfYlj2t5Po8QczL8S8eGmVsiRZCp7XoYBYUg/5sD9hSITvtPbrXqU/bdx94zWEiI/Xb9tLvNTJZnzE="
   end
 
   test "CDS RR" do
     {_name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDS)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 24465 == resp.header.id, "sample was updated, need to update test!"
+    assert 1 == resp.header.anc, "no answer RRs"
+    rr = hd(resp.answer)
+    assert "dnsimple.zone" == rr.name
+    assert 880 == rr.ttl
+    assert :CDS == rr.type
+    assert 8 == rr.rdmap.algo
+    assert 18760 == rr.rdmap.keytag
+    assert 2 == rr.rdmap.type
+
+    assert Base.encode16(rr.rdmap.digest, case: :lower) ==
+             "e43ac6692f70b6ed3dd4021a22610a6213400b11bffc955e13784b315f0e0636"
   end
 
   test "C_name RR" do
