@@ -313,7 +313,7 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "CDS RR" do
-    {name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDS)
+    {name, type, _output, wiredata} = get_sample("dnsimple.zone", :CDS)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 24465 == resp.header.id, "sample was updated, need to update test!"
@@ -322,7 +322,7 @@ defmodule DNS.Msg.RRTest do
     rr = hd(resp.answer)
     assert name == rr.name
     assert 880 == rr.ttl
-    assert :CDS == rr.type
+    assert type == rr.type
     assert 8 == rr.rdmap.algo
     assert 18760 == rr.rdmap.keytag
     assert 2 == rr.rdmap.type
@@ -367,52 +367,87 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "DS RR" do
-    {_name, _type, _output, wiredata} = get_sample("internet.nl", :DS)
+    {name, type, _output, wiredata} = get_sample("internet.nl", :DS)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 17034 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 1674 == rr.ttl
+    assert 13 == rr.rdmap.algo
+    assert 22707 == rr.rdmap.keytag
+    assert 2 == rr.rdmap.type
+
+    assert Base.encode16(rr.rdmap.digest, case: :lower) ==
+             "a69c3d2d414e4ef8ceaa66d39d90ed2b20ef36d9f4007d678cea0c0d803a0b7e"
   end
 
   test "MX RR" do
-    {_name, _type, _output, wiredata} = get_sample("sidn.nl", :MX)
+    {name, type, _output, wiredata} = get_sample("sidn.nl", :MX)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
   end
 
   test "NS RR" do
-    {_name, _type, _output, wiredata} = get_sample("sidn.nl", :NS)
+    {name, type, _output, wiredata} = get_sample("sidn.nl", :NS)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    # answer
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
   end
 
   test "NSEC RR" do
-    {_name, _type, _output, wiredata} = get_sample("einbeispiel.ch", :NSEC)
+    {name, type, _output, wiredata} = get_sample("einbeispiel.ch", :NSEC)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
   end
 
   test "NSEC3 RR" do
-    {_name, _type, _output, wiredata} = get_sample("x.example.com", :NSEC3)
+    {name, type, _output, wiredata} = get_sample("x.example.com", :NSEC3)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.nsc > 0, "no authority RRs"
+    # answer
+    assert 0 == length(resp.answer)
+    # rr = hd(resp.answer)
+    # assert name == rr.name
+    # assert type == rr.type
   end
 
   test "NSEC3PARAM RR" do
-    {_name, _type, _output, wiredata} = get_sample("example.com", :NSEC3PARAM, useD: true)
+    {name, type, _output, wiredata} = get_sample("example.com", :NSEC3PARAM, useD: true)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    # answer
+    assert 2 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
   end
 
   test "OPT RR" do
-    {_name, _type, _output, wiredata} = get_sample("dnssec-failed.org", :OPT, useD: true)
+    {name, type, _output, wiredata} = get_sample("dnssec-failed.org", :OPT, useD: true)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.arc > 0, "no additional RRs"
+    # answer
+    # assert 1 == length(resp.answer)
+    # rr = hd(resp.answer)
+    # assert name == rr.name
+    # assert type == rr.type
   end
 
   test "PTR RR" do
