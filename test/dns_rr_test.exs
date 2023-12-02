@@ -389,6 +389,7 @@ defmodule DNS.Msg.RRTest do
     {name, type, _output, wiredata} = get_sample("sidn.nl", :MX)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
+    assert 30869 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
@@ -403,6 +404,7 @@ defmodule DNS.Msg.RRTest do
     {name, type, _output, wiredata} = get_sample("sidn.nl", :NS)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
+    assert 4442 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 3 == length(resp.answer)
 
@@ -418,11 +420,19 @@ defmodule DNS.Msg.RRTest do
     {name, type, _output, wiredata} = get_sample("einbeispiel.ch", :NSEC)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
+    assert 8916 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
     assert name == rr.name
     assert type == rr.type
+    assert 900 == rr.ttl
+    assert "einbettung.ch" == rr.rdmap.name
+    assert 4 == length(rr.rdmap.covers)
+    assert :NS in rr.rdmap.covers
+    assert :DS in rr.rdmap.covers
+    assert :RRSIG in rr.rdmap.covers
+    assert :NSEC in rr.rdmap.covers
   end
 
   test "NSEC3 RR" do
