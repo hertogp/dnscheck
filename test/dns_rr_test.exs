@@ -583,9 +583,16 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "TXT RR" do
-    {_name, _type, _output, wiredata} = get_sample("example.com", :TXT)
+    {name, type, _output, wiredata} = get_sample("example.com", :TXT)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 60410 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 2 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 9161 == rr.ttl
+    assert ["v=spf1 -all"] == rr.rdmap.txt
   end
 end
