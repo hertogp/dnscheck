@@ -292,22 +292,24 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "CDNSKEY RR" do
-    {_name, _type, _output, wiredata} = get_sample("dnsimple.zone", :CDNSKEY)
+    {name, type, _output, wiredata} = get_sample("dnsimple.zone", :CDNSKEY)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 24524 == resp.header.id, "sample was updated, need to update test!"
     # answer
     assert 1 == length(resp.answer)
     rr = hd(resp.answer)
-    assert "dnsimple.zone" == rr.name
+    assert name == rr.name
+    assert type == rr.type
     assert 1224 == rr.ttl
-    assert :CDNSKEY == rr.type
     assert 257 == rr.rdmap.flags
     assert 8 == rr.rdmap.algo
     assert 3 == rr.rdmap.proto
 
     assert Base.encode64(rr.rdmap.pubkey) ==
              "AwEAAc0xuREyeyj25dvdUQs+xqfnzCouowntvy+vEnsJCqxMt6QHS7Omn7laGOgHDjko9UN/ggYxt5Dq7QVn8kJ3cDqTnPdY2kQ+Mscf1t0axcu3Z4ykloX1VrXJdlsiEymVuNn2ztb1bAfYlj2t5Po8QczL8S8eGmVsiRZCp7XoYBYUg/5sD9hSITvtPbrXqU/bdx94zWEiI/Xb9tLvNTJZnzE="
+
+    # note drill output show no keytag nor type of key?
   end
 
   test "CDS RR" do
@@ -344,10 +346,24 @@ defmodule DNS.Msg.RRTest do
   end
 
   test "DNSKEY RR" do
-    {_name, _type, _output, wiredata} = get_sample("internet.nl", :DNSKEY)
+    {name, type, _output, wiredata} = get_sample("internet.nl", :DNSKEY)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    assert 1320 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert 257 == rr.rdmap.flags
+    assert 13 == rr.rdmap.algo
+    assert 3 == rr.rdmap.proto
+    assert 22707 == rr.rdmap.keytag
+    assert "ksk" == rr.rdmap.type
+
+    assert Base.encode64(rr.rdmap.pubkey) ==
+             "QA3dnKfJvTjvncs3FercMXITNIcpTwRA1aq+KaQF/VEbvWOBH90TZxgLuAwoh8/+s5/ayhkJiJ9VTY9BBciGJg=="
   end
 
   test "DS RR" do
