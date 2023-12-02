@@ -216,14 +216,30 @@ defmodule DNS.Msg.RRTest do
     samples = wire_samples()
     assert length(samples) > 0, "no wiredata samples found"
 
-    for {name, type, _output, wiredata} <- samples do
+    for {name, type, output, wiredata} <- samples do
       resp = DNS.Msg.decode(wiredata)
       assert %DNS.Msg{} = resp, "failed for #{name}, #{type}"
+      # basic value test
+      id = List.first(output) |> String.split(" ") |> List.last()
+      assert id == "#{resp.header.id}"
+      # all wiredata was read
+      assert wiredata == resp.wdata
+      # basic struct consistency checks
+      assert resp.header.qdc == length(resp.question)
+      assert resp.header.anc == length(resp.answer)
+      assert resp.header.nsc == length(resp.authority)
+      assert resp.header.arc == length(resp.additional)
+      # always 1 question
+      assert 1 == resp.header.qdc
+      q = hd(resp.question)
+      assert name == q.name
+      assert type == q.type
+      # answer, authority & additional need individual testing
     end
   end
 
   #
-  # [[ DECODE RRs ]]
+  # [[ DECODE RR answers ]]
   #
   # - see test/data/<type>-domain-sample for values used in assert's
   # - if a sample is "renewed" by forced: true -> DNS might have changed
@@ -234,31 +250,43 @@ defmodule DNS.Msg.RRTest do
     {_name, _type, _output, wiredata} = get_sample("example.com", :A)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert 27830 == resp.header.id
-    # question
-    assert 1 == resp.header.qdc
-    q = hd(resp.question)
-    assert "example.com" == q.name
-    assert :A == q.type
     # answer
-    assert 1 == resp.header.anc
+    assert 1 == length(resp.answer)
     rr = hd(resp.answer)
     assert "93.184.216.34" = rr.rdmap.ip
     assert 2583 == rr.ttl
+    assert :A == rr.type
   end
 
   test "AAAA RR" do
     {_name, _type, _output, wiredata} = get_sample("example.com", :AAAA)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert "2606:2800:220:1:248:1893:25c8:1946" = rr.rdmap.ip
+    assert 19877 == rr.ttl
+    assert :AAAA == rr.type
   end
 
   test "CAA RR" do
     {_name, _type, _output, wiredata} = get_sample("google.nl", :CAA)
     resp = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
-    assert resp.header.anc > 0, "no answer RRs"
+    # header
+    assert 1 == resp.header.anc
+    assert 29394 == resp.header.id
+    assert :NOERROR == resp.header.rcode
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert "google.nl" == rr.name
+    assert 21221 == rr.ttl
+    assert :CAA == rr.type
+    assert 0 == rr.rdmap.flags
+    assert "issue" == rr.rdmap.tag
+    assert "pki.goog" == rr.rdmap.value
   end
 
   test "CDNSKEY RR" do
