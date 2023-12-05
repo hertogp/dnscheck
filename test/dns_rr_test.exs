@@ -329,6 +329,26 @@ defmodule DNS.Msg.RRTest do
              "e43ac6692f70b6ed3dd4021a22610a6213400b11bffc955e13784b315f0e0636"
   end
 
+  test "CERT RR" do
+    {name, type, _output, wiredata} = get_sample("cert.dns.netmeister.org", :CERT, useD: true)
+
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 20547 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 4 == length(resp.answer)
+    rr = Enum.at(resp.answer, 2)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3337 == rr.ttl
+    assert 6 == rr.rdmap.type
+    assert 0 == rr.rdmap.key_tag
+    assert 0 == rr.rdmap.algo
+    assert "99CE1DC7770AC5A809A60DCD66CE4FE96F6BD3D7" == Base.encode64(rr.rdmap.cert)
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "CNAME RR" do
     {name, type, _output, wiredata} = get_sample("www.sidn.nl", :CNAME)
     resp = DNS.Msg.decode(wiredata)
