@@ -420,6 +420,7 @@ defmodule DNS.Msg.RR do
       :MX (15)         %{name: str, pref: number}
       :TXT (16)        %{txt: [str]}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
+      :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
       :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
       :IPSECKEY (45)   %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
@@ -625,6 +626,18 @@ defmodule DNS.Msg.RR do
     end
   end
 
+  # IN SRV (33)
+  # - https://www.rfc-editor.org/rfc/rfc2782
+  # - https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml
+  defp encode_rdata(:SRV, m) do
+    prio = required(:SRV, m, :prio, &is_u16/1)
+    weight = required(:SRV, m, :weight, &is_u16/1)
+    port = required(:SRV, m, :port, &is_u16/1)
+    target = required(:SRV, m, :target, &is_binary/1) |> dname_encode()
+
+    <<prio::16, weight::16, port::16, target::binary>>
+  end
+
   # IN OPT (41)
   # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
@@ -645,6 +658,8 @@ defmodule DNS.Msg.RR do
     <<k::16, a::8, t::8, d::binary>>
   end
 
+  # IN IPSECKEY (45)
+  # - https://www.rfc-editor.org/rfc/rfc4025.html#section-2
   defp encode_rdata(:IPSECKEY, m) do
     gtype = required(:IPSECKEY, m, :gw_type, &is_u8/1)
     gwstr = required(:IPSECKEY, m, :gateway, &is_binary/1)
@@ -918,15 +933,23 @@ defmodule DNS.Msg.RR do
   # - type define RR-type whose rdata is to be decoded
   # - rdlen is needed since some RR's have rdlen of 0
   # - offset, msg is needed since rdata may contain compressed domain names
-  # TODO: Maybe add these
+  # TODO: Maybe add these (check out <type>.dns.netmeister.org
   # - RP dnslab.org tcp53.ch
-  # - SRV _autodiscover._tcp.ndw.nu (or _sip._udp.sipgate.co.uk)
   # - TYPE65 www.google.com  (for some reason HTTPS doesn't work)
-  # - SSHFP salsa.debian.org
-  # - NAPTR sip2sip.info
-  # - TYPE65534 oilpro.ch
-  # - A ECC94C1D-7026-41AA-B47E-FDFE40EB9957.com
-  # - IPSECKEY twokeys.libreswan.org
+  # - SSHFP (44) salsa.debian.org / sshfp.dns.netmeister.org
+  # - SIG (24)
+  # - KEY (25)
+  # - PX (26)
+  # - GPOS (27)
+  # - LOC (29)
+  # - NAPTR (35) sip2sip.info
+  # - KX (36)
+  # - CERT (37)
+  # - DNAME (39)
+  # - CSYNC (62)
+  # - TKEY (249)
+  # - TSIG (250)
+  # - URI (256)
 
   @spec decode_rdata(type, offset, length, binary) :: map
   defp decode_rdata(type, offset, rdlen, msg)
@@ -1015,9 +1038,20 @@ defmodule DNS.Msg.RR do
     %{ip: "#{Pfx.new({a, b, c, d, e, f, g, h})}"}
   end
 
+  # IN SRV (33)
+  # - https://www.rfc-editor.org/rfc/rfc2782
+  # - https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml
+  defp decode_rdata(:SRV, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    <<prio::16, weight::16, port::16, _::binary>> = rdata
+    # just in case name compression is used.
+    {_, target} = dname_decode(offset + 6, msg)
+    %{prio: prio, weight: weight, port: port, target: target}
+  end
+
   # IN OPT (41) pseudo-rr
-  # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
-  # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
+  # - https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
+  # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
   defp decode_rdata(:OPT, offset, _rdlen, msg) do
     # OPT RR's class is requestor's bufsize, so read it as such.
     # backup 8 bytes to the start of RR's class and ttl and decode those
@@ -1058,7 +1092,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IPSECKEY (45)
-  # https://www.rfc-editor.org/rfc/rfc4025.html#section-2
+  # - https://www.rfc-editor.org/rfc/rfc4025.html#section-2
   defp decode_rdata(:IPSECKEY, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 

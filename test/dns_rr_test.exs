@@ -600,6 +600,26 @@ defmodule DNS.Msg.RRTest do
     assert 3600 == rr.rdmap.minimum
   end
 
+  test "SRV RR" do
+    {name, type, _output, wiredata} = get_sample("_sip._udp.sipgate.co.uk", :SRV)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 57124 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 1850 == rr.ttl
+    assert 0 == rr.rdmap.prio
+    assert 0 == rr.rdmap.weight
+    assert 5060 == rr.rdmap.port
+    assert "sipgate.co.uk" == rr.rdmap.target
+    # only check rdata, due to name compression
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "TSLA" do
     {name, type, _output, wiredata} = get_sample("_25._tcp.esa.sidn.nl", :TLSA)
     resp = DNS.Msg.decode(wiredata)

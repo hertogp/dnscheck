@@ -340,6 +340,7 @@ defmodule DNS.Msg.Terms do
               :MX => 15,
               :TXT => 16,
               :AAAA => 28,
+              :SRV => 33,
               :OPT => 41,
               :DS => 43,
               :IPSECKEY => 45,
