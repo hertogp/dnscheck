@@ -354,6 +354,7 @@ defmodule DNS.Msg.Terms do
               :TLSA => 52,
               :CDS => 59,
               :CDNSKEY => 60,
+              :CSYNC => 62,
               :HTTPS => 65,
               :SPF => 99,
               :* => 255,

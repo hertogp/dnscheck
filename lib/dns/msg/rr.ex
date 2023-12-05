@@ -131,7 +131,7 @@ defmodule DNS.Msg.RR do
 
     if check.(v),
       do: v,
-      else: error(:erdmap, "#{type} RR, got: #{inspect(map)}")
+      else: error(:erdmap, "#{type} RR, field #{inspect(field)} has invalid value: #{inspect(v)}")
   end
 
   # [[ NEW ]]
@@ -436,6 +436,7 @@ defmodule DNS.Msg.RR do
       :TLSA (52)       %{usage: u8, selector: u8, type: u8, data: str}
       :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
       :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
+      :CSYNC (62)      %{soa_serial: u32, flags: u16, bitmap: str}
       :CAA (257)       %{flags: u8, tag: str, value: str}
       ---------------- ------------------------------------------------------------------
 
@@ -443,6 +444,7 @@ defmodule DNS.Msg.RR do
   - str, denotes a binary
   - u<x>, denotes an unsigned number of <x> bits
   - optional fields have their (default value) listed as well
+  - some `bitmap` fields may generate an extra, informational, `covers` list of RR's
 
   When your favorite `RR` type is missing from the table above, you can still encode
   it by creating a module named `DNS.Msg.RR.User` and provide your own encoder and
@@ -802,8 +804,15 @@ defmodule DNS.Msg.RR do
     <<flags::16, proto::8, algo::8, pubkey::binary>>
   end
 
-  # IN HTTPS (65)
-  # IN SPF (99)
+  # CSYNC (62)
+  # - https://www.rfc-editor.org/rfc/rfc7477.html#section-2
+  defp encode_rdata(:CSYNC, m) do
+    soa_serial = required(:CSYNC, m, :soa_serial, &is_u32/1)
+    flags = required(:CSYNC, m, :flags, &is_u16/1)
+    bitmap = required(:CSYNC, m, :bitmap, &is_binary/1)
+    <<soa_serial::32, flags::16, bitmap::binary>>
+  end
+
   # IN ANY/* (255)
 
   # IN CAA (257)
@@ -955,7 +964,7 @@ defmodule DNS.Msg.RR do
   # - type define RR-type whose rdata is to be decoded
   # - rdlen is needed since some RR's have rdlen of 0
   # - offset, msg is needed since rdata may contain compressed domain names
-  # TODO: Maybe add these (check out <type>.dns.netmeister.org
+  # TODO-RRs: Maybe add these (check out <type>.dns.netmeister.org
   # - RP dnslab.org tcp53.ch
   # - TYPE65 www.google.com  (for some reason HTTPS doesn't work)
   # - SIG (24)
@@ -965,9 +974,7 @@ defmodule DNS.Msg.RR do
   # - LOC (29)
   # - NAPTR (35) sip2sip.info
   # - KX (36)
-  # - CERT (37)
   # - DNAME (39)
-  # - CSYNC (62)
   # - TKEY (249)
   # - TSIG (250)
   # - URI (256)
@@ -993,6 +1000,15 @@ defmodule DNS.Msg.RR do
   defp decode_rdata(:CNAME, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
+  end
+
+  # CSYNC (62)
+  # - https://www.rfc-editor.org/rfc/rfc7477.html#section-2
+  defp decode_rdata(:CSYNC, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    <<soa_serial::32, flags::16, bitmap::binary>> = rdata
+    covers = bitmap_to_rrs(bitmap)
+    %{soa_serial: soa_serial, flags: flags, bitmap: bitmap, covers: covers}
   end
 
   # IN SOA (6)

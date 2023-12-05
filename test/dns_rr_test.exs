@@ -363,6 +363,24 @@ defmodule DNS.Msg.RRTest do
     assert "sidn.nl" == rr.rdmap.name
   end
 
+  test "CSYNC RR" do
+    {name, type, _output, wiredata} = get_sample("csync.dns.netmeister.org", :CSYNC)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 10012 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert 2_021_071_001 == rr.rdmap.soa_serial
+    assert 3 == rr.rdmap.flags
+    assert [:NS] == rr.rdmap.covers
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "DNSKEY RR" do
     {name, type, _output, wiredata} = get_sample("internet.nl", :DNSKEY)
     resp = DNS.Msg.decode(wiredata)
