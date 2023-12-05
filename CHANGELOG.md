@@ -20,13 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - [ ] unit tests
     - [ ] implement List.Chars.to_string
 - [ ] DNS.Msg.Qtn
-    - [ ] documentation
+    - [x] documentation
     - [x] unit tests
     - [ ] implement List.Chars.to_string
 - [ ] DNS.Msg.RR
-    - [ ] documentation
+    - [x] documentation
     - [ ] implement List.Chars.to_string
-    - [ ] unit tests
+    - [x] unit tests
     - [x] get a bunch of rdata de/encoders for relevant RR's
     - [x] move MsgXYZ into DNS.Msg.Xyz and files under lib/dns/msg/xyz.ex
 - [ ] DNS.Msg.Terms

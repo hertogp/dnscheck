@@ -30,7 +30,7 @@ defmodule DNS.Msg.RR do
   - `NAME`,     is a length encoded owner domain name
   - `TYPE`,     is a 16 bit unsigned integer, an RR TYPE code
   - `CLASS`,    is a 16 bit unsigned integer, usually an RR CLASS code
-  - `TTL`,      is a 32 bit *signed* integer, indicating max cache time
+  - `TTL`,      is a 32 bit unsigned integer, range 0..214748364, see [rfc2181](https://www.rfc-editor.org/rfc/rfc2181#section-8)
   - `RDLEN`,    is a 16 bit unsigned integer, the length in octets of the RDATA field.
   - `RDATA`,    interpretation depends on the RR TYPE and CLASS
 
@@ -43,7 +43,6 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
-  # - drill www.example.com AAAA -w one.q
   #
   #   <<0xb2,0x7f,0x01,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x77,0x77,0x77,0x07,0x65,0x78,0x61,0x6d,0x70,0x6c,0x65,0x03,0x63,0x6f,0x6d,0x00,0x00,0x1c,0x00,0x01>>
 
@@ -144,7 +143,7 @@ defmodule DNS.Msg.RR do
   - `:name`, must be a binary (default `""`)
   - `:type`, an [atom](`DNS.Msg.Terms.encode_rr_type/1`) or an unsigned 16 bit number (default `:A`)
   - `:class`, an [atom](`DNS.Msg.Terms.encode_dns_class/1`) or an unsigned 16 bit number (default `:IN`)
-  - `:ttl`, a signed 32 bit integer (default `0`)
+  - `:ttl`, a unsigned 32 bit integer (default `0`)
   - `:rdmap`, a map with `key,value`-pairs (to be encoded later, default `%{}`)
 
   Anything else is silently ignored, including `:rdlen`, `:rdata` and `:wdata`
@@ -298,7 +297,7 @@ defmodule DNS.Msg.RR do
   # rfc1035, 3.2.1 says its a 32 bit signed integer, and erlang seems to agree:
   # - https://github.com/dnsimple/dns_erlang/blob/main/src/dns.erl#L236C48-L236C61
   defp do_put({k, v}, rr) when k == :ttl do
-    if is_s32(v),
+    if is_u32(v),
       do: Map.put(rr, k, v),
       else: error(:evalue, "#{k}, got #{inspect(v)}")
   end
@@ -398,6 +397,7 @@ defmodule DNS.Msg.RR do
   end
 
   # [[ ENCODE RR ]]
+  # https://www.rfc-editor.org/rfc/rfc2181#section-8  (ttl is 32bit, 0..2**31 - 1)
 
   @doc ~S"""
   Sets the `:rdata` (resource data), `:rdlen` and `:wdata` (wire data) fields of the `RR` `t:t/0` struct.
@@ -416,11 +416,13 @@ defmodule DNS.Msg.RR do
       :SOA (6)         %{mname: str, rname: str, serial: number, refresh: u32 (14400)
                        retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
       :PTR (12)        %{name: str}
+      :HINFO (13)      %{cpu: str, os: str}
       :MX (15)         %{name: str, pref: number}
       :TXT (16)        %{txt: [str]}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
       :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
+      :IPSECKEY (45)   %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
       :RRSIG (46)      %{type: atom | u16, algo: u8, labels: u8, ttl: u32, expiration: 32
                        inception: u32, keytag: u16, name: str, signature: str}
       :NSEC (47)       %{name: str, bitmap: bitstring}
@@ -451,7 +453,7 @@ defmodule DNS.Msg.RR do
 
     # Example: howto encode RR type 1 (:A) if it were missing
     def encode(1, rdmap) do
-      ip = Map.get(rdmap, :ip) || raise "error"
+      ip = Map.get(rdmap, :ip) || raise DNS.Msg.Error.Exception(reason: :erdmap, data: "missing ip")
 
       with {:ok, pfx} <- Pfx.parse(ip),
            :ip4 <- Pfx.type(pfx),
@@ -459,7 +461,7 @@ defmodule DNS.Msg.RR do
         <<a::8, b::8, c::8, d::8>>
       else
         _ ->
-          raise "error"
+          raise DNS.Msg.Error.Exception(reason: :erdmap, data: "invalid IPv4 #{inspect(ip)}")
       end
     end
   end
@@ -500,7 +502,7 @@ defmodule DNS.Msg.RR do
       with true <- is_u16(type),
            true <- is_u16(class),
            true <- is_u16(rdlen),
-           true <- is_s32(rr.ttl) do
+           true <- is_u32(rr.ttl) do
         <<name::binary, type::16, class::16, rr.ttl::signed-size(32), rdlen::16, rdata::binary>>
       else
         _ -> error(:eencode, "RR #{rr.type} could not be encoded: #{inspect(rr)}")
@@ -571,6 +573,17 @@ defmodule DNS.Msg.RR do
     dname_encode(name)
   end
 
+  # IN HINFO (13)
+  # https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2
+  # revived by RFC8482
+  defp encode_rdata(:HINFO, m) do
+    cpu = required(:HINFO, m, :cpu, &is_binary/1)
+    os = required(:HINFO, m, :os, &is_binary/1)
+    clen = String.length(cpu)
+    olen = String.length(os)
+    <<clen::8, cpu::binary, olen::8, os::binary>>
+  end
+
   # IN MX (15)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
   defp encode_rdata(:MX, m) do
@@ -597,8 +610,6 @@ defmodule DNS.Msg.RR do
       _ -> error(:erdmap, "TXT RR, got: #{inspect(m)}")
     end
   end
-
-  # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14
 
   # IN AAAA (28)
   defp encode_rdata(:AAAA, m) do
@@ -634,13 +645,43 @@ defmodule DNS.Msg.RR do
     <<k::16, a::8, t::8, d::binary>>
   end
 
+  defp encode_rdata(:IPSECKEY, m) do
+    gtype = required(:IPSECKEY, m, :gw_type, &is_u8/1)
+    gwstr = required(:IPSECKEY, m, :gateway, &is_binary/1)
+    pref = required(:IPSECKEY, m, :pref, &is_u8/1)
+    algo = required(:IPSECKEY, m, :algo, &is_u8/1)
+    pubkey = required(:IPSECKEY, m, :pubkey, &is_binary/1)
+
+    gateway =
+      case gtype do
+        0 ->
+          ""
+
+        1 ->
+          {a, b, c, d} = Pfx.to_tuple(gwstr)
+          <<a::8, b::8, c::8, d::8>>
+
+        2 ->
+          {a, b, c, d, e, f, g, h} = Pfx.to_tuple(gwstr)
+          <<a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16>>
+
+        3 ->
+          dname_encode(gwstr)
+
+        n ->
+          error(:eformat, "IPSECKEY gateway type unknown: #{inspect(n)}")
+      end
+
+    <<pref::8, gtype::8, algo::8, gateway::binary, pubkey::binary>>
+  end
+
   # IN RRSIG (46)
   # https://www.rfc-editor.org/rfc/rfc4034#section-3
   defp encode_rdata(:RRSIG, m) do
     type = required(:RRSIG, m, :type, fn t -> encode_rr_type(t) |> is_u16 end)
     algo = required(:RRSIG, m, :algo, &is_u8/1)
     labels = required(:RRSIG, m, :labels, &is_u8/1)
-    ttl = required(:RRSIG, m, :ttl, &is_s32/1)
+    ttl = required(:RRSIG, m, :ttl, &is_u32/1)
     expire = required(:RRSIG, m, :expiration, &is_u32/1)
     incept = required(:RRSIG, m, :inception, &is_u32/1)
     keytag = required(:RRSIG, m, :keytag, &is_u16/1)
@@ -864,7 +905,6 @@ defmodule DNS.Msg.RR do
     # new will put symbolic name for :type, :class numbers if possible
     rr = new(name: name, type: type, class: class, ttl: ttl, rdlen: rdlen)
     # need to pass in rdlen as well, since some RR's may have rdlen of 0
-    # |> IO.inspect(label: rr.type)
     rdmap = decode_rdata(rr.type, offset2 + 10, rdlen, msg)
     wdata = :binary.part(msg, {offset, offset2 - offset + 10 + rdlen})
     rr = %{rr | rdlen: rdlen, rdmap: rdmap, rdata: rdata, wdata: wdata}
@@ -874,10 +914,19 @@ defmodule DNS.Msg.RR do
   end
 
   # [[ DECODE RDATA ]]
-  # note: decode_rdata always takes class, type, offset, rdlen and msg:
-  # - class, type define RR-type whose rdata is to be decoded
+  # note: decode_rdata always takes type, offset, rdlen and msg:
+  # - type define RR-type whose rdata is to be decoded
   # - rdlen is needed since some RR's have rdlen of 0
   # - offset, msg is needed since rdata may contain compressed domain names
+  # TODO: Maybe add these
+  # - RP dnslab.org tcp53.ch
+  # - SRV _autodiscover._tcp.ndw.nu (or _sip._udp.sipgate.co.uk)
+  # - TYPE65 www.google.com  (for some reason HTTPS doesn't work)
+  # - SSHFP salsa.debian.org
+  # - NAPTR sip2sip.info
+  # - TYPE65534 oilpro.ch
+  # - A ECC94C1D-7026-41AA-B47E-FDFE40EB9957.com
+  # - IPSECKEY twokeys.libreswan.org
 
   @spec decode_rdata(type, offset, length, binary) :: map
   defp decode_rdata(type, offset, rdlen, msg)
@@ -927,6 +976,15 @@ defmodule DNS.Msg.RR do
   defp decode_rdata(:PTR, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
+  end
+
+  # IN HINFO (13)
+  # https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2
+  defp decode_rdata(:HINFO, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    <<clen::8, cpu::binary-size(clen), olen::8, os::binary-size(olen)>> = rdata
+
+    %{cpu: cpu, os: os}
   end
 
   # IN MX (15)
@@ -996,6 +1054,44 @@ defmodule DNS.Msg.RR do
       algo: algo,
       type: type,
       digest: digest
+    }
+  end
+
+  # IPSECKEY (45)
+  # https://www.rfc-editor.org/rfc/rfc4025.html#section-2
+  defp decode_rdata(:IPSECKEY, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+
+    <<pref::8, gw_type::8, algo::8, rest::binary>> = rdata
+
+    {gateway, pubkey} =
+      case gw_type do
+        0 ->
+          {<<>>, rest}
+
+        1 ->
+          <<a::8, b::8, c::8, d::8, pkey::binary>> = rest
+          {"#{Pfx.new({a, b, c, d})}", pkey}
+
+        2 ->
+          <<a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16, pkey::binary>> = rest
+          {"#{Pfx.new({a, b, c, d, e, f, g, h})}", pkey}
+
+        3 ->
+          {offset, name} = dname_decode(0, rest)
+          <<_::binary-size(offset), pkey::binary>> = rest
+          {name, pkey}
+
+        n ->
+          error(:eformat, "IPSECKEY gateway type unknown: #{inspect(n)}")
+      end
+
+    %{
+      pref: pref,
+      algo: algo,
+      gw_type: gw_type,
+      gateway: gateway,
+      pubkey: pubkey
     }
   end
 

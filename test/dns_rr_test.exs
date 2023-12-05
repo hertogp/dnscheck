@@ -11,8 +11,7 @@ defmodule DNS.Msg.RRTest do
     assert_raise DNS.Msg.Error, fn -> RR.new(type: -1) end
     assert_raise DNS.Msg.Error, fn -> RR.new(class: 65536) end
     assert_raise DNS.Msg.Error, fn -> RR.new(class: -1) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(ttl: 2_147_483_648) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(ttl: -2_147_483_649) end
+    assert_raise DNS.Msg.Error, fn -> RR.new(ttl: 4_294_967_296) end
     assert_raise DNS.Msg.Error, fn -> RR.new(rdmap: []) end
     assert_raise DNS.Msg.Error, fn -> RR.new(name: "example.123") end
     assert_raise DNS.Msg.Error, fn -> RR.new(name: "example.-om") end
@@ -55,8 +54,7 @@ defmodule DNS.Msg.RRTest do
     assert_raise DNS.Msg.Error, fn -> RR.put(rr, type: :a) end
     assert_raise DNS.Msg.Error, fn -> RR.put(rr, class: 65536) end
     assert_raise DNS.Msg.Error, fn -> RR.put(rr, class: -1) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, ttl: 2_147_483_648) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, ttl: -2_147_483_649) end
+    assert_raise DNS.Msg.Error, fn -> RR.put(rr, ttl: 4_294_967_296) end
     assert_raise DNS.Msg.Error, fn -> RR.put(rr, rdmap: []) end
     assert_raise DNS.Msg.Error, fn -> RR.put(rr, name: "example.123") end
     assert_raise DNS.Msg.Error, fn -> RR.put(rr, name: "example.-om") end
@@ -385,6 +383,32 @@ defmodule DNS.Msg.RRTest do
              "a69c3d2d414e4ef8ceaa66d39d90ed2b20ef36d9f4007d678cea0c0d803a0b7e"
   end
 
+  test "IPSECKEY RR" do
+    {name, type, _output, wiredata} = get_sample("twokeys.libreswan.org", :IPSECKEY, useD: true)
+
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 42737 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 3 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert :IN == rr.class
+    assert type == rr.type
+    assert 481 == rr.rdlen
+    assert 10 == rr.rdmap.pref
+    assert 2 == rr.rdmap.algo
+    assert 0 == rr.rdmap.gw_type
+    assert "" == rr.rdmap.gateway
+
+    assert "AQPO39yuENlW1FvoF8mLxRszJfO63zT6k3kRmo7Ja1ptQB7T+lb6yfgUZToVFmaVV6uZrSGNTYu1CmyirMJbnxyFDhKmEg4KOgMuV3CDTRUMd6vJMQtYhiWAahV9pvwtkEi3Yer8nxDktWl5diUoJeQWq7IPn61xcj75/FoKqavg4YH1bqpN6cgbU2qMn04vSNNKQj0e3ToHHHIdTTPqvb5244UlDv7S7YdvuunfdSt/hsF+8wUz2wcDxRfWNL4ES7qagT7awGHHg/4XYr8ARt+kupRodsaTOR9nxp4VfE87iwR+qGSUd9DBl65wvZItbjrIqyexF0PE8UgjXVUWREHd3J51iNx4ft//vH7ItYPuOM2EXGJvYJ+GLk+JiOOMSC3X3YK7xC4bOv9+fiP0dA7pFLy0diNDt+9KMEUHDNtwx5KyvPoXk4Kr0c0weAagj+xY0NjxwubswCXHEd2URGSFW0BuLDuyl82TI2ZpiWGiCgY/B/x/xdKJbp1PBua8PnO3DgLe01mPgAgHGAJMzf22ZF+raFxNag4lbPQzGwM7f/W1YqLHI4BGeg3kd9krXfKKlFpyKtWcQeDonG2tfrNP8GvWDbIahrP1SbusKD6UfVA4FDB5VoZK8MeE6w==" ==
+             Base.encode64(rr.rdmap.pubkey)
+
+    # can't compare wdata since we donot do name compression.
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "MX RR" do
     {name, type, _output, wiredata} = get_sample("sidn.nl", :MX)
     resp = DNS.Msg.decode(wiredata)
@@ -520,6 +544,19 @@ defmodule DNS.Msg.RRTest do
     assert 1857 == rr.ttl
     # add trailing dot, since that will have been stripped
     assert "ra-in-f27.1e100.net." == rr.rdmap.name <> "."
+  end
+
+  test "HINFO RR" do
+    {name, _type, _output, wiredata} = get_sample("cloudflare.com", :ANY)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 9711 == resp.header.id, "sample was updated, need to update test!"
+    assert 2 == length(resp.answer)
+    rr = Enum.filter(resp.answer, fn rr -> rr.type == :HINFO end) |> hd
+    assert name == rr.name
+    assert :HINFO == rr.type
+    assert "RFC8482" == rr.rdmap.cpu
+    assert "" == rr.rdmap.os
   end
 
   test "RRSIG RR" do

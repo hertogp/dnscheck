@@ -336,11 +336,13 @@ defmodule DNS.Msg.Terms do
               :CNAME => 5,
               :SOA => 6,
               :PTR => 12,
+              :HINFO => 13,
               :MX => 15,
               :TXT => 16,
               :AAAA => 28,
               :OPT => 41,
               :DS => 43,
+              :IPSECKEY => 45,
               :RRSIG => 46,
               :NSEC => 47,
               :DNSKEY => 48,
@@ -460,7 +462,9 @@ defmodule DNS.Msg.Terms do
                    |> Utils.normalize_name_map()
 
   @doc """
-  Encode a EDNS0 OPT-RR Code to its numeric value.
+  Encode an [EDNS0
+  OPT-RR](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
+  Code to its numeric value.
 
   Known OPT Codes include:
   ```
@@ -490,7 +494,9 @@ defmodule DNS.Msg.Terms do
     do: do_encode(@dns_rropt_codes, code, :eedns, 0..65535)
 
   @doc """
-  Decode an EDNS0 OPT-RR Code to its name, if possible.
+  Decode an [EDNS0
+  OPT-RR](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
+  Code to its name, if possible.
 
   See `encode_rropt_code/1` for known names.
 
