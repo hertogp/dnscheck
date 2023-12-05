@@ -437,6 +437,7 @@ defmodule DNS.Msg.RR do
       :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
       :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
       :CSYNC (62)      %{soa_serial: u32, flags: u16, bitmap: str}
+      :URI (256)       %{prio: u16, weight: u16, target: str}
       :CAA (257)       %{flags: u8, tag: str, value: str}
       ---------------- ------------------------------------------------------------------
 
@@ -814,6 +815,15 @@ defmodule DNS.Msg.RR do
   end
 
   # IN ANY/* (255)
+
+  # IN URI (256)
+  # - https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
+  defp encode_rdata(:URI, m) do
+    prio = required(:URI, m, :prio, &is_u16/1)
+    weight = required(:URI, m, :weight, &is_u16/1)
+    target = required(:URI, m, :target, &is_binary/1)
+    <<prio::16, weight::16, target::binary>>
+  end
 
   # IN CAA (257)
   # https://www.rfc-editor.org/rfc/rfc8659#section-4
@@ -1371,6 +1381,14 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc9460.html#name-rdata-wire-format
 
   # IN ANY/* (255)
+
+  # IN URI (256)
+  # - https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
+  defp decode_rdata(:URI, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    <<prio::16, weight::16, target::binary>> = rdata
+    %{prio: prio, weight: weight, target: target}
+  end
 
   # IN CAA (257)
   # https://www.rfc-editor.org/rfc/rfc8659#section-4

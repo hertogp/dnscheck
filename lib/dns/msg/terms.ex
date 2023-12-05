@@ -359,6 +359,7 @@ defmodule DNS.Msg.Terms do
               :SPF => 99,
               :* => 255,
               :ANY => 255,
+              :URI => 256,
               :CAA => 257
             }
             |> Utils.normalize_name_map()

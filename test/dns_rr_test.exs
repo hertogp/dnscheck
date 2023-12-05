@@ -711,4 +711,22 @@ defmodule DNS.Msg.RRTest do
     assert 9161 == rr.ttl
     assert ["v=spf1 -all"] == rr.rdmap.txt
   end
+
+  test "URI RR" do
+    {name, type, _output, wiredata} = get_sample("uri.dns.netmeister.org", :URI)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 26668 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert 10 == rr.rdmap.prio
+    assert 1 == rr.rdmap.weight
+    assert "https://www.netmeister.org/blog/dns-rrs.html" == rr.rdmap.target
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
 end
