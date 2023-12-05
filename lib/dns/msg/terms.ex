@@ -343,6 +343,7 @@ defmodule DNS.Msg.Terms do
               :SRV => 33,
               :OPT => 41,
               :DS => 43,
+              :SSHFP => 44,
               :IPSECKEY => 45,
               :RRSIG => 46,
               :NSEC => 47,

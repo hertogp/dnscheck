@@ -620,6 +620,27 @@ defmodule DNS.Msg.RRTest do
     assert rr.rdata == rr2.rdata
   end
 
+  test "SSHFP RR" do
+    {name, type, _output, wiredata} = get_sample("salsa.debian.org", :SSHFP)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 7178 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 4 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert 600 == rr.ttl
+    assert type == rr.type
+    assert 1 == rr.rdmap.algo
+    assert 1 == rr.rdmap.type
+
+    assert "eaa6c147facf35bc49946d9e8b90e2235c7da361" ==
+             Base.encode16(rr.rdmap.fp, case: :lower)
+
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "TSLA" do
     {name, type, _output, wiredata} = get_sample("_25._tcp.esa.sidn.nl", :TLSA)
     resp = DNS.Msg.decode(wiredata)

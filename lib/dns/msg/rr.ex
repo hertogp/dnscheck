@@ -423,6 +423,7 @@ defmodule DNS.Msg.RR do
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
       :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
+      :SSHFP (44)      %{algo: u8, type: u8, fp: str}
       :IPSECKEY (45)   %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
       :RRSIG (46)      %{type: atom | u16, algo: u8, labels: u8, ttl: u32, expiration: 32
                        inception: u32, keytag: u16, name: str, signature: str}
@@ -656,6 +657,15 @@ defmodule DNS.Msg.RR do
     t = required(:DS, m, :type, &is_u8/1)
     d = required(:DS, m, :digest, &is_binary/1)
     <<k::16, a::8, t::8, d::binary>>
+  end
+
+  # IN SSHFP (44)
+  # - https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1
+  defp encode_rdata(:SSHFP, m) do
+    algo = required(:SSHFP, m, :algo, &is_u8/1)
+    type = required(:SSHFP, m, :type, &is_u8/1)
+    fp = required(:SSHFP, m, :fp, &is_binary/1)
+    <<algo::8, type::8, fp::binary>>
   end
 
   # IN IPSECKEY (45)
@@ -936,7 +946,6 @@ defmodule DNS.Msg.RR do
   # TODO: Maybe add these (check out <type>.dns.netmeister.org
   # - RP dnslab.org tcp53.ch
   # - TYPE65 www.google.com  (for some reason HTTPS doesn't work)
-  # - SSHFP (44) salsa.debian.org / sshfp.dns.netmeister.org
   # - SIG (24)
   # - KEY (25)
   # - PX (26)
@@ -1088,6 +1097,19 @@ defmodule DNS.Msg.RR do
       algo: algo,
       type: type,
       digest: digest
+    }
+  end
+
+  # SSHFP (44)
+  # - https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1
+  defp decode_rdata(:SSHFP, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    <<algo::8, type::8, fp::binary>> = rdata
+
+    %{
+      algo: algo,
+      type: type,
+      fp: fp
     }
   end
 
