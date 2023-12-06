@@ -107,21 +107,88 @@ defmodule DNS.Msg.RR do
     do: raise(Error.exception(reason: reason, data: data))
 
   # NSEC (3) bitmap conversion to list of RR type numbers
-  defp to_num(_, <<>>, _, acc),
+  defp bitmap_2_nrs(_, <<>>, _, acc),
     do: acc |> Enum.reverse()
 
-  defp to_num(w, <<0::1, rest::bitstring>>, n, acc),
-    do: to_num(w, rest, n + 1, acc)
+  defp bitmap_2_nrs(w, <<0::1, rest::bitstring>>, n, acc),
+    do: bitmap_2_nrs(w, rest, n + 1, acc)
 
-  defp to_num(w, <<1::1, rest::bitstring>>, n, acc),
-    do: to_num(w, rest, n + 1, [decode_rr_type(w * 256 + n) | acc])
+  defp bitmap_2_nrs(w, <<1::1, rest::bitstring>>, n, acc),
+    do: bitmap_2_nrs(w, rest, n + 1, [w * 256 + n | acc])
 
-  # convert NSEC(3) bitmap to rr types covered
-  defp bitmap_to_rrs(bin) do
+  def bitmap_to_rrs(bin) do
     for <<w::8, len::8, bmap::binary-size(len) <- bin>> do
-      to_num(w, bmap, 0, [])
+      bitmap_2_nrs(w, bmap, 0, [])
     end
     |> List.flatten()
+    |> Enum.map(fn n -> decode_rr_type(n) end)
+  end
+
+  # convert NSEC(3) bitmap to rr types covered
+  # - https://www.rfc-editor.org/rfc/rfc4034#section-4.1.2
+  # RR type = u16
+
+  # The RR type space is split into 256 window blocks, each representing
+  # the low-order 8 bits of the 16-bit RR type space.
+  # Each block that has at least one active RR type is encoded using
+  # a. a single octet window number (from 0 to 255),
+  # b. a single octet bitmap length (from 1 to 32)
+  #    indicating the number of octets used for the window block's bitmap,
+  # c. a bitmap of up to 32 octets (256 bits).
+
+  # 1. Each bitmap encodes the low-order 8 bits of RR types within the
+  #    window block, in network bit order. The first bit is bit 0 (ie msb)
+  # 2. For window block 0,
+  #    - bit 0 corresponds to RR type 0 (RESERVED)
+  #    - bit 1 corresponds to RR type 1 (A),
+  #    - bit 2 corresponds to RR type 2 (NS), and so forth.
+  # 3. For window block 1,
+  #    - bit 0 corresponds to RR type 256 (URI)
+  #    - bit 1 corresponds to RR type 257, and
+  #    - bit 2 to RR type 258.
+  # 4. If a bit is set, it indicates that an RRset of that type is present
+  #    for the NSEC RR's owner name.
+  # 5. If a bit is clear, it indicates that no RRset of that type is present
+  #    for the NSEC RR's owner name.
+  # 6. Bits representing pseudo-types MUST be clear, as they do not appear
+  #    in zone data.  If encountered, they MUST be ignored upon being read.
+  # 7. Blocks with no types present MUST NOT be included.
+  # 8. Trailing zero octets in the bitmap MUST be omitted.
+  # 9. The length of each block's bitmap is determined by the type code with
+  #    the largest numerical value, within that block, among the set of RR
+  #    types present at the NSEC RR's owner name.
+  # 10.Trailing zero octets not specified MUST be interpreted as zero octets.
+
+  def bitmap_expand(bits, n) do
+    fill = n - bit_size(bits)
+    <<bits::bitstring, 0::size(fill), 1::1>>
+  end
+
+  def bitmap_pad(bmap) when rem(bit_size(bmap), 8) == 0,
+    do: bmap
+
+  def bitmap_pad(bmap),
+    do: bitmap_pad(<<bmap::bitstring, 0::1>>)
+
+  def bitmap_block(w, nrs) do
+    bmap =
+      nrs
+      |> Enum.map(fn n -> n - w * 256 end)
+      |> Enum.reduce(<<>>, fn n, acc -> bitmap_expand(acc, n) end)
+      |> bitmap_pad()
+
+    {w, byte_size(bmap), bmap}
+  end
+
+  def bitmap_4_rrs(rrs) do
+    # TODO: maybe filter out pseudo-RR's: ANY (255), AXFR (252), IXFR (251), OPT (41)
+    # or leave that up to the caller so experimentation remains possible
+    Enum.map(rrs, fn n -> encode_rr_type(n) end)
+    |> Enum.sort(:asc)
+    |> Enum.group_by(fn n -> div(n, 256) end)
+    |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
+    |> Enum.map(fn {w, l, b} -> <<w::8, l::8, b::binary>> end)
+    |> Enum.join()
   end
 
   # used to check rdmap for mandatory fields when encoding an RR
