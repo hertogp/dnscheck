@@ -437,6 +437,7 @@ defmodule DNS.Msg.RR do
       :TLSA (52)       %{usage: u8, selector: u8, type: u8, data: str}
       :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
       :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
+      :ZONEMD (63)     %{serial: u32, scheme: u8, algo: u8, digest: str}
       :CSYNC (62)      %{soa_serial: u32, flags: u16, bitmap: str}
       :URI (256)       %{prio: u16, weight: u16, target: str}
       :CAA (257)       %{flags: u8, tag: str, value: str}
@@ -820,6 +821,16 @@ defmodule DNS.Msg.RR do
     flags = required(:CSYNC, m, :flags, &is_u16/1)
     bitmap = required(:CSYNC, m, :bitmap, &is_binary/1)
     <<soa_serial::32, flags::16, bitmap::binary>>
+  end
+
+  # IN ZONEMD (63)
+  # - https://datatracker.ietf.org/doc/html/rfc8976#section-2
+  defp encode_rdata(:ZONEMD, m) do
+    serial = required(:ZONEMD, m, :serial, &is_u32/1)
+    scheme = required(:ZONEMD, m, :scheme, &is_u8/1)
+    algo = required(:ZONEMD, m, :algo, &is_u8/1)
+    digest = required(:ZONEMD, m, :digest, &is_binary/1)
+    <<serial::32, scheme::8, algo::8, digest::binary>>
   end
 
   # IN ANY/* (255)
@@ -1389,6 +1400,14 @@ defmodule DNS.Msg.RR do
       keytag: keytag,
       pubkey: pubkey
     }
+  end
+
+  # IN ZONEMD (63)
+  # - https://datatracker.ietf.org/doc/html/rfc8976#section-2
+  defp decode_rdata(:ZONEMD, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    <<serial::32, scheme::8, algo::8, digest::binary>> = rdata
+    %{serial: serial, scheme: scheme, algo: algo, digest: digest}
   end
 
   # IN HTTPS (65)

@@ -745,4 +745,26 @@ defmodule DNS.Msg.RRTest do
     rr2 = DNS.Msg.RR.encode(rr)
     assert rr.rdata == rr2.rdata
   end
+
+  test "ZONEMD RR" do
+    {name, type, _output, wiredata} = get_sample("zonemd.dns.netmeister.org", :ZONEMD)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 8222 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert 2866 == rr.ttl
+    assert type == rr.type
+    assert 2_021_071_219 == rr.rdmap.serial
+    assert 1 == rr.rdmap.scheme
+    assert 1 == rr.rdmap.algo
+
+    assert "4274f6bc562cf8ce512b21aa0a4ccc1eb9f4faaaecd01642d0a07bdea890c8845849d6015cc590f54b0ac7e87b9e41ed" ==
+             Base.encode16(rr.rdmap.digest, case: :lower)
+
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
 end
