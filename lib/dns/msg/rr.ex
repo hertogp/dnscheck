@@ -422,6 +422,7 @@ defmodule DNS.Msg.RR do
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :CERT (37)       %{type: u16, key_tag: u16, algo: u8, cert: str}
+      :DNAME (39)      %{dname: str}
       :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
       :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
       :SSHFP (44)      %{algo: u8, type: u8, fp: str}
@@ -652,6 +653,13 @@ defmodule DNS.Msg.RR do
     cert = required(:CERT, m, :cert, &is_binary/1)
 
     <<type::16, key_tag::16, algo::8, cert::binary>>
+  end
+
+  # - DNAME (39)
+  #   - https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1
+  defp encode_rdata(:DNAME, m) do
+    dname = required(:DNAME, m, :dname, &is_binary/1)
+    dname_encode(dname)
   end
 
   # IN OPT (41)
@@ -984,7 +992,6 @@ defmodule DNS.Msg.RR do
   # - LOC (29)
   # - NAPTR (35) sip2sip.info
   # - KX (36)
-  # - DNAME (39)
   # - TKEY (249)
   # - TSIG (250)
   # - URI (256)
@@ -1108,6 +1115,13 @@ defmodule DNS.Msg.RR do
       algo: algo,
       cert: cert
     }
+  end
+
+  # - DNAME (39)
+  #   - https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1
+  defp decode_rdata(:DNAME, offset, _rdlen, msg) do
+    {_offset, dname} = dname_decode(offset, msg)
+    %{dname: dname}
   end
 
   # IN OPT (41) pseudo-rr

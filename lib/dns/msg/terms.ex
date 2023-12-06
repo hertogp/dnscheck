@@ -342,6 +342,7 @@ defmodule DNS.Msg.Terms do
               :AAAA => 28,
               :SRV => 33,
               :CERT => 37,
+              :DNAME => 39,
               :OPT => 41,
               :DS => 43,
               :SSHFP => 44,
