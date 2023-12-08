@@ -38,13 +38,31 @@ defmodule DNS.Msg.RR do
 
   # TODO:
   # - add rfc references
-  # - https://www.rfc-editor.org/rfc/rfc5890 (Internationlized Domain Names for
-  #   Applications (IDNA)
+  # - https://www.rfc-editor.org/rfc/rfc5890 (Internationlized Domain Names for Applications (IDNA)
   # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
+  # [ ] instead of DNS.Msg.RR.User, use RR struct field raw: true/false
+  #     encoding, if raw, do: use rdata as-is, else: decode rdmap
+  #     decoding, catch all: raw = rdata != <<>>
+  # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
+  # [ ] rename DNS.Msg.Terms to DNS.Msg.Names
+  # [ ] rename DNS.Msg.Fields to ...(?)
+  # [ ] move error func into DNS.Msg.Error, and use
+  #     import DNS.Msg.Error, only: [error: 2]
+  # [ ] add logging (Logger?)
+  # [ ] TODO-RRs: Maybe add these (check out <type>.dns.netmeister.org
+  # [ ] NSEC3PARAM hash, see
+  #     - https://www.netmeister.org/blog/dns-rrs.html
+  #     - https://github.com/shuque/nsec3hash
   #
-  #   <<0xb2,0x7f,0x01,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x77,0x77,0x77,0x07,0x65,0x78,0x61,0x6d,0x70,0x6c,0x65,0x03,0x63,0x6f,0x6d,0x00,0x00,0x1c,0x00,0x01>>
+  # - RP dnslab.org tcp53.ch
+  # - TYPE65 www.google.com  (for some reason HTTPS doesn't work)
+  # - LOC (29)
+  # - NAPTR (35) sip2sip.info
+  # - KX (36)
+  # - TKEY (249) (?)
+  # - TSIG (250) (?)
 
   import DNS.Msg.Terms
   import DNS.Msg.Fields
@@ -514,7 +532,6 @@ defmodule DNS.Msg.RR do
   - str, denotes a binary
   - u<x>, denotes an unsigned number of <x> bits
   - optional fields have their (default value) listed as well
-  - some `bitmap` fields may generate an extra, informational, `covers` list of RR's
 
   When your favorite `RR` type is missing from the table above, you can still encode
   it by creating a module named `DNS.Msg.RR.User` and provide your own encoder and
@@ -1063,19 +1080,6 @@ defmodule DNS.Msg.RR do
   # - type define RR-type whose rdata is to be decoded
   # - rdlen is needed since some RR's have rdlen of 0
   # - offset, msg is needed since rdata may contain compressed domain names
-  # TODO-RRs: Maybe add these (check out <type>.dns.netmeister.org
-  # - RP dnslab.org tcp53.ch
-  # - TYPE65 www.google.com  (for some reason HTTPS doesn't work)
-  # - SIG (24)
-  # - KEY (25)
-  # - PX (26)
-  # - GPOS (27)
-  # - LOC (29)
-  # - NAPTR (35) sip2sip.info
-  # - KX (36)
-  # - TKEY (249)
-  # - TSIG (250)
-  # - URI (256)
 
   @spec decode_rdata(type, offset, length, binary) :: map
   defp decode_rdata(type, offset, rdlen, msg)
