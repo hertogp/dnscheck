@@ -342,7 +342,7 @@ defmodule DNS.Msg.RRTest do
     assert type == rr.type
     assert 3337 == rr.ttl
     assert 6 == rr.rdmap.type
-    assert 0 == rr.rdmap.key_tag
+    assert 0 == rr.rdmap.keytag
     assert 0 == rr.rdmap.algo
     assert "99CE1DC7770AC5A809A60DCD66CE4FE96F6BD3D7" == Base.encode64(rr.rdmap.cert)
     rr2 = DNS.Msg.RR.encode(rr)

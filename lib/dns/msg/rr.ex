@@ -488,7 +488,7 @@ defmodule DNS.Msg.RR do
       :TXT (16)        %{txt: [str]}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
-      :CERT (37)       %{type: u16, key_tag: u16, algo: u8, cert: str}
+      :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
       :DNAME (39)      %{dname: str}
       :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
       :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
@@ -716,11 +716,11 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc4398.html#section-2
   defp encode_rdata(:CERT, m) do
     type = required(:CERT, m, :type, &is_u16/1)
-    key_tag = required(:CERT, m, :key_tag, &is_u16/1)
+    keytag = required(:CERT, m, :keytag, &is_u16/1)
     algo = required(:CERT, m, :algo, &is_u8/1)
     cert = required(:CERT, m, :cert, &is_binary/1)
 
-    <<type::16, key_tag::16, algo::8, cert::binary>>
+    <<type::16, keytag::16, algo::8, cert::binary>>
   end
 
   # - DNAME (39)
@@ -1185,11 +1185,11 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc4398.html#section-2
   defp decode_rdata(:CERT, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
-    <<type::16, key_tag::16, algo::8, cert::binary>> = rdata
+    <<type::16, keytag::16, algo::8, cert::binary>> = rdata
 
     %{
       type: type,
-      key_tag: key_tag,
+      keytag: keytag,
       algo: algo,
       cert: cert
     }
