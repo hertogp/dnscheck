@@ -496,16 +496,16 @@ defmodule DNS.Msg.RR do
       :IPSECKEY (45)   %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
       :RRSIG (46)      %{type: atom | u16, algo: u8, labels: u8, ttl: u32, expiration: 32
                        inception: u32, keytag: u16, name: str, signature: str}
-      :NSEC (47)       %{name: str, bitmap: bitstring}
+      :NSEC (47)       %{name: str, covers: [atom|u16]}
       :DNSKEY (48)     %{flags: u16, proto: u8, algo: u8, pubkey: str}
       :NSEC3 (50)      %{algo: u8, flags: u8, iterations: u16, salt: str,
-                       next_name: str, bitmap: str}
+                       next_name: str, covers: [atom|u16]}
       :NSECPARAM3 (51) %{algo: u8, flags: u8, iterations: u16, salt: str}
       :TLSA (52)       %{usage: u8, selector: u8, type: u8, data: str}
       :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
       :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
       :ZONEMD (63)     %{serial: u32, scheme: u8, algo: u8, digest: str}
-      :CSYNC (62)      %{soa_serial: u32, flags: u16, bitmap: str}
+      :CSYNC (62)      %{soa_serial: u32, flags: u16, covers: [atom|u32]}
       :URI (256)       %{prio: u16, weight: u16, target: str}
       :CAA (257)       %{flags: u8, tag: str, value: str}
       ---------------- ------------------------------------------------------------------
@@ -812,7 +812,8 @@ defmodule DNS.Msg.RR do
   # https://www.rfc-editor.org/rfc/rfc4034#section-4
   defp encode_rdata(:NSEC, m) do
     name = required(:NSEC, m, :name, &is_binary/1) |> dname_encode()
-    bitmap = required(:NSEC, m, :bitmap, &is_binary/1)
+    covers = required(:NSEC, m, :covers, &is_list/1)
+    bitmap = bitmap_4_rrs(covers)
     <<name::binary, bitmap::binary>>
   end
 
@@ -833,20 +834,21 @@ defmodule DNS.Msg.RR do
     flags = required(:NSEC3, m, :flags, &is_u8/1)
     iterations = required(:NSEC3, m, :iterations, &is_u16/1)
     salt = required(:NSEC3, m, :salt, &is_binary/1)
-    nxt_name = required(:NSEC3, m, :nxt_name, &is_binary/1)
-    bitmap = required(:NSEC3, m, :bitmap, &is_binary/1)
+    next_name = required(:NSEC3, m, :next_name, &is_binary/1)
+    covers = required(:NSEC, m, :covers, &is_list/1)
+    bitmap = bitmap_4_rrs(covers)
 
-    <<algo::8, flags::8, iterations::16, byte_size(salt), salt::binary, byte_size(nxt_name)::8,
-      nxt_name::binary, bitmap::binary>>
+    <<algo::8, flags::8, iterations::16, byte_size(salt), salt::binary, byte_size(next_name)::8,
+      next_name::binary, bitmap::binary>>
   end
 
   # IN NSEC3PARAM (51)
   # https://www.rfc-editor.org/rfc/rfc5155#section-4.1
   defp encode_rdata(:NSEC3PARAM, m) do
-    algo = required(:NSEC3, m, :algo, &is_u8/1)
-    flags = required(:NSEC3, m, :flags, &is_u8/1)
-    iterations = required(:NSEC3, m, :iterations, &is_u16/1)
-    salt = required(:NSEC3, m, :salt, &is_binary/1)
+    algo = required(:NSEC3PARAM, m, :algo, &is_u8/1)
+    flags = required(:NSEC3PARAM, m, :flags, &is_u8/1)
+    iterations = required(:NSEC3PARAM, m, :iterations, &is_u16/1)
+    salt = required(:NSEC3PARAM, m, :salt, &is_binary/1)
     <<algo::8, flags::8, iterations::16, byte_size(salt)::8, salt::binary>>
   end
 
@@ -886,7 +888,8 @@ defmodule DNS.Msg.RR do
   defp encode_rdata(:CSYNC, m) do
     soa_serial = required(:CSYNC, m, :soa_serial, &is_u32/1)
     flags = required(:CSYNC, m, :flags, &is_u16/1)
-    bitmap = required(:CSYNC, m, :bitmap, &is_binary/1)
+    covers = required(:CSYNC, m, :covers, &is_list/1)
+    bitmap = bitmap_4_rrs(covers)
     <<soa_serial::32, flags::16, bitmap::binary>>
   end
 
@@ -1103,7 +1106,7 @@ defmodule DNS.Msg.RR do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<soa_serial::32, flags::16, bitmap::binary>> = rdata
     covers = bitmap_to_rrs(bitmap)
-    %{soa_serial: soa_serial, flags: flags, bitmap: bitmap, covers: covers}
+    %{soa_serial: soa_serial, flags: flags, covers: covers}
   end
 
   # IN SOA (6)
@@ -1330,7 +1333,7 @@ defmodule DNS.Msg.RR do
     {offset, name} = dname_decode(0, rdata)
     <<_::binary-size(offset), bitmap::binary>> = rdata
     covers = bitmap_to_rrs(bitmap)
-    %{name: name, bitmap: bitmap, covers: covers}
+    %{name: name, covers: covers}
   end
 
   # IN DNSKEY (48)
@@ -1372,7 +1375,7 @@ defmodule DNS.Msg.RR do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<algo::8, flags::8, iter::16, slen::8, salt::binary-size(slen), hlen::8,
-      nxt_name::binary-size(hlen), bitmap::binary>> = rdata
+      next_name::binary-size(hlen), bitmap::binary>> = rdata
 
     covers = bitmap_to_rrs(bitmap)
 
@@ -1383,8 +1386,7 @@ defmodule DNS.Msg.RR do
       salt_len: slen,
       salt: salt,
       hash_len: hlen,
-      next_name: nxt_name,
-      bitmap: bitmap,
+      next_name: next_name,
       covers: covers
     }
   end
