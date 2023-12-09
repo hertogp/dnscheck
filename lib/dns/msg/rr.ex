@@ -36,19 +36,20 @@ defmodule DNS.Msg.RR do
 
   """
 
-  # TODO:
+  # TODOs:
   # - add rfc references
   # - https://www.rfc-editor.org/rfc/rfc5890 (Internationlized Domain Names for Applications (IDNA)
   # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
   # - https://www.netmeister.org/blog/dns-rrs.html (shout out!)
-  # [ ] add guard is_ttl? (u32 with range 0..2**31-1
+  # [x] add guard is_ttl (u32 with range 0..2**31-1
   # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names
   #     [ ] add all/more names
   #     [ ] accept TYPEnnn as mnemonic
   # [ ] move the only func in DNS.Msg.Utils into Names module (only place it'll be used)
+  # [ ] maybe only use nrs in Hdr, Qtn and RR's and use name maps for presentation only?
   # [ ] rename DNS.Msg.Fields to ...(Utils?)
   # [ ] move error func into DNS.Msg.Error, and use
   #     import DNS.Msg.Error, only: [error: 2]
@@ -57,10 +58,11 @@ defmodule DNS.Msg.RR do
   #     [ ] NSEC3PARAM hash, see
   #         - https://www.netmeister.org/blog/dns-rrs.html
   #         - https://github.com/shuque/nsec3hash
-  #     [ ] RP dnslab.org tcp53.ch
-  #     [ ] TYPE65 www.google.com  (for some reason HTTPS doesn't work)
-  #     [ ] LOC (29)
-  #     [ ] NAPTR (35) sip2sip.info
+  #     [o] AMTRELAY, https://datatracker.ietf.org/doc/html/rfc8777#section-4
+  #     [o] RP dnslab.org tcp53.ch
+  #     [o] TYPE65 www.google.com  (for some reason HTTPS doesn't work)
+  #     [o] LOC (29)
+  #     [?] NAPTR (35) sip2sip.info
   #     [ ] KX (36)
   #     [ ] TKEY (249) (?)
   #     [ ] TSIG (250) (?)
@@ -904,6 +906,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN ANY/* (255)
+  # pseudo QTYPE, never an RRtype, see also RFC882 and RFC8482
 
   # IN URI (256)
   # - https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
@@ -924,7 +927,7 @@ defmodule DNS.Msg.RR do
   end
 
   ## [[ catch all ]]
-  # we're here because rr.raw is false and hence MUST be able to encode!
+  # we're here because rr.raw is false and hence we MUST be able to encode!
   defp encode_rdata(type, rdmap),
     do: error(:errtype, "RR #{type}, cannot encode rdmap: #{inspect(rdmap)}")
 
@@ -1442,6 +1445,7 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc9460.html#name-rdata-wire-format
 
   # IN ANY/* (255)
+  # pseudo QTYPE, never an RRtype, see also RFC882 and RFC8482
 
   # IN URI (256)
   # - https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
