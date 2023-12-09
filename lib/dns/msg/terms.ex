@@ -355,6 +355,7 @@ defmodule DNS.Msg.Terms do
               :TLSA => 52,
               :CDS => 59,
               :CDNSKEY => 60,
+              :OPENPGPKEY => 61,
               :CSYNC => 62,
               :ZONEMD => 63,
               :HTTPS => 65,

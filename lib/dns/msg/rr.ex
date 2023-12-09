@@ -42,26 +42,30 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
+  # - https://www.netmeister.org/blog/dns-rrs.html (shout out!)
+  # [ ] add guard is_ttl? (u32 with range 0..2**31-1
   # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names
-  # [ ] rename DNS.Msg.Fields to ...(?)
+  #     [ ] add all/more names
+  #     [ ] accept TYPEnnn as mnemonic
+  # [ ] move the only func in DNS.Msg.Utils into Names module (only place it'll be used)
+  # [ ] rename DNS.Msg.Fields to ...(Utils?)
   # [ ] move error func into DNS.Msg.Error, and use
   #     import DNS.Msg.Error, only: [error: 2]
   # [ ] add logging (Logger?)
-  # [ ] TODO-RRs: Maybe add these (check out <type>.dns.netmeister.org
-  # [ ] NSEC3PARAM hash, see
-  #     - https://www.netmeister.org/blog/dns-rrs.html
-  #     - https://github.com/shuque/nsec3hash
-  #
-  # - RP dnslab.org tcp53.ch
-  # - TYPE65 www.google.com  (for some reason HTTPS doesn't work)
-  # - LOC (29)
-  # - NAPTR (35) sip2sip.info
-  # - KX (36)
-  # - TKEY (249) (?)
-  # - TSIG (250) (?)
-  # - OPENPGPKEY ()
-  # - KEY (25) https://www.rfc-editor.org/rfc/rfc3445.html
+  # [ ] ad RRs: Maybe add these (check out <type>.dns.netmeister.org
+  #     [ ] NSEC3PARAM hash, see
+  #         - https://www.netmeister.org/blog/dns-rrs.html
+  #         - https://github.com/shuque/nsec3hash
+  #     [ ] RP dnslab.org tcp53.ch
+  #     [ ] TYPE65 www.google.com  (for some reason HTTPS doesn't work)
+  #     [ ] LOC (29)
+  #     [ ] NAPTR (35) sip2sip.info
+  #     [ ] KX (36)
+  #     [ ] TKEY (249) (?)
+  #     [ ] TSIG (250) (?)
+  #     [c] OPENPGPKEY () would be raw type anyway, since we won't decode rdata!
+  #     [ ] KEY (25) https://www.rfc-editor.org/rfc/rfc3445.html
 
   import DNS.Msg.Terms
   import DNS.Msg.Fields
@@ -566,9 +570,6 @@ defmodule DNS.Msg.RR do
     name = dname_encode(rr.name)
     class = encode_dns_class(rr.class)
     type = encode_rr_type(rr.type)
-    # TODO: what if we have no encoder, raw=false and rdmap non-empty?
-    # - should set raw to true, right? Or bomb out.
-    # - user should set raw in new if she encoded rdata!
     rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.rdmap)
     rdlen = byte_size(rdata)
 
@@ -966,7 +967,7 @@ defmodule DNS.Msg.RR do
     end
   end
 
-  # [[ catch all - todo ]]
+  # [[ catch all]]
   defp encode_edns_opt(code, data),
     do: error(:eedns, "EDNS0 option #{inspect(code)} unknown or data illegal #{inspect(data)}")
 
