@@ -42,9 +42,6 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
-  # [ ] instead of DNS.Msg.RR.User, use RR struct field raw: true/false
-  #     encoding, if raw, do: use rdata as-is, else: decode rdmap
-  #     decoding, catch all: raw = rdata != <<>>
   # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names
   # [ ] rename DNS.Msg.Fields to ...(?)
@@ -63,17 +60,18 @@ defmodule DNS.Msg.RR do
   # - KX (36)
   # - TKEY (249) (?)
   # - TSIG (250) (?)
+  # - OPENPGPKEY ()
+  # - KEY (25) https://www.rfc-editor.org/rfc/rfc3445.html
 
   import DNS.Msg.Terms
   import DNS.Msg.Fields
   alias DNS.Msg.Error
 
-  @user DNS.Msg.RR.User
-
   defstruct name: "",
             type: :A,
             class: :IN,
             ttl: 0,
+            raw: false,
             rdlen: 0,
             rdmap: %{},
             rdata: <<>>,
@@ -99,6 +97,7 @@ defmodule DNS.Msg.RR do
   - `type`, the RR type (default `:A`)
   - `class`, the DNS class (default `:IN`)
   - `ttl`, the time-to-live for this RR (default 0)
+  - `raw`, indicates `rdata` could be encoded/decoded (default false)
   - `rdmap`, contains the (decoded) key,value-pairs of `rdata` (default `%{}`)
   - `rdlen`, the number of octets in the `rdata` field (default 0)
   - `rdata`, RR's rdata in wireformat (default `<<>>`)
@@ -109,6 +108,7 @@ defmodule DNS.Msg.RR do
           name: binary,
           type: type,
           class: class,
+          raw: boolean,
           ttl: non_neg_integer,
           rdmap: map,
           rdlen: non_neg_integer,
@@ -231,7 +231,7 @@ defmodule DNS.Msg.RR do
   - `:ttl`, a unsigned 32 bit integer (default `0`)
   - `:rdmap`, a map with `key,value`-pairs (to be encoded later, default `%{}`)
 
-  Anything else is silently ignored, including `:rdlen`, `:rdata` and `:wdata`
+  Anything else is silently ignored, including `:raw`, `:rdlen`, `:rdata` and `:wdata`
   since those fields are set when decoding a DNS message or encoding an RR
   struct.  The `:rdmap`, if provided, is set as-is.  Its `key,value`-pairs
   are checked upon invoking `encode/1`.
@@ -274,6 +274,7 @@ defmodule DNS.Msg.RR do
         type: :A,
         class: :IN,
         ttl: 0,
+        raw: false,
         rdlen: 0,
         rdmap: %{},
         rdata: "",
@@ -286,6 +287,7 @@ defmodule DNS.Msg.RR do
         type: :AAAA,
         class: :IN,
         ttl: 0,
+        raw: false,
         rdlen: 0,
         rdmap: %{ip: "acdc:1971::1"},
         rdata: "",
@@ -299,6 +301,7 @@ defmodule DNS.Msg.RR do
         type: :OPT,
         class: 1410,
         ttl: 268468224,
+        raw: false,
         rdlen: 0,
         rdmap: %{bufsize: 1410, do: 1, opts: [], version: 0, xrcode: :BADVERS, z: 0},
         rdata: "",
@@ -335,6 +338,7 @@ defmodule DNS.Msg.RR do
         type: :NS,
         class: :IN,
         ttl: 0,
+        raw: false,
         rdlen: 0,
         rdmap: %{},
         rdata: "",
@@ -342,7 +346,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new() |> put(type: 65536)
-      ** (DNS.Msg.Error) [invalid RR type] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [unknown RR type] "valid range is 0..65535, got: 65536"
 
   """
   @spec put(t(), Keyword.t()) :: t
@@ -362,10 +366,6 @@ defmodule DNS.Msg.RR do
       else: Enum.reduce(opts, %{rr | rdata: <<>>, wdata: <<>>, rdlen: 0}, &do_put/2)
   end
 
-  # skip calculated fields, note: :type is popped in put/2
-  defp do_put({k, _v}, rr) when k in [:__struct__, :rdlen, :rdata, :wdata],
-    do: rr
-
   defp do_put({k, v}, rr) when k == :name do
     if dname_valid?(v),
       do: Map.put(rr, k, v),
@@ -378,9 +378,6 @@ defmodule DNS.Msg.RR do
       else: error(:evalue, "#{k}, got: #{inspect(v)}")
   end
 
-  # signed 32 bit range is -(2**31)..(2**31-1)
-  # rfc1035, 3.2.1 says its a 32 bit signed integer, and erlang seems to agree:
-  # - https://github.com/dnsimple/dns_erlang/blob/main/src/dns.erl#L236C48-L236C61
   defp do_put({k, v}, rr) when k == :ttl do
     if is_u32(v),
       do: Map.put(rr, k, v),
@@ -393,7 +390,7 @@ defmodule DNS.Msg.RR do
       else: error(:erdmap, "expected a map, got: #{inspect(v)}")
   end
 
-  # ignore unknown options
+  # ignore other (or unknown) options
   defp do_put(_, rr),
     do: rr
 
@@ -474,6 +471,7 @@ defmodule DNS.Msg.RR do
       type: type,
       class: class,
       ttl: ttl,
+      raw: false,
       rdlen: 0,
       rdmap: rdmap,
       rdata: <<>>,
@@ -533,38 +531,6 @@ defmodule DNS.Msg.RR do
   - u<x>, denotes an unsigned number of <x> bits
   - optional fields have their (default value) listed as well
 
-  When your favorite `RR` type is missing from the table above, you can still encode
-  it by creating a module named `DNS.Msg.RR.User` and provide your own encoder and
-  maybe raise a somewhat more helpful exception.
-
-  ```
-  defmodule DNS.Msg.RR.User do
-
-    @spec encode_rdata(non_neg_integer, map) :: binary
-    def encode(type, rdmap)
-
-    # Example: howto encode RR type 1 (:A) if it were missing
-    def encode(1, rdmap) do
-      ip = Map.get(rdmap, :ip) || raise DNS.Msg.Error.Exception(reason: :erdmap, data: "missing ip")
-
-      with {:ok, pfx} <- Pfx.parse(ip),
-           :ip4 <- Pfx.type(pfx),
-           {a, b, c, d} <- Pfx.to_tuple(pfx, mask: false) do
-        <<a::8, b::8, c::8, d::8>>
-      else
-        _ ->
-          raise DNS.Msg.Error.Exception(reason: :erdmap, data: "invalid IPv4 #{inspect(ip)}")
-      end
-    end
-  end
-  ```
-
-  If no encoder is available, neither natively nor in DNS.Msg.RR.User), a
-  `DNS.Msg.Error` is raised. Note that if DNS.Msg.RR.User's `encode_rdata`
-  exists, gets called but fails to match given (numeric) RR type a
-  `FunctionClauseError` will be raised instead.
-
-
   ## Examples
 
       iex> rr = new(type: :A, name: "example.com", rdmap: %{ip: {127, 0, 0, 1}})
@@ -574,6 +540,7 @@ defmodule DNS.Msg.RR do
         type: :A,
         class: :IN,
         ttl: 0,
+        raw: false,
         rdlen: 4,
         rdmap: %{ip: {127, 0, 0, 1}},
         rdata: <<127, 0, 0, 1>>,
@@ -587,7 +554,10 @@ defmodule DNS.Msg.RR do
     name = dname_encode(rr.name)
     class = encode_dns_class(rr.class)
     type = encode_rr_type(rr.type)
-    rdata = encode_rdata(rr.type, rr.rdmap)
+    # TODO: what if we have no encoder, raw=false and rdmap non-empty?
+    # - should set raw to true, right? Or bomb out.
+    # - user should set raw in new if she encoded rdata!
+    rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.rdmap)
     rdlen = byte_size(rdata)
 
     wdata =
@@ -941,17 +911,9 @@ defmodule DNS.Msg.RR do
   end
 
   ## [[ catch all ]]
-  defp encode_rdata(type, rdmap) do
-    # ensure we use the RR TYPE number, not a mnemonic
-    with type <- encode_rr_type(type),
-         true <- Code.ensure_loaded?(@user),
-         true <- function_exported?(@user, :encode_rdata, 2),
-         rdata when is_binary(rdata) <- apply(@user, :encode_rdata, [type, rdmap]) do
-      rdata
-    else
-      _ -> error(:erdmap, "RR #{type}, cannot encode rdmap: #{inspect(rdmap)}")
-    end
-  end
+  # we're here because rr.raw is false and hence MUST be able to encode!
+  defp encode_rdata(type, rdmap),
+    do: error(:errtype, "RR #{type}, cannot encode rdmap: #{inspect(rdmap)}")
 
   # [[ ENCODE EDNS0 opts ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
@@ -993,7 +955,6 @@ defmodule DNS.Msg.RR do
   end
 
   # [[ catch all - todo ]]
-  # defer to DNS.Msg.RR.User.encode_edns_opt/2 if available
   defp encode_edns_opt(code, data),
     do: error(:eedns, "EDNS0 option #{inspect(code)} unknown or data illegal #{inspect(data)}")
 
@@ -1005,26 +966,6 @@ defmodule DNS.Msg.RR do
   Upon success, returns {`new_offset`, `t:t/0`}, where `new_offset` can be used
   to read the rest of the message (if any).  The `rdlen`, `rdata` and `wdata`-fields
   are set based on the octets read during decoding.
-
-  See `encode/1` for the list of RR's that can be decoded.  If a decoder is missing,
-  you can provide your own in a #{Module.split(@user) |> Enum.join(".")} module.
-
-  ```
-  defmodule #{Module.split(@user) |> Enum.join(".")}
-
-  @spec decode_rdata(non_neg_integer, non_neg_integer, non_neg_integer, binary) :: map
-  def decode_rdata(type, offset, rdlen, msg)
-
-  def decode_rdata(99, offset, rdlen, msg) do
-    ...
-  end
-
-  # more decoders
-
-  # catch all
-  def decode_rdata(_, _, _, _),
-    do: %{}
-  ```
 
   The `decode_rdata` is called with:
   - `type`, the numeric value of type for given RR
@@ -1069,7 +1010,8 @@ defmodule DNS.Msg.RR do
     # need to pass in rdlen as well, since some RR's may have rdlen of 0
     rdmap = decode_rdata(rr.type, offset2 + 10, rdlen, msg)
     wdata = :binary.part(msg, {offset, offset2 - offset + 10 + rdlen})
-    rr = %{rr | rdlen: rdlen, rdmap: rdmap, rdata: rdata, wdata: wdata}
+    raw = map_size(rdmap) == 0 and byte_size(rdata) > 0
+    rr = %{rr | raw: raw, rdlen: rdlen, rdmap: rdmap, rdata: rdata, wdata: wdata}
     offset = offset2 + 10 + rdlen
 
     {offset, rr}
@@ -1514,19 +1456,10 @@ defmodule DNS.Msg.RR do
   end
 
   ## [[ catch all ]]
-  # no decoder available: try a user supplied one (if any)
-  # if all fails, simply return an empty map
-  # in which case caller needs to deal with an undecoded RR.
-  defp decode_rdata(type, offset, rdlen, msg) do
-    with type <- encode_rr_type(type),
-         true <- Code.ensure_loaded?(@user),
-         true <- function_exported?(@user, :decode_rdata, 4),
-         rdmap when is_map(rdmap) <- apply(@user, :decode_rdata, [type, offset, rdlen, msg]) do
-      rdmap
-    else
-      _ -> %{}
-    end
-  end
+  # no decoder available, so simply return empty rdmap
+  # if rdata is non-empty, will cause the rr.raw to be set to true
+  defp decode_rdata(_type, _offset, _rdlen, _msg),
+    do: %{}
 
   # [[ DECODE ENDS0 opts ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
@@ -1572,7 +1505,6 @@ defmodule DNS.Msg.RR do
   end
 
   # catch all: keep what we donot understand as raw values
-  # TODO: defer to DNS.Msg.RR.decode_edns_opt/2 if available
   defp decode_edns_opt(code, _, data),
     do: {code, data}
 end

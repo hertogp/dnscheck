@@ -22,7 +22,7 @@ defmodule DNS.Msg.Error do
     eclass: "[invalid class]",
     ercode: "[invalid (x)rcode]",
     eopcode: "[invalid opcode]",
-    errtype: "[invalid RR type]",
+    errtype: "[unknown RR type]",
     erdmap: "[invalid rdmap]",
     enotimp: "[not implemented]",
     euser: "[user contribution]",
