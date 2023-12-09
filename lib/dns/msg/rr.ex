@@ -267,17 +267,17 @@ defmodule DNS.Msg.RR do
 
   ## Examples
 
-      # default values, while ignoring some fields
-      iex> new(rdata: "ignored", wdata: "ignored", unknown: "ignored")
+      # create a raw RR, ignoring :wdata and unknown fields
+      iex> new(rdata: "not ignored", wdata: "ignored", unknown: "ignored")
       %DNS.Msg.RR{
         name: "",
         type: :A,
         class: :IN,
         ttl: 0,
-        raw: false,
-        rdlen: 0,
+        raw: true,
+        rdlen: 11,
         rdmap: %{},
-        rdata: "",
+        rdata: "not ignored",
         wdata: ""
       }
 
@@ -388,6 +388,18 @@ defmodule DNS.Msg.RR do
     if is_map(v),
       do: Map.put(rr, k, v),
       else: error(:erdmap, "expected a map, got: #{inspect(v)}")
+  end
+
+  defp do_put({k, v}, rr) when k == :rdata do
+    # creating a raw RR, user is in control of RR here
+    if is_binary(v) do
+      rr
+      |> Map.put(:rdata, v)
+      |> Map.put(:rdlen, byte_size(v))
+      |> Map.put(:raw, true)
+    else
+      error(:erdata, "expected a binary, got: #{inspect(v)}")
+    end
   end
 
   # ignore other (or unknown) options

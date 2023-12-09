@@ -22,10 +22,11 @@ defmodule DNS.Msg.RRTest do
     assert 254 == String.length(name_too_long)
     assert_raise DNS.Msg.Error, fn -> RR.new(name: name_too_long) end
 
-    # new will ignore some calculated fields
-    rr = RR.new(rdlen: 7, rdata: <<"ignored">>, wdata: <<"ignored">>)
-    assert 0 == rr.rdlen
-    assert <<>> == rr.rdata
+    # new accepts :rdata, sets :raw to true, ignores :wdata
+    rr = RR.new(rdlen: 7, rdata: <<"not-ignored">>, wdata: <<"ignored">>)
+    assert String.length("not-ignored") == rr.rdlen
+    assert "not-ignored" == rr.rdata
+    assert rr.raw == true
     assert <<>> == rr.wdata
 
     # new turns known numerics into atoms
