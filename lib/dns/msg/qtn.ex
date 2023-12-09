@@ -1,8 +1,4 @@
 defmodule DNS.Msg.Qtn do
-  import DNS.Msg.Terms
-  import DNS.Msg.Fields
-  alias DNS.Msg.Error
-
   @moduledoc """
 
   Low level functions to create, encode or decode a `Qtn` `t:t/0` struct.
@@ -37,6 +33,10 @@ defmodule DNS.Msg.Qtn do
 
   """
 
+  import DNS.Msg.Error, only: [error: 2]
+  import DNS.Msg.Fields
+  import DNS.Msg.Terms
+
   defstruct name: "", type: :A, class: :IN, wdata: <<>>
 
   @typedoc "A non negative offset into a DNS message."
@@ -64,11 +64,6 @@ defmodule DNS.Msg.Qtn do
           class: class,
           wdata: binary
         }
-
-  # [[ HELPERS ]]
-
-  defp error(reason, data),
-    do: raise(Error.exception(reason: reason, data: data))
 
   # [[ DECODE ]]
 

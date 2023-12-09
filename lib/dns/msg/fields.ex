@@ -3,14 +3,11 @@ defmodule DNS.Msg.Fields do
   Low level functions to encode/decode common fields in a DNS Msg.
   """
 
-  alias DNS.Msg.Error
+  import DNS.Msg.Error, only: [error: 2]
 
   @ldh Enum.concat([?a..?z, [?-], ?0..?9, ?A..?Z])
 
   # [[ HELPERS ]]
-
-  defp error(reason, data),
-    do: raise(Error.exception(reason: reason, data: data))
 
   defp do_labels(a, l, <<>>), do: add_label(a, l)
   defp do_labels(a, l, <<?.>>), do: add_label(a, l)

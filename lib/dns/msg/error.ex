@@ -14,19 +14,20 @@ defmodule DNS.Msg.Error do
 
   # possible exception reasons
   @reasons %{
-    efield: "[invalid field]",
-    evalue: "[invalid value]",
-    elabel: "[invalid label]",
+    eclass: "[invalid class]",
     edname: "[invalid dname]",
     eedns: "[invalid edns]",
-    eclass: "[invalid class]",
-    ercode: "[invalid (x)rcode]",
-    eopcode: "[invalid opcode]",
-    errtype: "[unknown RR type]",
-    erdmap: "[invalid rdmap]",
+    eencode: "[RR encoding]",
+    efield: "[invalid field]",
+    elabel: "[invalid label]",
     enotimp: "[not implemented]",
+    eopcode: "[invalid opcode]",
+    ercode: "[invalid (x)rcode]",
+    erdata: "[invalid rdata]",
+    erdmap: "[invalid rdmap]",
+    errtype: "[unknown RR type]",
     euser: "[user contribution]",
-    eencode: "[RR encoding]"
+    evalue: "[invalid value]"
   }
 
   def exception(reason, data),
@@ -36,4 +37,8 @@ defmodule DNS.Msg.Error do
     category = Map.get(@reasons, reason, "[#{inspect(reason)}]")
     "#{category} #{inspect(data, limit: 50)}"
   end
+
+  @spec error(any, any) :: Error.t()
+  def error(reason, data),
+    do: raise(%__MODULE__{reason: reason, data: data})
 end

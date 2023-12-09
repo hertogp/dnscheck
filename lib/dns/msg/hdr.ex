@@ -1,6 +1,6 @@
 defmodule DNS.Msg.Hdr do
   import DNS.Msg.Terms
-  alias DNS.Msg.Error
+  import DNS.Msg.Error, only: [error: 2]
 
   @moduledoc """
 

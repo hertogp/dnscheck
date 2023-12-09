@@ -14,13 +14,10 @@ defmodule DNS.Msg.Terms do
 
   """
 
+  import DNS.Msg.Error, only: [error: 2]
   alias DNS.Utils
-  alias DNS.Msg.Error
 
   # [[ Helpers ]]
-
-  defp error(reason, data),
-    do: raise(Error.exception(reason: reason, data: data))
 
   @spec do_encode(map, atom | non_neg_integer, atom, Range.t()) :: non_neg_integer
   defp do_encode(_map, key, label, range) when is_integer(key) do
@@ -151,12 +148,12 @@ defmodule DNS.Msg.Terms do
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5
 
   @dns_opcodes %{
-                 :QUERY => 0,
-                 :IQUERY => 1,
-                 :STATUS => 2,
-                 :NOTIFY => 4,
-                 :UPDATE => 5,
-                 :DSO => 6
+                 QUERY: 0,
+                 IQUERY: 1,
+                 STATUS: 2,
+                 NOTIFY: 4,
+                 UPDATE: 5,
+                 DSO: 6
                }
                |> Utils.normalize_name_map()
 
@@ -232,28 +229,28 @@ defmodule DNS.Msg.Terms do
   # https://www.rfc-editor.org/rfc/rfc6895.html
   # - RCODEs may appear in various parts of a DNS msg, not just the header
   @dns_rcodes %{
-                :NOERROR => 0,
-                :FORMERROR => 1,
-                :SERVFAIL => 2,
-                :NXDOMAIN => 3,
-                :NOTIMP => 4,
-                :REFUSED => 5,
+                NOERROR: 0,
+                FORMERROR: 1,
+                SERVFAIL: 2,
+                NXDOMAIN: 3,
+                NOTIMP: 4,
+                REFUSED: 5,
                 # YX<name> name exists when it shouldn't
-                :YXDOMAIN => 6,
-                :YXRRSET => 7,
+                YXDOMAIN: 6,
+                YXRRSET: 7,
                 # NX<name> name should exist but does not
-                :NXRRSET => 8,
-                :NOTAUTH => 9,
-                :NOTZONE => 10,
-                :DSOTYPENI => 11,
-                :BADVERS => 16,
-                :BADKEY => 17,
-                :BADTIME => 18,
-                :BADMODE => 19,
-                :BADNAME => 20,
-                :BADALG => 21,
-                :BADTRUNC => 22,
-                :BADCOOKIE => 23
+                NXRRSET: 8,
+                NOTAUTH: 9,
+                NOTZONE: 10,
+                DSOTYPENI: 11,
+                BADVERS: 16,
+                BADKEY: 17,
+                BADTIME: 18,
+                BADMODE: 19,
+                BADNAME: 20,
+                BADALG: 21,
+                BADTRUNC: 22,
+                BADCOOKIE: 23
               }
               |> Utils.normalize_name_map()
 
@@ -330,40 +327,40 @@ defmodule DNS.Msg.Terms do
   # - https://www.rfc-editor.org/rfc/rfc6895.html#section-3
 
   @rr_types %{
-              :RESERVED => 0,
-              :A => 1,
-              :NS => 2,
-              :CNAME => 5,
-              :SOA => 6,
-              :PTR => 12,
-              :HINFO => 13,
-              :MX => 15,
-              :TXT => 16,
-              :AAAA => 28,
-              :SRV => 33,
-              :CERT => 37,
-              :DNAME => 39,
-              :OPT => 41,
-              :DS => 43,
-              :SSHFP => 44,
-              :IPSECKEY => 45,
-              :RRSIG => 46,
-              :NSEC => 47,
-              :DNSKEY => 48,
-              :NSEC3 => 50,
-              :NSEC3PARAM => 51,
-              :TLSA => 52,
-              :CDS => 59,
-              :CDNSKEY => 60,
-              :OPENPGPKEY => 61,
-              :CSYNC => 62,
-              :ZONEMD => 63,
-              :HTTPS => 65,
-              :SPF => 99,
-              :* => 255,
-              :ANY => 255,
-              :URI => 256,
-              :CAA => 257
+              RESERVED: 0,
+              A: 1,
+              NS: 2,
+              CNAME: 5,
+              SOA: 6,
+              PTR: 12,
+              HINFO: 13,
+              MX: 15,
+              TXT: 16,
+              AAAA: 28,
+              SRV: 33,
+              CERT: 37,
+              DNAME: 39,
+              OPT: 41,
+              DS: 43,
+              SSHFP: 44,
+              IPSECKEY: 45,
+              RRSIG: 46,
+              NSEC: 47,
+              DNSKEY: 48,
+              NSEC3: 50,
+              NSEC3PARAM: 51,
+              TLSA: 52,
+              CDS: 59,
+              CDNSKEY: 60,
+              OPENPGPKEY: 61,
+              CSYNC: 62,
+              ZONEMD: 63,
+              HTTPS: 65,
+              SPF: 99,
+              *: 255,
+              ANY: 255,
+              URI: 256,
+              CAA: 257
             }
             |> Utils.normalize_name_map()
 
@@ -447,25 +444,25 @@ defmodule DNS.Msg.Terms do
   # [[ DNS OPT CODE ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
   @dns_rropt_codes %{
-                     :RESERVED => 0,
-                     :LLQ => 1,
-                     :UL => 2,
-                     :NSID => 3,
-                     :DAU => 5,
-                     :DHU => 6,
-                     :N3U => 7,
-                     :CLIENT_SUBNET => 8,
-                     :EXPIRE => 9,
-                     :COOKIE => 10,
-                     :TCP_KEEPALIVE => 11,
-                     :PADDING => 12,
-                     :CHAIN => 13,
-                     :KEY_TAG => 14,
-                     :EXTENDED_DNS_ERROR => 15,
-                     :CLIENT_TAG => 16,
-                     :SERVER_TAG => 17,
-                     :UMBRELLA_IDENT => 20292,
-                     :DEVICEID => 26946
+                     RESERVED: 0,
+                     LLQ: 1,
+                     UL: 2,
+                     NSID: 3,
+                     DAU: 5,
+                     DHU: 6,
+                     N3U: 7,
+                     CLIENT_SUBNET: 8,
+                     EXPIRE: 9,
+                     COOKIE: 10,
+                     TCP_KEEPALIVE: 11,
+                     PADDING: 12,
+                     CHAIN: 13,
+                     KEY_TAG: 14,
+                     EXTENDED_DNS_ERROR: 15,
+                     CLIENT_TAG: 16,
+                     SERVER_TAG: 17,
+                     UMBRELLA_IDENT: 20292,
+                     DEVICEID: 26946
                    }
                    |> Utils.normalize_name_map()
 

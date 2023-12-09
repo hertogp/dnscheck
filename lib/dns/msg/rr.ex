@@ -43,16 +43,20 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
   # - https://www.netmeister.org/blog/dns-rrs.html (shout out!)
+  # [ ] add guard is_qtype - https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.3
+  #     AXFR, IXFR, MAILB, MAILA, *, ANY, OPT (41) etc (more QTYPEs exist ...)
   # [x] add guard is_ttl (u32 with range 0..2**31-1
   # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names
-  #     [ ] add all/more names
-  #     [ ] accept TYPEnnn as mnemonic
-  # [ ] move the only func in DNS.Msg.Utils into Names module (only place it'll be used)
+  # [ ] add all/more names
+  # [c] accept TYPEnnn as mnemonic -> not needed, a bind ns sends numeric anyway
+  # [c] move the only func in DNS.Msg.Utils into Names module (only place it'll be used)
+  #     impossible, used at compile time to expand module attributes
   # [ ] maybe only use nrs in Hdr, Qtn and RR's and use name maps for presentation only?
-  # [ ] rename DNS.Msg.Fields to ...(Utils?)
-  # [ ] move error func into DNS.Msg.Error, and use
-  #     import DNS.Msg.Error, only: [error: 2]
+  # [ ] rename DNS.Msg.Fields to ...(DNS.Msg.Utils?)
+  #     dname_decode/encode, ip4_decode/encode, ip6_decode/encode,
+  #     bitmap_decode/encode etc...
+  # [x] move error func into DNS.Msg.Error, and use import DNS.Msg.Error, only: [error: 2]
   # [ ] add logging (Logger?)
   # [ ] ad RRs: Maybe add these (check out <type>.dns.netmeister.org
   #     [ ] NSEC3PARAM hash, see
@@ -68,10 +72,12 @@ defmodule DNS.Msg.RR do
   #     [ ] TSIG (250) (?)
   #     [c] OPENPGPKEY () would be raw type anyway, since we won't decode rdata!
   #     [ ] KEY (25) https://www.rfc-editor.org/rfc/rfc3445.html
+  #     [ ] WKS (11) https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
 
-  import DNS.Msg.Terms
+  import DNS.Msg.Error, only: [error: 2]
   import DNS.Msg.Fields
-  alias DNS.Msg.Error
+  import DNS.Guards
+  import DNS.Msg.Terms
 
   defstruct name: "",
             type: :A,
@@ -122,13 +128,7 @@ defmodule DNS.Msg.RR do
           wdata: binary
         }
 
-  # [[ GUARDS ]]
-
-  import DNS.Guards
-
   # [[ HELPERS ]]
-  defp error(reason, data),
-    do: raise(Error.exception(reason: reason, data: data))
 
   # NSEC (3) bitmap conversion to list of RR type numbers
   defp bitmap_2_nrs(_, <<>>, _, acc),
