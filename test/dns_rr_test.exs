@@ -464,6 +464,23 @@ defmodule DNS.Msg.RRTest do
     assert rr.rdata == rr2.rdata
   end
 
+  test "MB RR" do
+    {name, type, _output, wiredata} = get_sample("mb.dns.netmeister.org", :MB)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 10231 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "panix.netmeister.org" == rr.rdmap.name
+    # for when we do name compression some day
+    # rr2 = DNS.Msg.RR.encode(rr)
+    # assert rr.rdata == rr2.rdata
+  end
+
   test "MX RR" do
     {name, type, _output, wiredata} = get_sample("sidn.nl", :MX)
     resp = DNS.Msg.decode(wiredata)

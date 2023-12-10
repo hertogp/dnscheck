@@ -531,6 +531,7 @@ defmodule DNS.Msg.RR do
       :CNAME (5)       %{name: str}
       :SOA (6)         %{mname: str, rname: str, serial: number, refresh: u32 (14400)
                        retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
+      :MB              %{name: str}
       :WKS (11)        %{ip: str, proto: u8, services: [u16]}
       :PTR (12)        %{name: str}
       :HINFO (13)      %{cpu: str, os: str}
@@ -657,6 +658,15 @@ defmodule DNS.Msg.RR do
     minimum = required(:SOA, m, :minimum, &is_u32/1)
 
     <<mname::binary, rname::binary, serial::32, refresh::32, retry::32, expire::32, minimum::32>>
+  end
+
+  # IN MB (7), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3
+  defp encode_rdata(:MB, m) do
+    name =
+      required(:MB, m, :name, &is_binary/1)
+      |> dname_encode()
+
+    <<name::binary>>
   end
 
   # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
@@ -1114,6 +1124,12 @@ defmodule DNS.Msg.RR do
       expire: expire,
       minimum: minimum
     }
+  end
+
+  # IN MB (7), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3
+  defp decode_rdata(:MB, offset, _rdlen, msg) do
+    {_, name} = dname_decode(offset, msg)
+    %{name: name}
   end
 
   # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
