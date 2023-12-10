@@ -343,6 +343,7 @@ defmodule DNS.Msg.Terms do
               CNAME: 5,
               SOA: 6,
               MB: 7,
+              MG: 8,
               WKS: 11,
               PTR: 12,
               HINFO: 13,

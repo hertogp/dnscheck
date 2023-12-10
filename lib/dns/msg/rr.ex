@@ -531,7 +531,8 @@ defmodule DNS.Msg.RR do
       :CNAME (5)       %{name: str}
       :SOA (6)         %{mname: str, rname: str, serial: number, refresh: u32 (14400)
                        retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
-      :MB              %{name: str}
+      :MB (7)          %{name: str}
+      :MG (8)          %{name: str}
       :WKS (11)        %{ip: str, proto: u8, services: [u16]}
       :PTR (12)        %{name: str}
       :HINFO (13)      %{cpu: str, os: str}
@@ -664,6 +665,15 @@ defmodule DNS.Msg.RR do
   defp encode_rdata(:MB, m) do
     name =
       required(:MB, m, :name, &is_binary/1)
+      |> dname_encode()
+
+    <<name::binary>>
+  end
+
+  # IN MG (8), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6
+  defp encode_rdata(:MG, m) do
+    name =
+      required(:MG, m, :name, &is_binary/1)
       |> dname_encode()
 
     <<name::binary>>
@@ -1128,6 +1138,12 @@ defmodule DNS.Msg.RR do
 
   # IN MB (7), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3
   defp decode_rdata(:MB, offset, _rdlen, msg) do
+    {_, name} = dname_decode(offset, msg)
+    %{name: name}
+  end
+
+  # IN MG (8), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6
+  defp decode_rdata(:MG, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end

@@ -106,7 +106,7 @@ defmodule Drill do
     nr = System.unique_integer([:positive, :monotonic])
     tmp_file = Path.join(@temp_dir, "drill-#{nr}.txt")
 
-    args = [name, "#{type}"] ++ opts ++ ["-w", tmp_file, "@8.8.8.8"]
+    args = [name, "#{type}"] ++ opts ++ ["-w", tmp_file]
     {output, 0} = System.cmd("drill", args)
     output = String.split(output, "\n")
 
@@ -130,7 +130,7 @@ defmodule Drill do
     if forced or not File.exists?(fname) do
       samples =
         for {name, type, useD} <- @samples do
-          opts = (useD && ["-D", "-b", "4096"]) || []
+          opts = (useD && ["@8.8.8.8", "-D", "-b", "4096"]) || ["@8.8.8.8"]
           drill(name, type, opts)
         end
 
@@ -150,10 +150,11 @@ defmodule Drill do
   def get_sample(name, type, opts \\ []) do
     forced = Keyword.get(opts, :forced, false)
     useD = Keyword.get(opts, :useD, false)
+    ns = Keyword.get(opts, :ns, "8.8.8.8")
     fname = Path.join(@data_dir, "#{type}-#{name}-sample")
 
     if forced or not File.exists?(fname) do
-      opts = (useD && ["-D", "-b", "4096"]) || []
+      opts = (useD && ["#{ns}", "-D", "-b", "4096"]) || ["@#{ns}"]
       sample = drill(name, type, opts)
       File.write(fname, "#{@header}#{inspect(sample, limit: :infinity, pretty: true)}\n")
     end
