@@ -167,23 +167,11 @@ defmodule DNS.Msg.RR do
   def bitmap_pad(bmap, b),
     do: bitmap_pad(<<bmap::bitstring, b::1>>)
 
-  # NSEC (3) bitmap conversion to list of RR type numbers
-  def bitmap_to_rrs(bin) do
-    for <<w::8, len::8, bmap::binary-size(len) <- bin>> do
-      # bitmap_2_nrs(w, bmap, 0, [])
-      bitmap_2_nrs(bmap)
-      |> Enum.map(fn n -> w * 256 + n end)
-    end
-    |> List.flatten()
-    |> Enum.map(fn n -> decode_rr_type(n) end)
-  end
-
-  # convert NSEC(3) bitmap to rr types covered
+  # NSEC (3) bitmap conversion to/from list of RR type numbers
   # - https://www.rfc-editor.org/rfc/rfc4034#section-4.1.2
-  # RR type = u16
-
-  # The RR type space is split into 256 window blocks, each representing
+  # The RR type (u16) space is split into 256 window blocks, each representing
   # the low-order 8 bits of the 16-bit RR type space.
+
   # Each block that has at least one active RR type is encoded using
   # a. a single octet window number (from 0 to 255),
   # b. a single octet bitmap length (from 1 to 32)
@@ -212,6 +200,15 @@ defmodule DNS.Msg.RR do
   #    the largest numerical value, within that block, among the set of RR
   #    types present at the NSEC RR's owner name.
   # 10.Trailing zero octets not specified MUST be interpreted as zero octets.
+  def bitmap_to_rrs(bin) do
+    for <<w::8, len::8, bmap::binary-size(len) <- bin>> do
+      # bitmap_2_nrs(w, bmap, 0, [])
+      bitmap_2_nrs(bmap)
+      |> Enum.map(fn n -> w * 256 + n end)
+    end
+    |> List.flatten()
+    |> Enum.map(fn n -> decode_rr_type(n) end)
+  end
 
   def bitmap_block(w, nrs) do
     bmap =
@@ -219,7 +216,8 @@ defmodule DNS.Msg.RR do
       |> Enum.map(fn n -> n - w * 256 end)
       |> bitmap_4_nrs()
 
-    {w, byte_size(bmap), bmap}
+    l = byte_size(bmap)
+    <<w::8, l::8, bmap::binary>>
   end
 
   def bitmap_4_rrs(rrs) do
@@ -229,7 +227,6 @@ defmodule DNS.Msg.RR do
     |> Enum.sort(:asc)
     |> Enum.group_by(fn n -> div(n, 256) end)
     |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
-    |> Enum.map(fn {w, l, b} -> <<w::8, l::8, b::binary>> end)
     |> Enum.join()
   end
 
