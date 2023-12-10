@@ -245,15 +245,11 @@ defmodule DNS.Msg.RR do
 
   @spec ip_encode(any, :ip4 | :ip6) :: binary
   def ip_encode(ip, version) do
+    # uses padr to ensure ip is a full address, not just a prefix
     with {:ok, pfx} <- Pfx.parse(ip),
          ^version <- Pfx.type(pfx),
-         addr <- Pfx.to_tuple(pfx, mask: false),
-         list <- Tuple.to_list(addr) do
-      case version do
-        :ip4 -> Enum.map(list, fn d -> <<d::8>> end)
-        :ip6 -> Enum.map(list, fn x -> <<x::16>> end)
-      end
-      |> Enum.join()
+         addr <- Pfx.padr(pfx) do
+      addr.bits
     else
       _ ->
         error(:erdmap, "invalid IP address, got: #{inspect(ip)}")
