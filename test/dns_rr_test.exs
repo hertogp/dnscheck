@@ -651,7 +651,6 @@ defmodule DNS.Msg.RRTest do
     assert type == rr.type
     assert 3600 == rr.ttl
     assert "avocado" == rr.rdmap.data
-    IO.inspect(rr)
     # for when we do name compression some day
     rr2 = DNS.Msg.RR.encode(rr)
     assert rr.rdata == rr2.rdata

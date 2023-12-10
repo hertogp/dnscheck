@@ -230,6 +230,36 @@ defmodule DNS.Msg.RR do
     |> Enum.join()
   end
 
+  @spec ip_decode(offset, :ip4 | :ip6, binary) :: {offset, binary}
+  def ip_decode(offset, version, msg) do
+    {bytes, bits} =
+      case version do
+        :ip4 -> {4, 32}
+        :ip6 -> {8, 128}
+        _ -> raise ArgumentError, "expected :ip4 or :ip6, got #{inspect(version)}"
+      end
+
+    <<_::binary-size(offset), ip::size(bits), _::binary>> = msg
+    {offset + bytes, "#{Pfx.new(<<ip::size(bits)>>, bits)}"}
+  end
+
+  @spec ip_encode(any, :ip4 | :ip6) :: binary
+  def ip_encode(ip, version) do
+    with {:ok, pfx} <- Pfx.parse(ip),
+         ^version <- Pfx.type(pfx),
+         addr <- Pfx.to_tuple(pfx, mask: false),
+         list <- Tuple.to_list(addr) do
+      case version do
+        :ip4 -> Enum.map(list, fn d -> <<d::8>> end)
+        :ip6 -> Enum.map(list, fn x -> <<x::16>> end)
+      end
+      |> Enum.join()
+    else
+      _ ->
+        error(:erdmap, "invalid IP address, got: #{inspect(ip)}")
+    end
+  end
+
   # used to check rdmap for mandatory fields when encoding an RR
   # convencience func that also gives consistent, clear error messages
   defp required(type, map, field, check \\ fn _ -> true end) do
@@ -535,7 +565,7 @@ defmodule DNS.Msg.RR do
       :MG (8)          %{name: str}
       :MR (9)          %{name: str}
       :NULL (10)       %{data: str}
-      :WKS (11)        %{ip: str, proto: u8, services: [u16]}
+      :WKS (11)        %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16]}
       :PTR (12)        %{name: str}
       :HINFO (13)      %{cpu: str, os: str}
       :MINFO (14)      %{rmailbx: str, emailbx: str}
@@ -616,16 +646,8 @@ defmodule DNS.Msg.RR do
 
   # IN A (1)
   defp encode_rdata(:A, m) do
-    ip = required(:A, m, :ip)
-
-    with {:ok, pfx} <- Pfx.parse(ip),
-         :ip4 <- Pfx.type(pfx),
-         {a, b, c, d} <- Pfx.to_tuple(pfx, mask: false) do
-      <<a::8, b::8, c::8, d::8>>
-    else
-      _ ->
-        error(:erdmap, "A RR, got: #{inspect(m)}")
-    end
+    required(:A, m, :ip)
+    |> ip_encode(:ip4)
   end
 
   # IN NS (2)
@@ -704,8 +726,8 @@ defmodule DNS.Msg.RR do
     proto = required(:WKS, m, :proto, &is_u8/1)
     services = required(:WKS, m, :services, &is_list/1)
     bitmap = bitmap_4_nrs(services)
-    {a, b, c, d} = Pfx.to_tuple(ip, mask: false)
-    <<a::8, b::8, c::8, d::8, proto::8, bitmap::binary>>
+    ip4 = ip_encode(ip, :ip4)
+    <<ip4::binary, proto::8, bitmap::binary>>
   end
 
   # IN PTR (12), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
@@ -767,16 +789,8 @@ defmodule DNS.Msg.RR do
 
   # IN AAAA (28)
   defp encode_rdata(:AAAA, m) do
-    ip = required(:AAAA, m, :ip)
-
-    with {:ok, pfx} <- Pfx.parse(ip),
-         :ip6 <- Pfx.type(pfx),
-         {a, b, c, d, e, f, g, h} <- Pfx.to_tuple(pfx, mask: false) do
-      <<a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16>>
-    else
-      _ ->
-        error(:erdmap, "AAAA RR, got: #{inspect(m)}")
-    end
+    required(:AAAA, m, :ip)
+    |> ip_encode(:ip6)
   end
 
   # IN SRV (33)
@@ -849,22 +863,11 @@ defmodule DNS.Msg.RR do
 
     gateway =
       case gtype do
-        0 ->
-          ""
-
-        1 ->
-          {a, b, c, d} = Pfx.to_tuple(gwstr)
-          <<a::8, b::8, c::8, d::8>>
-
-        2 ->
-          {a, b, c, d, e, f, g, h} = Pfx.to_tuple(gwstr)
-          <<a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16>>
-
-        3 ->
-          dname_encode(gwstr)
-
-        n ->
-          error(:eformat, "IPSECKEY gateway type unknown: #{inspect(n)}")
+        0 -> ""
+        1 -> ip_encode(gwstr, :ip4)
+        2 -> ip_encode(gwstr, :ip6)
+        3 -> dname_encode(gwstr)
+        n -> error(:eformat, "IPSECKEY gateway type unknown: #{inspect(n)}")
       end
 
     <<pref::8, gtype::8, algo::8, gateway::binary, pubkey::binary>>
@@ -1121,8 +1124,8 @@ defmodule DNS.Msg.RR do
 
   # IN A (1)
   defp decode_rdata(:A, offset, 4, msg) do
-    <<_::binary-size(offset), a::8, b::8, c::8, d::8, _::binary>> = msg
-    %{ip: "#{Pfx.new({a, b, c, d})}"}
+    {_, ip} = ip_decode(offset, :ip4, msg)
+    %{ip: ip}
   end
 
   # IN NS (2)
@@ -1195,9 +1198,9 @@ defmodule DNS.Msg.RR do
   # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
   defp decode_rdata(:WKS, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
-    <<ip::32, proto::8, bitmap::binary>> = rdata
+    {offset, ip} = ip_decode(0, :ip4, rdata)
+    <<_::binary-size(offset), proto::8, bitmap::binary>> = rdata
     services = bitmap_2_nrs(bitmap)
-    ip = "#{Pfx.new(<<ip::32>>, 32)}"
     %{ip: ip, proto: proto, services: services, _bitmap: bitmap}
   end
 
@@ -1246,10 +1249,8 @@ defmodule DNS.Msg.RR do
 
   # IN AAAA (28)
   defp decode_rdata(:AAAA, offset, 16, msg) do
-    <<_::binary-size(offset), a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16, _::binary>> =
-      msg
-
-    %{ip: "#{Pfx.new({a, b, c, d, e, f, g, h})}"}
+    {_, ip} = ip_decode(offset, :ip6, msg)
+    %{ip: ip}
   end
 
   # IN SRV (33)
@@ -1326,8 +1327,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # SSHFP (44)
-  # - https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1
+  # SSHFP (44), https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1
   defp decode_rdata(:SSHFP, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<algo::8, type::8, fp::binary>> = rdata
@@ -1339,8 +1339,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IPSECKEY (45)
-  # - https://www.rfc-editor.org/rfc/rfc4025.html#section-2
+  # IPSECKEY (45), https://www.rfc-editor.org/rfc/rfc4025.html#section-2
   defp decode_rdata(:IPSECKEY, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
@@ -1352,12 +1351,14 @@ defmodule DNS.Msg.RR do
           {<<>>, rest}
 
         1 ->
-          <<a::8, b::8, c::8, d::8, pkey::binary>> = rest
-          {"#{Pfx.new({a, b, c, d})}", pkey}
+          {offset, ip} = ip_decode(0, :ip4, rest)
+          <<_::binary-size(offset), pkey::binary>> = rest
+          {ip, pkey}
 
         2 ->
-          <<a::16, b::16, c::16, d::16, e::16, f::16, g::16, h::16, pkey::binary>> = rest
-          {"#{Pfx.new({a, b, c, d, e, f, g, h})}", pkey}
+          {offset, ip} = ip_decode(0, :ip6, rest)
+          <<_::binary-size(offset), pkey::binary>> = rest
+          {ip, pkey}
 
         3 ->
           {offset, name} = dname_decode(0, rest)
@@ -1377,8 +1378,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN RRSIG (46)
-  # https://www.rfc-editor.org/rfc/rfc4034#section-3
+  # IN RRSIG (46), https://www.rfc-editor.org/rfc/rfc4034#section-3
   defp decode_rdata(:RRSIG, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
