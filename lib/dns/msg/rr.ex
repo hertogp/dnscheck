@@ -169,11 +169,10 @@ defmodule DNS.Msg.RR do
 
   # NSEC (3) bitmap conversion to/from list of RR type numbers
   # - https://www.rfc-editor.org/rfc/rfc4034#section-4.1.2
-  def bitmap_to_rrs(bin) do
+  def bitmap_2_rrs(bin) do
     for <<w::8, len::8, bmap::binary-size(len) <- bin>> do
-      # bitmap_2_nrs(w, bmap, 0, [])
       bitmap_2_nrs(bmap)
-      |> Enum.map(fn n -> w * 256 + n end)
+      |> Enum.map(fn n -> n + w * 256 end)
     end
     |> List.flatten()
     |> Enum.map(fn n -> decode_rr_type(n) end)
@@ -190,7 +189,7 @@ defmodule DNS.Msg.RR do
   end
 
   def bitmap_4_rrs(rrs) do
-    # TODO: maybe filter out pseudo-RR's: ANY (255), AXFR (252), IXFR (251), OPT (41)
+    # TODO: maybe filter out QTYPEs like ANY (255), AXFR (252), IXFR (251), OPT (41)
     # or leave that up to the caller so experimentation remains possible
     Enum.map(rrs, fn n -> encode_rr_type(n) end)
     |> Enum.sort(:asc)
@@ -214,7 +213,7 @@ defmodule DNS.Msg.RR do
 
   @spec ip_encode(any, :ip4 | :ip6) :: binary
   def ip_encode(ip, version) do
-    # uses padr to ensure ip is a full address, not just a prefix
+    # uses padr to ensure `addr` is a full address, not just a prefix
     with {:ok, pfx} <- Pfx.parse(ip),
          ^version <- Pfx.type(pfx),
          addr <- Pfx.padr(pfx) do
@@ -1112,7 +1111,7 @@ defmodule DNS.Msg.RR do
   defp decode_rdata(:CSYNC, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<soa_serial::32, flags::16, bitmap::binary>> = rdata
-    covers = bitmap_to_rrs(bitmap)
+    covers = bitmap_2_rrs(bitmap)
     %{soa_serial: soa_serial, flags: flags, covers: covers}
   end
 
@@ -1376,7 +1375,7 @@ defmodule DNS.Msg.RR do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     {offset, name} = dname_decode(0, rdata)
     <<_::binary-size(offset), bitmap::binary>> = rdata
-    covers = bitmap_to_rrs(bitmap)
+    covers = bitmap_2_rrs(bitmap)
     %{name: name, covers: covers}
   end
 
@@ -1421,7 +1420,7 @@ defmodule DNS.Msg.RR do
     <<algo::8, flags::8, iter::16, slen::8, salt::binary-size(slen), hlen::8,
       next_name::binary-size(hlen), bitmap::binary>> = rdata
 
-    covers = bitmap_to_rrs(bitmap)
+    covers = bitmap_2_rrs(bitmap)
 
     %{
       algo: algo,
