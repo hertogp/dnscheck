@@ -45,6 +45,7 @@ defmodule DNS.Msg.RR do
   # - https://www.netmeister.org/blog/dns-rrs.html (shout out!)
   # [ ] add guard is_qtype - https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.3
   #     AXFR, IXFR, MAILB, MAILA, *, ANY, OPT (41) etc (more QTYPEs exist ...)
+  # [ ] add encode/decode_ip_proto
   # [x] add guard is_ttl (u32 with range 0..2**31-1
   # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names
@@ -72,7 +73,7 @@ defmodule DNS.Msg.RR do
   #     [ ] TSIG (250) (?)
   #     [c] OPENPGPKEY () would be raw type anyway, since we won't decode rdata!
   #     [ ] KEY (25) https://www.rfc-editor.org/rfc/rfc3445.html
-  #     [ ] WKS (11) https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
+  #     [o] WKS (11) https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
 
   import DNS.Msg.Error, only: [error: 2]
   import DNS.Msg.Fields
@@ -130,19 +131,48 @@ defmodule DNS.Msg.RR do
 
   # [[ HELPERS ]]
 
+  @doc false
+  # convert bitmap to list of bit numbers whose value is '1'
+  # bit number 0 is left-most (msb) bit
+  def bitmap_2_nrs(bitmap) do
+    bitmap_2_nrs(bitmap, 0, [])
+  end
+
+  defp bitmap_2_nrs(<<0::1, rest::bitstring>>, n, acc),
+    do: bitmap_2_nrs(rest, n + 1, acc)
+
+  defp bitmap_2_nrs(<<1::1, rest::bitstring>>, n, acc),
+    do: bitmap_2_nrs(rest, n + 1, [n | acc])
+
+  defp bitmap_2_nrs(<<>>, _n, acc),
+    do: Enum.reverse(acc)
+
+  def bitmap_4_nrs(nrs) do
+    nrs
+    |> Enum.sort(:asc)
+    |> Enum.reduce(<<>>, fn n, acc -> bitmap_expand(acc, n) end)
+    |> bitmap_pad()
+  end
+
+  def bitmap_expand(bits, n) do
+    fill = n - bit_size(bits)
+    <<bits::bitstring, 0::size(fill), 1::1>>
+  end
+
+  def bitmap_pad(bmap, b \\ 0)
+
+  def bitmap_pad(bmap, _b) when rem(bit_size(bmap), 8) == 0,
+    do: bmap
+
+  def bitmap_pad(bmap, b),
+    do: bitmap_pad(<<bmap::bitstring, b::1>>)
+
   # NSEC (3) bitmap conversion to list of RR type numbers
-  defp bitmap_2_nrs(_, <<>>, _, acc),
-    do: acc |> Enum.reverse()
-
-  defp bitmap_2_nrs(w, <<0::1, rest::bitstring>>, n, acc),
-    do: bitmap_2_nrs(w, rest, n + 1, acc)
-
-  defp bitmap_2_nrs(w, <<1::1, rest::bitstring>>, n, acc),
-    do: bitmap_2_nrs(w, rest, n + 1, [w * 256 + n | acc])
-
   def bitmap_to_rrs(bin) do
     for <<w::8, len::8, bmap::binary-size(len) <- bin>> do
-      bitmap_2_nrs(w, bmap, 0, [])
+      # bitmap_2_nrs(w, bmap, 0, [])
+      bitmap_2_nrs(bmap)
+      |> Enum.map(fn n -> w * 256 + n end)
     end
     |> List.flatten()
     |> Enum.map(fn n -> decode_rr_type(n) end)
@@ -183,23 +213,11 @@ defmodule DNS.Msg.RR do
   #    types present at the NSEC RR's owner name.
   # 10.Trailing zero octets not specified MUST be interpreted as zero octets.
 
-  def bitmap_expand(bits, n) do
-    fill = n - bit_size(bits)
-    <<bits::bitstring, 0::size(fill), 1::1>>
-  end
-
-  def bitmap_pad(bmap) when rem(bit_size(bmap), 8) == 0,
-    do: bmap
-
-  def bitmap_pad(bmap),
-    do: bitmap_pad(<<bmap::bitstring, 0::1>>)
-
   def bitmap_block(w, nrs) do
     bmap =
       nrs
       |> Enum.map(fn n -> n - w * 256 end)
-      |> Enum.reduce(<<>>, fn n, acc -> bitmap_expand(acc, n) end)
-      |> bitmap_pad()
+      |> bitmap_4_nrs()
 
     {w, byte_size(bmap), bmap}
   end
@@ -516,6 +534,7 @@ defmodule DNS.Msg.RR do
       :CNAME (5)       %{name: str}
       :SOA (6)         %{mname: str, rname: str, serial: number, refresh: u32 (14400)
                        retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
+      :WKS (11)        %{ip: str, proto: u8, services: [u16]}
       :PTR (12)        %{name: str}
       :HINFO (13)      %{cpu: str, os: str}
       :MX (15)         %{name: str, pref: number}
@@ -643,8 +662,17 @@ defmodule DNS.Msg.RR do
     <<mname::binary, rname::binary, serial::32, refresh::32, retry::32, expire::32, minimum::32>>
   end
 
-  # IN PTR (12)
-  # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
+  # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
+  defp encode_rdata(:WKS, m) do
+    ip = required(:WKS, m, :ip, &is_binary/1)
+    proto = required(:WKS, m, :proto, &is_u8/1)
+    services = required(:WKS, m, :services, &is_list/1)
+    bitmap = bitmap_4_nrs(services)
+    {a, b, c, d} = Pfx.to_tuple(ip, mask: false)
+    <<a::8, b::8, c::8, d::8, proto::8, bitmap::binary>>
+  end
+
+  # IN PTR (12), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
   defp encode_rdata(:PTR, m) do
     name = required(:PTR, m, :name, &is_binary/1)
     dname_encode(name)
@@ -1089,6 +1117,15 @@ defmodule DNS.Msg.RR do
       expire: expire,
       minimum: minimum
     }
+  end
+
+  # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
+  defp decode_rdata(:WKS, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    <<ip::32, proto::8, bitmap::binary>> = rdata
+    services = bitmap_2_nrs(bitmap)
+    ip = "#{Pfx.new(<<ip::32>>, 32)}"
+    %{ip: ip, proto: proto, services: services, _bitmap: bitmap}
   end
 
   # IN PTR (12)

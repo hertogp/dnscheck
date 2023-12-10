@@ -105,12 +105,6 @@ defmodule DNS.Msg.Hdr do
           wdata: binary
         }
 
-  # [[ HELPERS ]]
-
-  @spec error(any, any) :: Error.t()
-  defp error(reason, data),
-    do: raise(Error.exception(reason: reason, data: data))
-
   # [[ API ]]
 
   @doc """

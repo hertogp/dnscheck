@@ -27,6 +27,7 @@ defmodule DNS.Msg.Terms do
   end
 
   defp do_encode(map, key, label, _range) when is_atom(key) do
+    # assumes values in map are always in range
     case Map.get(map, key) do
       nil -> error(label, "#{key} is unknown")
       num -> num
@@ -57,7 +58,16 @@ defmodule DNS.Msg.Terms do
   defp do_decode(_map, key, label, _range),
     do: error(label, "Expected an atom or non neg number, got: #{inspect(key)}")
 
+  # [[ IP PROTOCOL ]]
+  # https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml
+  #
+  # TODO
+  # [[ TCP/UDP SERVICES ]]
+  # https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?&page=1
+  # TODO
+
   # [[ DNS CLASS ]]
+  # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-2
   @dns_classes %{
                  RESERVED: 0,
                  IN: 1,
@@ -332,6 +342,7 @@ defmodule DNS.Msg.Terms do
               NS: 2,
               CNAME: 5,
               SOA: 6,
+              WKS: 11,
               PTR: 12,
               HINFO: 13,
               MX: 15,

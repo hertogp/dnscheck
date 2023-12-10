@@ -747,6 +747,25 @@ defmodule DNS.Msg.RRTest do
     assert rr.rdata == rr2.rdata
   end
 
+  test "WKS RR" do
+    {name, type, _output, wiredata} = get_sample("wks.dns.netmeister.org", :WKS)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 1855 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 2 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "166.84.7.99" == rr.rdmap.ip
+    # TODO: use result of decode_ip_proto in struct and test
+    assert 17 == rr.rdmap.proto
+    assert [53] == rr.rdmap.services
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "ZONEMD RR" do
     {name, type, _output, wiredata} = get_sample("zonemd.dns.netmeister.org", :ZONEMD)
     resp = DNS.Msg.decode(wiredata)
