@@ -500,6 +500,44 @@ defmodule DNS.Msg.RRTest do
     # assert rr.rdata == rr2.rdata
   end
 
+  test "MR RR" do
+    {name, type, _output, wiredata} = get_sample("mr.dns.netmeister.org", :MR)
+
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 46657 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "panix.netmeister.org" == rr.rdmap.name
+    # for when we do name compression some day
+    # rr2 = DNS.Msg.RR.encode(rr)
+    # assert rr.rdata == rr2.rdata
+  end
+
+  test "MINFO RR" do
+    # omg: google's 8.8.8.8 doesn't do MG
+    {name, type, _output, wiredata} = get_sample("minfo.dns.netmeister.org", :MINFO)
+
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 35568 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3544 == rr.ttl
+    assert "jschauma.netmeister.org" == rr.rdmap.rmailbx
+    assert "postmaster.netmeister.org" == rr.rdmap.emailbx
+    # for when we do name compression some day
+    # rr2 = DNS.Msg.RR.encode(rr)
+    # assert rr.rdata == rr2.rdata
+  end
+
   test "MX RR" do
     {name, type, _output, wiredata} = get_sample("sidn.nl", :MX)
     resp = DNS.Msg.decode(wiredata)
@@ -598,6 +636,25 @@ defmodule DNS.Msg.RRTest do
     assert 5 == rr.rdmap.iterations
     assert 8 == rr.rdmap.salt_len
     assert "b0148fa0b0ab23b8" == Base.encode16(rr.rdmap.salt, case: :lower)
+  end
+
+  test "NULL RR" do
+    {name, type, _output, wiredata} = get_sample("null.dns.netmeister.org", :NULL)
+
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 50474 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "avocado" == rr.rdmap.data
+    IO.inspect(rr)
+    # for when we do name compression some day
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
   end
 
   test "OPT RR" do

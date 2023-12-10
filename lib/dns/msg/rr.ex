@@ -533,9 +533,12 @@ defmodule DNS.Msg.RR do
                        retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
       :MB (7)          %{name: str}
       :MG (8)          %{name: str}
+      :MR (9)          %{name: str}
+      :NULL (10)       %{data: str}
       :WKS (11)        %{ip: str, proto: u8, services: [u16]}
       :PTR (12)        %{name: str}
       :HINFO (13)      %{cpu: str, os: str}
+      :MINFO (14)      %{rmailbx: str, emailbx: str}
       :MX (15)         %{name: str, pref: number}
       :TXT (16)        %{txt: [str]}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
@@ -679,6 +682,22 @@ defmodule DNS.Msg.RR do
     <<name::binary>>
   end
 
+  # IN MR (9), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8
+  defp encode_rdata(:MR, m) do
+    name =
+      required(:MR, m, :name, &is_binary/1)
+      |> dname_encode()
+
+    <<name::binary>>
+  end
+
+  # IN NULL (10), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10
+  # data is simply rdata, since interpretation is upto caller
+  defp encode_rdata(:NULL, m) do
+    data = required(:NULL, m, :data, &is_binary/1)
+    <<data::binary>>
+  end
+
   # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
   defp encode_rdata(:WKS, m) do
     ip = required(:WKS, m, :ip, &is_binary/1)
@@ -704,6 +723,19 @@ defmodule DNS.Msg.RR do
     clen = String.length(cpu)
     olen = String.length(os)
     <<clen::8, cpu::binary, olen::8, os::binary>>
+  end
+
+  # IN MINFO (14), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.7
+  defp encode_rdata(:MINFO, m) do
+    rmailbx =
+      required(:MINFO, m, :rmailbx, &is_binary/1)
+      |> dname_encode()
+
+    emailbx =
+      required(:MINFO, m, :emailbx, &is_binary/1)
+      |> dname_encode()
+
+    <<rmailbx::binary, emailbx::binary>>
   end
 
   # IN MX (15)
@@ -1148,6 +1180,18 @@ defmodule DNS.Msg.RR do
     %{name: name}
   end
 
+  # IN MR (9), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8
+  defp decode_rdata(:MR, offset, _rdlen, msg) do
+    {_, name} = dname_decode(offset, msg)
+    %{name: name}
+  end
+
+  # IN NULL (10), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10
+  defp decode_rdata(:NULL, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    %{data: rdata}
+  end
+
   # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
   defp decode_rdata(:WKS, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
@@ -1171,6 +1215,13 @@ defmodule DNS.Msg.RR do
     <<clen::8, cpu::binary-size(clen), olen::8, os::binary-size(olen)>> = rdata
 
     %{cpu: cpu, os: os}
+  end
+
+  # IN MINFO (14), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.70
+  defp decode_rdata(:MINFO, offset, _rdlen, msg) do
+    {offset, rmailbx} = dname_decode(offset, msg)
+    {_, emailbx} = dname_decode(offset, msg)
+    %{rmailbx: rmailbx, emailbx: emailbx}
   end
 
   # IN MX (15)
