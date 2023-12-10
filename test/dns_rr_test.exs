@@ -706,6 +706,24 @@ defmodule DNS.Msg.RRTest do
     assert "" == rr.rdmap.os
   end
 
+  test "RP RR" do
+    {name, type, _output, wiredata} = get_sample("rp.dns.netmeister.org", :RP)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 28153 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "jschauma.netmeister.org" == rr.rdmap.mail
+    assert "contact.netmeister.org" == rr.rdmap.txt
+    # apparently, no name compression is used here
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "RRSIG RR" do
     {name, _type, _output, wiredata} = get_sample("example.com", :RRSIG, useD: true)
     resp = DNS.Msg.decode(wiredata)

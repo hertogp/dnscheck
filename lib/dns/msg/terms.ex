@@ -352,6 +352,7 @@ defmodule DNS.Msg.Terms do
               MINFO: 14,
               MX: 15,
               TXT: 16,
+              RP: 17,
               AAAA: 28,
               SRV: 33,
               CERT: 37,

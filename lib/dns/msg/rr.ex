@@ -535,6 +535,7 @@ defmodule DNS.Msg.RR do
       :MINFO (14)      %{rmailbx: str, emailbx: str}
       :MX (15)         %{name: str, pref: number}
       :TXT (16)        %{txt: [str]}
+      :RP (17)         %{mail: str, txt: str}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
@@ -749,6 +750,19 @@ defmodule DNS.Msg.RR do
     else
       _ -> error(:erdmap, "TXT RR, got: #{inspect(m)}")
     end
+  end
+
+  # IN RP (17), https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2
+  defp encode_rdata(:RP, m) do
+    mail =
+      required(:RP, m, :mail, &is_binary/1)
+      |> dname_encode()
+
+    txt =
+      required(:RP, m, :txt, &is_binary/1)
+      |> dname_encode()
+
+    <<mail::binary, txt::binary>>
   end
 
   # IN AAAA (28)
@@ -1209,6 +1223,14 @@ defmodule DNS.Msg.RR do
         do: txt
 
     %{txt: lines}
+  end
+
+  # IN RP (17), https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2
+  defp decode_rdata(:RP, offset, _rdlen, msg) do
+    {offset, mail} = dname_decode(offset, msg)
+    {_offset, txt} = dname_decode(offset, msg)
+
+    %{mail: mail, txt: txt}
   end
 
   # IN AAAA (28)
