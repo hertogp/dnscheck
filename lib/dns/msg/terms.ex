@@ -381,7 +381,8 @@ defmodule DNS.Msg.Terms do
               *: 255,
               ANY: 255,
               URI: 256,
-              CAA: 257
+              CAA: 257,
+              AMTRELAY: 260
             }
             |> Utils.normalize_name_map()
 

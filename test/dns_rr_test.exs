@@ -292,6 +292,27 @@ defmodule DNS.Msg.RRTest do
     assert rr.rdata == rr2.rdata
   end
 
+  test "AMTRELAY RR" do
+    # drill doesnt know AMTRELAY as mnemonic, so use TYPE260
+    {name, _type, _output, wiredata} = get_sample("amtrelay.dns.netmeister.org", "TYPE260")
+
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 62613 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert :AMTRELAY == rr.type
+    assert 3600 == rr.ttl
+    assert 10 == rr.rdmap.pref
+    assert 0 == rr.rdmap.d
+    assert 2 == rr.rdmap.type
+    assert "2001:470:30:84:e276:63ff:fe72:3900" == rr.rdmap.relay
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "CAA RR" do
     {name, type, _output, wiredata} = get_sample("google.nl", :CAA)
     resp = DNS.Msg.decode(wiredata)

@@ -63,7 +63,7 @@ defmodule DNS.Msg.RR do
   #     [ ] NSEC3PARAM hash, see
   #         - https://www.netmeister.org/blog/dns-rrs.html
   #         - https://github.com/shuque/nsec3hash
-  #     [o] AMTRELAY, https://datatracker.ietf.org/doc/html/rfc8777#section-4
+  #     [x] AMTRELAY, https://datatracker.ietf.org/doc/html/rfc8777#section-4
   #     [x] RP dnslab.org tcp53.ch
   #     [o] TYPE65 www.google.com  (for some reason HTTPS doesn't work)
   #     [o] LOC (29)
@@ -71,9 +71,9 @@ defmodule DNS.Msg.RR do
   #     [ ] KX (36)
   #     [ ] TKEY (249) (?)
   #     [ ] TSIG (250) (?)
-  #     [c] OPENPGPKEY () would be raw type anyway, since we won't decode rdata!
+  #     [o] OPENPGPKEY () would be raw type anyway, since we won't decode rdata!
   #     [ ] KEY (25) https://www.rfc-editor.org/rfc/rfc3445.html
-  #     [o] WKS (11) https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
+  #     [x] WKS (11) https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
 
   import DNS.Msg.Error, only: [error: 2]
   import DNS.Msg.Fields
@@ -196,6 +196,18 @@ defmodule DNS.Msg.RR do
     |> Enum.group_by(fn n -> div(n, 256) end)
     |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
     |> Enum.join()
+  end
+
+  @spec bool_encode(boolean | 0 | 1) :: bitstring
+  def bool_encode(n) do
+    # note the lack of bool_decode, since that's better done directly
+    case n do
+      true -> <<1::1>>
+      false -> <<0::1>>
+      0 -> <<0::1>>
+      1 -> <<1::1>>
+      n -> error(:evalue, "expected true,false,0 or 1, got: #{inspect(n)}")
+    end
   end
 
   @spec ip_decode(offset, :ip4 | :ip6, binary) :: {offset, binary}
@@ -562,6 +574,7 @@ defmodule DNS.Msg.RR do
       :CSYNC (62)      %{soa_serial: u32, flags: u16, covers: [atom|u32]}
       :URI (256)       %{prio: u16, weight: u16, target: str}
       :CAA (257)       %{flags: u8, tag: str, value: str}
+      :AMTRELAY (260)  %{pref: u8, d: 0|1, type: u7, relay: str}
       ---------------- ------------------------------------------------------------------
 
   where:
@@ -1011,6 +1024,25 @@ defmodule DNS.Msg.RR do
     tag = required(:CAA, m, :tag, &is_binary/1)
     value = required(:CAA, m, :value, &is_binary/1)
     <<flags::8, byte_size(tag)::8, tag::binary, value::binary>>
+  end
+
+  # AMTRELAY (260), https://datatracker.ietf.org/doc/html/rfc8777#section-4
+  defp encode_rdata(:AMTRELAY, m) do
+    pref = required(:AMTRELAY, m, :pref, &is_u8/1)
+    d = required(:AMTRELAY, m, :d, &is_bool/1) |> bool_encode()
+    type = required(:AMTRELAY, m, :type, &is_u7/1)
+    relay = required(:AMTRELAY, m, :relay, &is_binary/1)
+
+    relay =
+      case type do
+        0 -> <<>>
+        1 -> ip_encode(relay, :ip4)
+        2 -> ip_encode(relay, :ip6)
+        3 -> dname_encode(relay)
+        n -> error(:eformat, "AMTRELAY relay type unknown: #{inspect(n)}")
+      end
+
+    <<pref::8, d::bitstring-size(1), type::7, relay::binary>>
   end
 
   ## [[ catch all ]]
@@ -1638,6 +1670,24 @@ defmodule DNS.Msg.RR do
       value: value,
       critical: b0 == 1
     }
+  end
+
+  # AMTRELAY (260), https://datatracker.ietf.org/doc/html/rfc8777#section-4
+  defp decode_rdata(:AMTRELAY, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+
+    <<pref::8, d::1, type::7, rest::binary>> = rdata
+
+    relay =
+      case type do
+        0 -> ""
+        1 -> ip_decode(0, :ip4, rest) |> elem(1)
+        2 -> ip_decode(0, :ip6, rest) |> elem(1)
+        3 -> dname_decode(offset + 2, msg) |> elem(1)
+        n -> error(:eformat, "AMTRELAY relay type unknown: #{inspect(n)}")
+      end
+
+    %{pref: pref, d: d, type: type, relay: relay}
   end
 
   ## [[ catch all ]]
