@@ -538,6 +538,7 @@ defmodule DNS.Msg.RR do
       :RP (17)         %{mail: str, txt: str}
       :AFSDB (18)      %{type: u16, name: str}
       :X25 (19)        %{address: str}
+      :ISDN (20)       %{address: str, sa: str}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
@@ -773,6 +774,18 @@ defmodule DNS.Msg.RR do
     address = required(:X25, m, :address, &is_binary/1)
     len = String.length(address)
     <<len::8, address::binary>>
+  end
+
+  # IN ISDN (20), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2
+  defp encode_rdata(:ISDN, m) do
+    address = required(:ISDN, m, :address, &is_binary/1)
+    sa = required(:ISDN, m, :sa, &is_binary/1)
+    lena = String.length(address)
+    lens = String.length(sa)
+
+    if lens > 0,
+      do: <<lena::8, address::binary, lens::8, sa::binary>>,
+      else: <<lena::8, address::binary>>
   end
 
   # IN AAAA (28)
@@ -1253,6 +1266,21 @@ defmodule DNS.Msg.RR do
   defp decode_rdata(:X25, offset, _rdlen, msg) do
     <<_::binary-size(offset), len::8, address::binary-size(len), _::binary>> = msg
     %{address: address}
+  end
+
+  # IN ISDN (20), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2
+  defp decode_rdata(:ISDN, offset, rdlen, msg) do
+    <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
+    dta = for <<len::8, txt::binary-size(len) <- rdata>>, do: txt
+
+    {addr, sa} =
+      case dta do
+        [addr] -> {addr, ""}
+        [addr, sa] -> {addr, sa}
+        _ -> error(:eformat, "ISDN RR, unexpected data #{inspect(rdata)}")
+      end
+
+    %{address: addr, sa: sa}
   end
 
   # IN AAAA (28)
