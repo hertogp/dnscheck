@@ -537,6 +537,7 @@ defmodule DNS.Msg.RR do
       :TXT (16)        %{txt: [str]}
       :RP (17)         %{mail: str, txt: str}
       :AFSDB (18)      %{type: u16, name: str}
+      :X25 (19)        %{address: str}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
@@ -755,14 +756,8 @@ defmodule DNS.Msg.RR do
 
   # IN RP (17), https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2
   defp encode_rdata(:RP, m) do
-    mail =
-      required(:RP, m, :mail, &is_binary/1)
-      |> dname_encode()
-
-    txt =
-      required(:RP, m, :txt, &is_binary/1)
-      |> dname_encode()
-
+    mail = required(:RP, m, :mail, &is_binary/1) |> dname_encode()
+    txt = required(:RP, m, :txt, &is_binary/1) |> dname_encode()
     <<mail::binary, txt::binary>>
   end
 
@@ -773,11 +768,16 @@ defmodule DNS.Msg.RR do
     <<type::16, name::binary>>
   end
 
-  # IN AAAA (28)
-  defp encode_rdata(:AAAA, m) do
-    required(:AAAA, m, :ip)
-    |> ip_encode(:ip6)
+  # IN X25 (19), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1
+  defp encode_rdata(:X25, m) do
+    address = required(:X25, m, :address, &is_binary/1)
+    len = String.length(address)
+    <<len::8, address::binary>>
   end
+
+  # IN AAAA (28)
+  defp encode_rdata(:AAAA, m),
+    do: required(:AAAA, m, :ip) |> ip_encode(:ip6)
 
   # IN SRV (33)
   # - https://www.rfc-editor.org/rfc/rfc2782
@@ -1247,6 +1247,12 @@ defmodule DNS.Msg.RR do
     {_offset, name} = dname_decode(offset + 2, msg)
 
     %{type: type, name: name}
+  end
+
+  # IN X25 (19), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1
+  defp decode_rdata(:X25, offset, _rdlen, msg) do
+    <<_::binary-size(offset), len::8, address::binary-size(len), _::binary>> = msg
+    %{address: address}
   end
 
   # IN AAAA (28)

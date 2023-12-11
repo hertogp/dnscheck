@@ -894,6 +894,22 @@ defmodule DNS.Msg.RRTest do
     assert rr.rdata == rr2.rdata
   end
 
+  test "X25 RR" do
+    {name, type, _output, wiredata} = get_sample("x25.dns.netmeister.org", :X25)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 40903 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "311061700956" == rr.rdmap.address
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "ZONEMD RR" do
     {name, type, _output, wiredata} = get_sample("zonemd.dns.netmeister.org", :ZONEMD)
     resp = DNS.Msg.decode(wiredata)
