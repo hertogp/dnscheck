@@ -68,7 +68,7 @@ defmodule DNS.Msg.RR do
   #     [o] TYPE65 www.google.com  (for some reason HTTPS doesn't work)
   #     [o] LOC (29)
   #     [?] NAPTR (35) sip2sip.info
-  #     [ ] KX (36)
+  #     [x] KX (36)
   #     [ ] TKEY (249) (?)
   #     [ ] TSIG (250) (?)
   #     [o] OPENPGPKEY () would be raw type anyway, since we won't decode rdata!
@@ -554,6 +554,7 @@ defmodule DNS.Msg.RR do
       :RT (21)         %{pref: u16, name: str}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
+      :KX (36)         %{pref: u16, name: str}
       :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
       :DNAME (39)      %{dname: str}
       :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
@@ -742,8 +743,7 @@ defmodule DNS.Msg.RR do
     <<rmailbx::binary, emailbx::binary>>
   end
 
-  # IN MX (15)
-  # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
+  # IN MX (15), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
   defp encode_rdata(:MX, m) do
     pref = required(:MX, m, :pref, &is_u16/1)
     name = required(:MX, m, :name, &is_binary/1) |> dname_encode()
@@ -825,6 +825,13 @@ defmodule DNS.Msg.RR do
     <<prio::16, weight::16, port::16, target::binary>>
   end
 
+  # IN KX (36), https://datatracker.ietf.org/doc/html/rfc2230#section-3
+  defp encode_rdata(:KX, m) do
+    pref = required(:KX, m, :pref, &is_u16/1)
+    name = required(:KX, m, :name, &is_binary/1) |> dname_encode()
+    <<pref::16, name::binary>>
+  end
+
   # CERT (37)
   # - https://www.rfc-editor.org/rfc/rfc4398.html#section-2
   defp encode_rdata(:CERT, m) do
@@ -893,8 +900,7 @@ defmodule DNS.Msg.RR do
     <<pref::8, gtype::8, algo::8, gateway::binary, pubkey::binary>>
   end
 
-  # IN RRSIG (46)
-  # https://www.rfc-editor.org/rfc/rfc4034#section-3
+  # IN RRSIG (46), https://www.rfc-editor.org/rfc/rfc4034#section-3
   defp encode_rdata(:RRSIG, m) do
     type = required(:RRSIG, m, :type, fn t -> encode_rr_type(t) |> is_u16 end)
     algo = required(:RRSIG, m, :algo, &is_u8/1)
@@ -910,8 +916,7 @@ defmodule DNS.Msg.RR do
       sig::binary>>
   end
 
-  # IN NSEC (47)
-  # https://www.rfc-editor.org/rfc/rfc4034#section-4
+  # IN NSEC (47), https://www.rfc-editor.org/rfc/rfc4034#section-4
   defp encode_rdata(:NSEC, m) do
     name = required(:NSEC, m, :name, &is_binary/1) |> dname_encode()
     covers = required(:NSEC, m, :covers, &is_list/1)
@@ -1008,8 +1013,7 @@ defmodule DNS.Msg.RR do
   # IN ANY/* (255)
   # pseudo QTYPE, never an RRtype, see also RFC882 and RFC8482
 
-  # IN URI (256)
-  # - https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
+  # IN URI (256), https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
   defp encode_rdata(:URI, m) do
     prio = required(:URI, m, :prio, &is_u16/1)
     weight = required(:URI, m, :weight, &is_u16/1)
@@ -1266,8 +1270,7 @@ defmodule DNS.Msg.RR do
     %{rmailbx: rmailbx, emailbx: emailbx}
   end
 
-  # IN MX (15)
-  # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
+  # IN MX (15), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
   defp decode_rdata(:MX, offset, _rdlen, msg) do
     <<_::binary-size(offset), pref::16, _::binary>> = msg
     {_offset, name} = dname_decode(offset + 2, msg)
@@ -1345,6 +1348,13 @@ defmodule DNS.Msg.RR do
     # just in case name compression is used.
     {_, target} = dname_decode(offset + 6, msg)
     %{prio: prio, weight: weight, port: port, target: target}
+  end
+
+  # IN KX (36), https://datatracker.ietf.org/doc/html/rfc2230#section-3
+  defp decode_rdata(:KX, offset, _rdlen, msg) do
+    <<_::binary-size(offset), pref::16, _::binary>> = msg
+    {_offset, name} = dname_decode(offset + 2, msg)
+    %{name: name, pref: pref}
   end
 
   # CERT (37)

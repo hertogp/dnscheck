@@ -359,6 +359,7 @@ defmodule DNS.Msg.Terms do
               RT: 21,
               AAAA: 28,
               SRV: 33,
+              KX: 36,
               CERT: 37,
               DNAME: 39,
               OPT: 41,

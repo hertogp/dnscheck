@@ -520,6 +520,23 @@ defmodule DNS.Msg.RRTest do
     assert rr.rdata == rr2.rdata
   end
 
+  test "KX RR" do
+    {name, type, _output, wiredata} = get_sample("kx.dns.netmeister.org", :KX)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 57000 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert 1 == rr.rdmap.pref
+    assert "panix.netmeister.org" == rr.rdmap.name
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "MB RR" do
     {name, type, _output, wiredata} = get_sample("mb.dns.netmeister.org", :MB)
     resp = DNS.Msg.decode(wiredata)
