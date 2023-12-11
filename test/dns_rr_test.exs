@@ -274,6 +274,24 @@ defmodule DNS.Msg.RRTest do
     assert :AAAA == rr.type
   end
 
+  test "AFSDB RR" do
+    {name, type, _output, wiredata} = get_sample("afsdb.dns.netmeister.org", :AFSDB)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 4707 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert 1 == rr.rdmap.type
+    assert "panix.netmeister.org" == rr.rdmap.name
+    # apparently, no name compression is used here
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "CAA RR" do
     {name, type, _output, wiredata} = get_sample("google.nl", :CAA)
     resp = DNS.Msg.decode(wiredata)

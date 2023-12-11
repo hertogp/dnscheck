@@ -64,7 +64,7 @@ defmodule DNS.Msg.RR do
   #         - https://www.netmeister.org/blog/dns-rrs.html
   #         - https://github.com/shuque/nsec3hash
   #     [o] AMTRELAY, https://datatracker.ietf.org/doc/html/rfc8777#section-4
-  #     [o] RP dnslab.org tcp53.ch
+  #     [x] RP dnslab.org tcp53.ch
   #     [o] TYPE65 www.google.com  (for some reason HTTPS doesn't work)
   #     [o] LOC (29)
   #     [?] NAPTR (35) sip2sip.info
@@ -536,6 +536,7 @@ defmodule DNS.Msg.RR do
       :MX (15)         %{name: str, pref: number}
       :TXT (16)        %{txt: [str]}
       :RP (17)         %{mail: str, txt: str}
+      :AFSDB (18)      %{type: u16, name: str}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
@@ -763,6 +764,13 @@ defmodule DNS.Msg.RR do
       |> dname_encode()
 
     <<mail::binary, txt::binary>>
+  end
+
+  # IN AFSDB (18), https://www.rfc-editor.org/rfc/rfc1183.html#section-1
+  defp encode_rdata(:AFSDB, m) do
+    type = required(:AFSDB, m, :type, &is_u16/1)
+    name = required(:AFSDB, m, :name, &is_binary/1) |> dname_encode()
+    <<type::16, name::binary>>
   end
 
   # IN AAAA (28)
@@ -1231,6 +1239,14 @@ defmodule DNS.Msg.RR do
     {_offset, txt} = dname_decode(offset, msg)
 
     %{mail: mail, txt: txt}
+  end
+
+  # IN AFSDB (18), https://www.rfc-editor.org/rfc/rfc1183.html#section-1
+  defp decode_rdata(:AFSDB, offset, _rdlen, msg) do
+    <<_::binary-size(offset), type::16, _::binary>> = msg
+    {_offset, name} = dname_decode(offset + 2, msg)
+
+    %{type: type, name: name}
   end
 
   # IN AAAA (28)

@@ -9,7 +9,7 @@ defmodule DNS do
   # [[ RESOLVE ]]
 
   @doc """
-  Tries to resolve and Return a `Msg` for given `name` and `type`.
+  Queries DNS for given `name` and `type`, returns `t:DNS.Msg.t/0`
 
   Options include:
   - `rd`, defaults to 1 (recursion desired, true)
