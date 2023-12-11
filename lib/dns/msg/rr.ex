@@ -571,6 +571,7 @@ defmodule DNS.Msg.RR do
       :TLSA (52)       %{usage: u8, selector: u8, type: u8, data: str}
       :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
       :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
+      :OPENPGPKEY (61) %{}, no en/decoding provided, rr.raw is true, use rr.rdata as-is
       :ZONEMD (63)     %{serial: u32, scheme: u8, algo: u8, digest: str}
       :CSYNC (62)      %{soa_serial: u32, flags: u16, covers: [atom|u32]}
       :URI (256)       %{prio: u16, weight: u16, target: str}

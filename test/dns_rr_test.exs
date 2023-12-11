@@ -729,6 +729,22 @@ defmodule DNS.Msg.RRTest do
     assert rr.rdata == rr2.rdata
   end
 
+  test "OPENPGPKEY RR" do
+    {name, type, _output, wiredata} =
+      get_sample("openpgpkey.dns.netmeister.org", :OPENPGPKEY, useD: true)
+
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 20232 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 2 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert true == rr.raw
+  end
+
   test "OPT RR" do
     {_name, type, _output, wiredata} = get_sample("dnssec-failed.org", :OPT, useD: true)
     resp = DNS.Msg.decode(wiredata)

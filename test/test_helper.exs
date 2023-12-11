@@ -154,7 +154,7 @@ defmodule Drill do
     fname = Path.join(@data_dir, "#{type}-#{name}-sample")
 
     if forced or not File.exists?(fname) do
-      opts = (useD && ["#{ns}", "-D", "-b", "4096"]) || ["@#{ns}"]
+      opts = (useD && ["@#{ns}", "-D", "-b", "4096"]) || ["@#{ns}"]
       sample = drill(name, type, opts)
       File.write(fname, "#{@header}#{inspect(sample, limit: :infinity, pretty: true)}\n")
     end
