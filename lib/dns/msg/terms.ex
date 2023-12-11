@@ -356,6 +356,7 @@ defmodule DNS.Msg.Terms do
               AFSDB: 18,
               X25: 19,
               ISDN: 20,
+              RT: 21,
               AAAA: 28,
               SRV: 33,
               CERT: 37,

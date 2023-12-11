@@ -780,6 +780,23 @@ defmodule DNS.Msg.RRTest do
              Base.encode64(rr.rdmap.signature)
   end
 
+  test "RT RR" do
+    {name, type, _output, wiredata} = get_sample("rt.dns.netmeister.org", :RT)
+    resp = DNS.Msg.decode(wiredata)
+    assert %DNS.Msg{} = resp
+    assert 24964 == resp.header.id, "sample was updated, need to update test!"
+    # answer
+    assert 1 == length(resp.answer)
+    rr = hd(resp.answer)
+    assert name == rr.name
+    assert type == rr.type
+    assert 3600 == rr.ttl
+    assert "panix.netmeister.org" == rr.rdmap.name
+    assert 10 == rr.rdmap.pref
+    rr2 = DNS.Msg.RR.encode(rr)
+    assert rr.rdata == rr2.rdata
+  end
+
   test "SOA RR" do
     {name, type, _output, wiredata} = get_sample("example.com", :SOA)
     resp = DNS.Msg.decode(wiredata)

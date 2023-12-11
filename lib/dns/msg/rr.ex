@@ -539,6 +539,7 @@ defmodule DNS.Msg.RR do
       :AFSDB (18)      %{type: u16, name: str}
       :X25 (19)        %{address: str}
       :ISDN (20)       %{address: str, sa: str}
+      :RT (21)         %{pref: u16, name: str}
       :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
       :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
       :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
@@ -786,6 +787,13 @@ defmodule DNS.Msg.RR do
     if lens > 0,
       do: <<lena::8, address::binary, lens::8, sa::binary>>,
       else: <<lena::8, address::binary>>
+  end
+
+  # IN RT (21), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3
+  defp encode_rdata(:RT, m) do
+    name = required(:RT, m, :name, &is_binary/1) |> dname_encode()
+    pref = required(:RT, m, :pref, &is_u16/1)
+    <<pref::16, name::binary>>
   end
 
   # IN AAAA (28)
@@ -1281,6 +1289,13 @@ defmodule DNS.Msg.RR do
       end
 
     %{address: addr, sa: sa}
+  end
+
+  # IN RT (21), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3
+  defp decode_rdata(:RT, offset, _rdlen, msg) do
+    <<_::binary-size(offset), pref::16, _::binary>> = msg
+    {_, name} = dname_decode(offset + 2, msg)
+    %{name: name, pref: pref}
   end
 
   # IN AAAA (28)
