@@ -23,7 +23,7 @@ defmodule Mix.Tasks.Iana.Root do
   # root hints
   @root_hints "https://www.internic.net/domain/named.root"
   @fname_root Path.join([@priv, "named.root"])
-  @fname_rrs Path.join([@priv, "rrs.root"])
+  @fname_rrs Path.join([@priv, "named.root.rrs"])
 
   # trust anchors
   @trust_url "https://data.iana.org/root-anchors"
