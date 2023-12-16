@@ -5,7 +5,7 @@ defmodule DNS.Msg.RR do
   Resource Records (RRs) are found in the Answer, Authority, and Additional
   sections of a DNS message.
 
-  Each RR has the following format:
+  Each RR has the following [format](https://www.rfc-editor.org/rfc/rfc1035#section-3.2.1):
 
   ```
          0  1  2  3  4  5  6  7  8  9  0 11 12 13 14 15
