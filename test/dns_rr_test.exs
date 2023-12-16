@@ -827,8 +827,8 @@ defmodule DNS.Msg.RRTest do
     assert 13 == rr.rdmap.algo
     assert 2 == rr.rdmap.labels
     assert 46981 == rr.rdmap.keytag
-    assert ~U[2023-11-18 10:16:41Z] == rr.rdmap.notbefore
-    assert ~U[2023-12-09 04:22:10Z] == rr.rdmap.notafter
+    assert 1_700_302_601 == rr.rdmap.notbefore
+    assert 1_702_095_730 == rr.rdmap.notafter
 
     assert "MJeJSwqWFQqlcX0DHEUnzR3FLxm/dQK3kLxsiHymrkMBbMlCqb2QEq/FaniudjXilnwBxn9yXu/PLGJ2g1T6Eg==" ==
              Base.encode64(rr.rdmap.signature)

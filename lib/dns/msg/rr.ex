@@ -34,10 +34,232 @@ defmodule DNS.Msg.RR do
   - `RDLEN`,    is a 16 bit unsigned integer, the length in octets of the RDATA field.
   - `RDATA`,    interpretation depends on the RR TYPE and CLASS
 
+  ## RR's encoding/decoding
+
+  In the following sections, these qualifiers have the following meaning:
+  - `str`, String.t
+  - `bin`, binary
+  - `u<n>`, an unsigned integer that fits in `n` bits
+  - `s<n>`, a signed integer that fits in `n` bits
+
+  ### [`:A` (1)](https://www.rfc-editor.org/rfc/rfc1035#section-3.4.1)
+  ```
+  rdmap: %{ip: str | {u8, u8, u8, u8}}
+  ```
+
+  ### [`:NS` (2)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11)
+  ```
+  rdmap: %{name: str}
+  ```
+
+  ### [`:CNAME` (5)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1)
+  ```
+  rdmap: %{name: str}
+  ```
+
+  ### [`:SOA` (6)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13)
+  ```
+  rdmap: %{mname: str, rname: str, serial: number, refresh: u32 (14400)
+           retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
+  ```
+
+  ### [`:MB` (7)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3)
+  ```
+  rdmap: %{name: str}
+  ```
+
+  ### [`:MG` (8)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6)
+  ```
+  rdmap: %{name: str}
+  ```
+
+  ### [`:MR` (9)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8)
+  ```
+  rdmap: %{name: str}
+  ```
+
+  ### [`:NULL` (10)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10)
+  ```
+  rdmap: %{data: str}
+  ```
+
+  ### [`:WKS` (11)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2)
+  ```
+  rdmap: %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16]}
+  ```
+
+  ### [`:PTR` (12)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12)
+  ```
+  rdmap: %{name: str}
+  ```
+
+  ### [`:HINFO` (13)](https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2)
+  ```
+  rdmap: %{cpu: str, os: str}
+  ```
+  Revived by RFC8482
+
+
+  ### [`:MINFO` (14)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.7)
+  ```
+  rdmap: %{rmailbx: str, emailbx: str}
+  ```
+
+  ### [`:MX` (15)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9)
+  ```
+  rdmap: %{name: str, pref: u16}
+  ```
+
+  ### [`:TXT` (16)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14)
+  ```
+  rdmap: %{txt: [str]}
+  ```
+
+  ### [`:RP` (17)](https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2)
+  ```
+  rdmap: %{mail: str, txt: str}
+  ```
+
+  ### [`:AFSDB` (18)](https://www.rfc-editor.org/rfc/rfc1183.html#section-1)
+  ```
+  rdmap: %{type: u16, name: str}
+  ```
+
+  ### [`:X25` (19)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1)
+  ```
+  rdmap: %{address: str}
+  ```
+
+  ### [`:ISDN` (20)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2)
+  ```
+  rdmap: %{address: str, sa: str}
+  ```
+
+  ### [`:RT` (21)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3)
+  ```
+  rdmap: %{pref: u16, name: str}
+  ```
+
+  ### [`:AAAA` (28)](https://www.rfc-editor.org/rfc/rfc3596#section-2.2)
+  ```
+  rdmap: %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
+  ```
+
+  ### [`:SRV` (33)](https://www.rfc-editor.org/rfc/rfc2782)
+  ```
+  rdmap: %{prio: u16, weight: u16, port: u16, target: str}
+  ```
+
+  ### [`:KX` (36)](https://datatracker.ietf.org/doc/html/rfc2230#section-3)
+  ```
+  rdmap: %{pref: u16, name: str}
+  ```
+
+  ### [`:CERT` (37)](https://www.rfc-editor.org/rfc/rfc4398.html#section-2)
+  ```
+  rdmap: %{type: u16, keytag: u16, algo: u8, cert: str}
+  ```
+
+  ### [`:DNAME` (39)](https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1)
+  ```
+  rdmap: %{dname: str}
+  ```
+
+  ### [`:OPT` (41)](https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2)
+  ```
+  rdmap: %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
+  ```
+
+  ### [`:DS` (43)](https://www.rfc-editor.org/rfc/rfc4034#section-5)
+  ```
+  rdmap: %{keytag: u16, algo: u8, type: u8, digest: str}
+  ```
+
+  ### [`:SSHFP` (44)](https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1)
+  ```
+  rdmap: %{algo: u8, type: u8, fp: str}
+  ```
+
+  ### [`:IPSECKEY` (45)](https://www.rfc-editor.org/rfc/rfc4025.html#section-2)
+  ```
+  rdmap: %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
+  ```
+
+  ### [`:RRSIG` (46)](https://www.rfc-editor.org/rfc/rfc4034#section-3)
+  ```
+  rdmap: %{type: atom | u16, algo: u8, labels: u8, ttl: u32, notAfter: u32
+           notBefore: u32, keytag: u16, name: str, signature: bin}
+  ```
+  TODO: fix field qualifiers
+
+  ### [`:NSEC` (47)](https://www.rfc-editor.org/rfc/rfc4034#section-4)
+  ```
+  rdmap %{name: str, covers: [atom|u16]}
+  ```
+
+  ### [`:DNSKEY` (48)](https://www.rfc-editor.org/rfc/rfc4034#section-2)
+  ```
+  rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: str}
+  ```
+
+  ### [`:NSEC3` (50)](https://www.rfc-editor.org/rfc/rfc5155#section-3.2)
+  ```
+  rdmap: %{algo: u8, flags: u8, iterations: u16, salt: str, next_name: str, covers: [atom|u16]}
+  ```
+
+  ### [`:NSECPARAM3` (51)](https://www.rfc-editor.org/rfc/rfc5155#section-4.1)
+  ```
+  rdmap: %{algo: u8, flags: u8, iterations: u16, salt: str}
+  ```
+
+  ### [`:TLSA` (52)](https://www.rfc-editor.org/rfc/rfc6698#section-2)
+  ```
+  rdmap: %{usage: u8, selector: u8, type: u8, data: str}
+  ```
+
+  ### [`:CDS` (59)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1)
+  ```
+  rdmap: %{keytag: u16, algo: u8, type: u8, digest: str}
+  ```
+
+  ### [`:CDNSKEY` (60)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2)
+  ```
+  rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: str}
+  ```
+
+  ### [`:OPENPGPKEY` (61)](https://www.rfc-editor.org/rfc/rfc4880#section-3)
+  ```
+  rdmap: %{}, no en/decoding provided, rr.raw is true, use rr.rdata as-is
+  ```
+  Yeah, not doing this one.
+
+  ### [`:CSYNC` (62)](https://www.rfc-editor.org/rfc/rfc7477.html#section-2)
+  ```
+  rdmap: %{soa_serial: u32, flags: u16, covers: [atom|u32]}
+  ```
+
+  ### [`:ZONEMD` (63)](https://datatracker.ietf.org/doc/html/rfc8976#section-2)
+  ```
+  rdmap: %{serial: u32, scheme: u8, algo: u8, digest: str}
+  ```
+
+  ### [`:URI` (256)](https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5)
+  ```
+  rdmap: %{prio: u16, weight: u16, target: str}
+  ```
+
+  ### [`:CAA` (257)](https://www.rfc-editor.org/rfc/rfc8659#section-4)
+  ```
+  rdmap: %{flags: u8, tag: str, value: str}
+  ```
+
+  ### [`:AMTRELAY` (260)](https://datatracker.ietf.org/doc/html/rfc8777#section-4)
+  ```
+  %{pref: u8, d: 0|1, type: u7, relay: str}
+  ```
   """
 
   # TODOs:
-  # - add rfc references
   # - https://www.rfc-editor.org/rfc/rfc5890 (Internationlized Domain Names for Applications (IDNA)
   # - https://www.rfc-editor.org/rfc/rfc2181 (clarifications)
   # - https://www.rfc-editor.org/rfc/rfc2673 (binary labels)
@@ -128,123 +350,6 @@ defmodule DNS.Msg.RR do
           rdata: binary,
           wdata: binary
         }
-
-  # [[ HELPERS ]]
-
-  @doc false
-  # convert bitmap to list of bit numbers whose value is '1'
-  # bit number 0 is left-most (msb) bit
-  def bitmap_2_nrs(bitmap) do
-    bitmap_2_nrs(bitmap, 0, [])
-  end
-
-  defp bitmap_2_nrs(<<0::1, rest::bitstring>>, n, acc),
-    do: bitmap_2_nrs(rest, n + 1, acc)
-
-  defp bitmap_2_nrs(<<1::1, rest::bitstring>>, n, acc),
-    do: bitmap_2_nrs(rest, n + 1, [n | acc])
-
-  defp bitmap_2_nrs(<<>>, _n, acc),
-    do: Enum.reverse(acc)
-
-  def bitmap_4_nrs(nrs) do
-    nrs
-    |> Enum.sort(:asc)
-    |> Enum.reduce(<<>>, fn n, acc -> bitmap_expand(acc, n) end)
-    |> bitmap_pad()
-  end
-
-  def bitmap_expand(bits, n) do
-    fill = n - bit_size(bits)
-    <<bits::bitstring, 0::size(fill), 1::1>>
-  end
-
-  def bitmap_pad(bmap, b \\ 0)
-
-  def bitmap_pad(bmap, _b) when rem(bit_size(bmap), 8) == 0,
-    do: bmap
-
-  def bitmap_pad(bmap, b),
-    do: bitmap_pad(<<bmap::bitstring, b::1>>)
-
-  # NSEC (3) bitmap conversion to/from list of RR type numbers
-  # - https://www.rfc-editor.org/rfc/rfc4034#section-4.1.2
-  def bitmap_2_rrs(bin) do
-    for <<w::8, len::8, bmap::binary-size(len) <- bin>> do
-      bitmap_2_nrs(bmap)
-      |> Enum.map(fn n -> n + w * 256 end)
-    end
-    |> List.flatten()
-    |> Enum.map(fn n -> decode_rr_type(n) end)
-  end
-
-  def bitmap_block(w, nrs) do
-    bmap =
-      nrs
-      |> Enum.map(fn n -> n - w * 256 end)
-      |> bitmap_4_nrs()
-
-    l = byte_size(bmap)
-    <<w::8, l::8, bmap::binary>>
-  end
-
-  def bitmap_4_rrs(rrs) do
-    # TODO: maybe filter out QTYPEs like ANY (255), AXFR (252), IXFR (251), OPT (41)
-    # or leave that up to the caller so experimentation remains possible
-    Enum.map(rrs, fn n -> encode_rr_type(n) end)
-    |> Enum.sort(:asc)
-    |> Enum.group_by(fn n -> div(n, 256) end)
-    |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
-    |> Enum.join()
-  end
-
-  @spec bool_encode(boolean | 0 | 1) :: bitstring
-  def bool_encode(n) do
-    # note the lack of bool_decode, since that's better done directly
-    case n do
-      true -> <<1::1>>
-      false -> <<0::1>>
-      0 -> <<0::1>>
-      1 -> <<1::1>>
-      n -> error(:evalue, "expected true,false,0 or 1, got: #{inspect(n)}")
-    end
-  end
-
-  @spec ip_decode(offset, :ip4 | :ip6, binary) :: {offset, binary}
-  def ip_decode(offset, version, msg) do
-    {bytes, bits} =
-      case version do
-        :ip4 -> {4, 32}
-        :ip6 -> {8, 128}
-        _ -> raise ArgumentError, "expected :ip4 or :ip6, got #{inspect(version)}"
-      end
-
-    <<_::binary-size(offset), ip::size(bits), _::binary>> = msg
-    {offset + bytes, "#{Pfx.new(<<ip::size(bits)>>, bits)}"}
-  end
-
-  @spec ip_encode(any, :ip4 | :ip6) :: binary
-  def ip_encode(ip, version) do
-    # uses padr to ensure `addr` is a full address, not just a prefix
-    with {:ok, pfx} <- Pfx.parse(ip),
-         ^version <- Pfx.type(pfx),
-         addr <- Pfx.padr(pfx) do
-      addr.bits
-    else
-      _ ->
-        error(:erdmap, "invalid IP address, got: #{inspect(ip)}")
-    end
-  end
-
-  # used to check rdmap for mandatory fields when encoding an RR
-  # a convencience func that also gives consistent, clear error messages
-  defp required(type, map, field, check \\ fn _ -> true end) do
-    v = Map.get(map, field) || error(:erdmap, "#{type} RR missing #{field}, got: #{inspect(map)}")
-
-    if check.(v),
-      do: v,
-      else: error(:erdmap, "#{type} RR, field #{inspect(field)} has invalid value: #{inspect(v)}")
-  end
 
   # [[ NEW ]]
 
@@ -704,7 +809,7 @@ defmodule DNS.Msg.RR do
     <<data::binary>>
   end
 
-  # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
+  # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
   defp encode_rdata(:WKS, m) do
     ip = required(:WKS, m, :ip, &is_binary/1)
     proto = required(:WKS, m, :proto, &is_u8/1)
@@ -991,8 +1096,7 @@ defmodule DNS.Msg.RR do
     <<flags::16, proto::8, algo::8, pubkey::binary>>
   end
 
-  # CSYNC (62)
-  # - https://www.rfc-editor.org/rfc/rfc7477.html#section-2
+  # CSYNC (62), https://www.rfc-editor.org/rfc/rfc7477.html#section-2
   defp encode_rdata(:CSYNC, m) do
     soa_serial = required(:CSYNC, m, :soa_serial, &is_u32/1)
     flags = required(:CSYNC, m, :flags, &is_u16/1)
@@ -1001,8 +1105,7 @@ defmodule DNS.Msg.RR do
     <<soa_serial::32, flags::16, bitmap::binary>>
   end
 
-  # IN ZONEMD (63)
-  # - https://datatracker.ietf.org/doc/html/rfc8976#section-2
+  # IN ZONEMD (63), https://datatracker.ietf.org/doc/html/rfc8976#section-2
   defp encode_rdata(:ZONEMD, m) do
     serial = required(:ZONEMD, m, :serial, &is_u32/1)
     scheme = required(:ZONEMD, m, :scheme, &is_u8/1)
@@ -1022,8 +1125,7 @@ defmodule DNS.Msg.RR do
     <<prio::16, weight::16, target::binary>>
   end
 
-  # IN CAA (257)
-  # https://www.rfc-editor.org/rfc/rfc8659#section-4
+  # IN CAA (257), https://www.rfc-editor.org/rfc/rfc8659#section-4
   defp encode_rdata(:CAA, m) do
     flags = required(:CAA, m, :flags, &is_u8/1)
     tag = required(:CAA, m, :tag, &is_binary/1)
@@ -1372,8 +1474,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # - DNAME (39)
-  #   - https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1
+  # DNAME (39), https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1
   defp decode_rdata(:DNAME, offset, _rdlen, msg) do
     {_offset, dname} = dname_decode(offset, msg)
     %{dname: dname}
@@ -1405,8 +1506,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN DS (43)
-  # https://www.rfc-editor.org/rfc/rfc4034#section-5
+  # IN DS (43), https://www.rfc-editor.org/rfc/rfc4034#section-5
   defp decode_rdata(:DS, offset, rdlen, msg) do
     # digest MUST be presented as case-insensitive hex digits
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
@@ -1483,8 +1583,8 @@ defmodule DNS.Msg.RR do
     {offset, name} = dname_decode(0, rest)
     <<_::binary-size(offset), signature::binary>> = rest
 
-    {:ok, notafter} = DateTime.from_unix(notafter, :second)
-    {:ok, notbefore} = DateTime.from_unix(notbefore, :second)
+    # {:ok, notafter} = DateTime.from_unix(notafter, :second)
+    # {:ok, notbefore} = DateTime.from_unix(notbefore, :second)
 
     %{
       type: decode_rr_type(type),
@@ -1499,8 +1599,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN NSEC (47)
-  # https://www.rfc-editor.org/rfc/rfc4034#section-4
+  # IN NSEC (47), https://www.rfc-editor.org/rfc/rfc4034#section-4
   defp decode_rdata(:NSEC, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     {offset, name} = dname_decode(0, rdata)
@@ -1509,8 +1608,7 @@ defmodule DNS.Msg.RR do
     %{name: name, covers: covers}
   end
 
-  # IN DNSKEY (48)
-  # https://www.rfc-editor.org/rfc/rfc4034#section-2
+  # IN DNSKEY (48), https://www.rfc-editor.org/rfc/rfc4034#section-2
   defp decode_rdata(:DNSKEY, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<flags::16, proto::8, algo::8, pubkey::binary>> = rdata
@@ -1542,8 +1640,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN NSEC3 (50)
-  # https://www.rfc-editor.org/rfc/rfc5155#section-3.2
+  # IN NSEC3 (50), https://www.rfc-editor.org/rfc/rfc5155#section-3.2
   defp decode_rdata(:NSEC3, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
@@ -1564,8 +1661,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN NSEC3PARAM (51)
-  # https://www.rfc-editor.org/rfc/rfc5155#section-4.1
+  # IN NSEC3PARAM (51), https://www.rfc-editor.org/rfc/rfc5155#section-4.1
   defp decode_rdata(:NSEC3PARAM, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
@@ -1580,8 +1676,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN TLSA (52)
-  # https://www.rfc-editor.org/rfc/rfc6698#section-2
+  # IN TLSA (52), https://www.rfc-editor.org/rfc/rfc6698#section-2
   defp decode_rdata(:TLSA, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<usage::8, selector::8, type::8, data::binary>> = rdata
@@ -1594,9 +1689,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN CDS (59)
-  # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1
-  # e.g. is dnsimple.zone
+  # IN CDS (59), https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1
   defp decode_rdata(:CDS, offset, rdlen, msg) do
     # digest MUST be presented as case-insensitive hex digits
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
@@ -1611,8 +1704,7 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN CDNSKEY (60)
-  # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2
+  # IN CDNSKEY (60), https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2
   defp decode_rdata(:CDNSKEY, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<flags::16, proto::8, algo::8, pubkey::binary>> = rdata
@@ -1644,16 +1736,14 @@ defmodule DNS.Msg.RR do
     }
   end
 
-  # IN ZONEMD (63)
-  # - https://datatracker.ietf.org/doc/html/rfc8976#section-2
+  # IN ZONEMD (63), https://datatracker.ietf.org/doc/html/rfc8976#section-2
   defp decode_rdata(:ZONEMD, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<serial::32, scheme::8, algo::8, digest::binary>> = rdata
     %{serial: serial, scheme: scheme, algo: algo, digest: digest}
   end
 
-  # IN HTTPS (65)
-  # - https://www.rfc-editor.org/rfc/rfc9460.html#name-rdata-wire-format
+  # IN HTTPS (65), https://www.rfc-editor.org/rfc/rfc9460.html#name-rdata-wire-format
 
   # IN ANY/* (255)
   # pseudo QTYPE, never an RRtype, see also RFC882 and RFC8482
@@ -1753,6 +1843,122 @@ defmodule DNS.Msg.RR do
   # catch all: keep what we donot understand as raw values
   defp decode_edns_opt(code, _, data),
     do: {code, data}
+
+  # [[ HELPERS ]]
+
+  @doc false
+  # convert bitmap to list of bit numbers whose value is '1'
+  # bit number 0 is left-most (msb) bit
+  defp bitmap_2_nrs(bitmap) do
+    bitmap_2_nrs(bitmap, 0, [])
+  end
+
+  defp bitmap_2_nrs(<<0::1, rest::bitstring>>, n, acc),
+    do: bitmap_2_nrs(rest, n + 1, acc)
+
+  defp bitmap_2_nrs(<<1::1, rest::bitstring>>, n, acc),
+    do: bitmap_2_nrs(rest, n + 1, [n | acc])
+
+  defp bitmap_2_nrs(<<>>, _n, acc),
+    do: Enum.reverse(acc)
+
+  defp bitmap_4_nrs(nrs) do
+    nrs
+    |> Enum.sort(:asc)
+    |> Enum.reduce(<<>>, fn n, acc -> bitmap_expand(acc, n) end)
+    |> bitmap_pad()
+  end
+
+  defp bitmap_expand(bits, n) do
+    fill = n - bit_size(bits)
+    <<bits::bitstring, 0::size(fill), 1::1>>
+  end
+
+  defp bitmap_pad(bmap, b \\ 0)
+
+  defp bitmap_pad(bmap, _b) when rem(bit_size(bmap), 8) == 0,
+    do: bmap
+
+  defp bitmap_pad(bmap, b),
+    do: bitmap_pad(<<bmap::bitstring, b::1>>)
+
+  # NSEC (3) bitmap conversion to/from list of RR type numbers
+  # - https://www.rfc-editor.org/rfc/rfc4034#section-4.1.2
+  defp bitmap_2_rrs(bin) do
+    for <<w::8, len::8, bmap::binary-size(len) <- bin>> do
+      bitmap_2_nrs(bmap)
+      |> Enum.map(fn n -> n + w * 256 end)
+    end
+    |> List.flatten()
+    |> Enum.map(fn n -> decode_rr_type(n) end)
+  end
+
+  defp bitmap_block(w, nrs) do
+    bmap =
+      nrs
+      |> Enum.map(fn n -> n - w * 256 end)
+      |> bitmap_4_nrs()
+
+    l = byte_size(bmap)
+    <<w::8, l::8, bmap::binary>>
+  end
+
+  defp bitmap_4_rrs(rrs) do
+    # TODO: maybe filter out QTYPEs like ANY (255), AXFR (252), IXFR (251), OPT (41)
+    # or leave that up to the caller so experimentation remains possible
+    Enum.map(rrs, fn n -> encode_rr_type(n) end)
+    |> Enum.sort(:asc)
+    |> Enum.group_by(fn n -> div(n, 256) end)
+    |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
+    |> Enum.join()
+  end
+
+  @spec bool_encode(boolean | 0 | 1) :: bitstring
+  defp bool_encode(n) do
+    # note the lack of bool_decode, since that's better done directly
+    case n do
+      true -> <<1::1>>
+      false -> <<0::1>>
+      0 -> <<0::1>>
+      1 -> <<1::1>>
+      n -> error(:evalue, "expected true,false,0 or 1, got: #{inspect(n)}")
+    end
+  end
+
+  @spec ip_decode(offset, :ip4 | :ip6, binary) :: {offset, binary}
+  defp ip_decode(offset, version, msg) do
+    {bytes, bits} =
+      case version do
+        :ip4 -> {4, 32}
+        :ip6 -> {8, 128}
+      end
+
+    <<_::binary-size(offset), ip::size(bits), _::binary>> = msg
+    {offset + bytes, "#{Pfx.new(<<ip::size(bits)>>, bits)}"}
+  end
+
+  @spec ip_encode(any, :ip4 | :ip6) :: binary
+  defp ip_encode(ip, version) do
+    # uses padr to ensure `addr` is a full address, not just a prefix
+    with {:ok, pfx} <- Pfx.parse(ip),
+         ^version <- Pfx.type(pfx),
+         addr <- Pfx.padr(pfx) do
+      addr.bits
+    else
+      _ ->
+        error(:erdmap, "invalid IP address, got: #{inspect(ip)}")
+    end
+  end
+
+  # used to check rdmap for mandatory fields when encoding an RR
+  # a convencience func that also gives consistent, clear error messages
+  defp required(type, map, field, check \\ fn _ -> true end) do
+    v = Map.get(map, field) || error(:erdmap, "#{type} RR missing #{field}, got: #{inspect(map)}")
+
+    if check.(v),
+      do: v,
+      else: error(:erdmap, "#{type} RR, field #{inspect(field)} has invalid value: #{inspect(v)}")
+  end
 end
 
 defimpl Inspect, for: DNS.Msg.RR do
