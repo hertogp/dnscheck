@@ -17,6 +17,12 @@ defmodule DNS.Msg.Terms do
   import DNS.Msg.Error, only: [error: 2]
   alias DNS.Utils
 
+  # [[ NOTES ]]
+  # rfc4034, section 5.1.4
+  # digest = digest_algo(DNSKEY owner name | DNSKEY RDATA)
+  # - owner name is a series of length encoded octets: series of (u8, Nxu8)
+  # - DNSKEY RDATA is flags (u16) | protocol (u8) | algo (u8) | pubkey (binary)
+
   # [[ Helpers ]]
 
   @spec do_encode(map, atom | non_neg_integer, atom, Range.t()) :: non_neg_integer
@@ -553,4 +559,24 @@ defmodule DNS.Msg.Terms do
   @spec decode_rropt_code(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_rropt_code(code),
     do: do_decode(@dns_rropt_codes, code, :eedns, 0..65535)
+
+  # [[ DNSSEC ALGO TYPEs ]]
+  @dnssec_algo_types %{
+                       reserved: 0,
+                       RSAMD5: 1,
+                       DH: 2,
+                       DSA: 3,
+                       ECC: 4,
+                       RSASHA1: 5,
+                       INDIRECT: 252,
+                       PRIVATEDNS: 253,
+                       PRIVATEOID: 254
+                     }
+                     |> Utils.normalize_name_map()
+
+  @dnssec_digest_type %{
+                        reserved: 0,
+                        SHA1: 1
+                      }
+                      |> Utils.normalize_name_map()
 end

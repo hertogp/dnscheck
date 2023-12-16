@@ -26,6 +26,8 @@ defmodule Dnscheck.MixProject do
   defp deps do
     [
       {:pfx, "~> 0.14"},
+      {:jason, "~> 1.4"},
+      {:x509, "~> 0.8"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:benchee, "~> 1.0", only: :dev, runtime: false},
