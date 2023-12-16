@@ -40,7 +40,8 @@ defmodule Mix.Tasks.Iana.Update do
     checksums: "checksums-sha256.txt",
     anchors_xml: "root-anchors.xml",
     anchors_sig: "root-anchors.p7s",
-    anchors_pem: "icannbundle.pem"
+    anchors_pem: "icannbundle.pem",
+    anchors_rrs: "root.rrs"
   }
 
   # Notes
@@ -48,20 +49,23 @@ defmodule Mix.Tasks.Iana.Update do
   # -> verification successful
   @impl Mix.Task
   def run(args) do
-    case args do
-      ["hints"] -> hints()
+    forced = Enum.member?(args, "forced")
+    command = Enum.reject(args, fn w -> w == "forced" end)
+
+    case command do
+      ["hints"] -> hints(forced)
       ["trust"] -> trust()
       ["dnskey"] -> fetch_ksks_google()
       ["xml"] -> xml_get_valid_keys()
-      [] -> all()
+      [] -> all(forced)
       huh -> Mix.shell().info("\n#{huh} not supported, try: 'hints', 'trust', 'all' or nothing")
     end
   end
 
   # [[ ALL ]]
 
-  defp all() do
-    hints()
+  defp all(forced) do
+    hints(forced)
     trust()
   end
 
@@ -69,7 +73,7 @@ defmodule Mix.Tasks.Iana.Update do
 
   defp fetch_ksks_google() do
     # fetch DNSKEY's using google's DNS API
-    Mix.shell().info("DNSKEYs\n - fetching #{@dnskey_url}")
+    Mix.shell().info(" - fetching DNSKEYs from google")
     {:ok, dnskeys} = fetch(@dnskey_url)
 
     ksks =
@@ -127,18 +131,58 @@ defmodule Mix.Tasks.Iana.Update do
            {:ok, _} <- validate_root_xml(),
            {:ok, keys} <- xml_get_valid_keys(xml),
            {:ok, ksks} <- fetch_ksks_google() do
-        Mix.shell().info("Got keys")
-        IO.inspect(keys)
+        Mix.shell().info(" - validating KSKs")
 
         ksks =
           for ksk <- ksks, key <- keys do
-            IO.inspect({ksk, key})
-            IO.inspect(elem(ksk, 4) == key.digest, label: :match?)
+            hash = elem(ksk, 4)
+
+            if hash == key.digest do
+              Mix.shell().info("   - key #{key.keytag} validates KSK #{inspect(hash)}")
+              ksk
+            end
           end
+          |> Enum.map(&ksk_to_dnskey_ds_RR/1)
+          |> List.flatten()
+
+        File.write!(Path.join(@priv, @froot.anchors_rrs), :erlang.term_to_binary(ksks))
+        Mix.shell().info(" - saved DNSKEY & DS RRs to #{@froot.anchors_rrs}")
       else
         {:error, reason} -> raise "#{inspect(reason)}"
       end
     end
+  end
+
+  defp ksk_to_dnskey_ds_RR({f, p, a, k, h}) do
+    dnskey =
+      DNS.Msg.RR.new(
+        name: ".",
+        type: 48,
+        ttl: 3600,
+        rdmap: %{flags: f, proto: p, algo: a, pubkey: k}
+      )
+
+    keytag =
+      <<f::16, p::8, a::8, k::binary>>
+      |> :binary.bin_to_list()
+      |> Enum.with_index()
+      |> Enum.map(fn {n, idx} -> if Bitwise.band(idx, 1) == 1, do: n, else: Bitwise.bsl(n, 8) end)
+      |> Enum.sum()
+      |> then(fn acc -> [acc, Bitwise.bsr(acc, 16) |> Bitwise.band(0xFFFF)] end)
+      |> Enum.sum()
+      |> Bitwise.band(0xFFFF)
+
+    {:ok, digest} = Base.decode16(h)
+
+    ds =
+      DNS.Msg.RR.new(
+        name: ".",
+        type: 43,
+        ttl: 3600,
+        rdmap: %{keytag: keytag, algo: a, type: 2, digest: digest}
+      )
+
+    [dnskey, ds]
   end
 
   defp xml_get_valid_keys(),
@@ -256,20 +300,22 @@ defmodule Mix.Tasks.Iana.Update do
 
   # [[ ROOT HINTS ]]
 
-  defp hints() do
+  defp hints(forced) do
     Mix.shell().info("Checking root hints")
     {:ok, new_body} = fetch(@root_hints)
+    Mix.shell().info(" - fetched remote named.root")
     new_serial = get_serial(new_body)
     new_rrs = hints_to_rrs(new_body)
 
     old_body = read_file(@fname_root)
     old_serial = get_serial(old_body)
     old_rrs = hints_to_rrs(old_body)
+    Mix.shell().info(" - read local copy (if any)")
 
     Mix.shell().info(" - remote serial #{inspect(new_serial)}")
     Mix.shell().info(" - local  serial #{inspect(old_serial)}")
 
-    if old_serial == new_serial do
+    if not forced and old_serial == new_serial do
       Mix.shell().info(" - root hints up to date")
 
       # just to be sure
@@ -277,7 +323,9 @@ defmodule Mix.Tasks.Iana.Update do
         do: File.write!(@fname_rrs, :erlang.term_to_binary(new_rrs))
     else
       File.write!(@fname_root, new_body)
+      Mix.shell().info(" - saved named.root")
       File.write!(@fname_rrs, :erlang.term_to_binary(new_rrs))
+      Mix.shell().info(" - saved named.root.rrs")
 
       new_hints =
         new_rrs
@@ -291,9 +339,11 @@ defmodule Mix.Tasks.Iana.Update do
         |> Enum.map(fn rr -> " - #{rr.name}\t#{rr.ttl}\t#{rr.type}\t#{rr.rdmap.ip}" end)
         |> Enum.join("\n")
 
-      Mix.shell().info(" - updates include:")
-      Mix.shell().info(new_hints)
-      Mix.shell().info(old_hints)
+      if new_hints != old_hints do
+        Mix.shell().info(" - updates include:")
+        Mix.shell().info(new_hints)
+        Mix.shell().info(old_hints)
+      end
     end
   end
 
@@ -309,6 +359,26 @@ defmodule Mix.Tasks.Iana.Update do
       {:ok, body}
     else
       metadata -> {:error, "#{inspect(metadata)}"}
+    end
+  end
+
+  @spec fetch_verified(String.t(), String.t()) :: {:ok, any} | {:error, String.t()}
+  defp fetch_verified(name, checksum) do
+    # get file from IANA and compare its checksum against given `checksum`
+    Mix.shell().info(" + fetching #{name}")
+    {:ok, dta} = fetch("#{@trust_url}/#{name}")
+    Mix.shell().info("   - retrieved #{byte_size(dta)} bytes")
+    cks = :crypto.hash(:sha256, dta) |> Base.encode16(case: :lower)
+
+    if cks == String.downcase(checksum) do
+      Mix.shell().info("   - checksum is ok")
+      Mix.shell().info("   - saving #{name}")
+      path = Path.join(@priv, name)
+      File.write!(path, dta)
+      {:ok, dta}
+    else
+      Mix.shell().info("   - checksum failed!")
+      {:error, "Checksum failed for #{name}"}
     end
   end
 
@@ -350,39 +420,8 @@ defmodule Mix.Tasks.Iana.Update do
 
   @spec read_file(String.t()) :: String.t()
   defp read_file(fname) do
-    with {:ok, body} <- File.read(fname) do
-      body
-    else
-      _ -> ""
-    end
+    if File.exists?(fname),
+      do: File.read!(fname),
+      else: ""
   end
-
-  @spec fetch_verified(String.t(), String.t()) :: {:ok, any} | {:error, String.t()}
-  defp fetch_verified(name, checksum) do
-    # get file from IANA and compare its checksum against checksum
-    Mix.shell().info(" + fetching #{name}")
-    {:ok, dta} = fetch("#{@trust_url}/#{name}")
-    Mix.shell().info("   - retrieved #{byte_size(dta)} bytes")
-    cks = :crypto.hash(:sha256, dta) |> Base.encode16(case: :lower)
-
-    if cks == String.downcase(checksum) do
-      Mix.shell().info("   - checksum is ok")
-      Mix.shell().info("   - saving #{name}")
-      path = Path.join(@priv, name)
-      File.write!(path, dta)
-      {:ok, dta}
-    else
-      Mix.shell().info("   - checksum failed!")
-      {:error, "Checksum failed for #{name}"}
-    end
-  end
-
-  # @spec verify_checksum(atom, String.t(), String.t()) :: boolean
-  # defp verify_checksum(type, dta, chksum) do
-  #   chks =
-  #     :crypto.hash(type, dta)
-  #     |> Base.encode16(case: :lower)
-  #
-  #   chks == String.downcase(chksum)
-  # end
 end
