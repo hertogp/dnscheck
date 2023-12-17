@@ -48,8 +48,11 @@ defmodule DNS.Msg.RR do
   Also, when encoding, some rdmap fields are optional in the sense that they'll
   be given default values if missing.  In the list below, those fields have a
   (value) listed in brackets.  Any other fields present in `rdmap` are ignored
-  when encoding an RR, since some fields are informational (like `keytag` in an
-  `:RRSIG` which is computed during decoding, but not used for encoding)
+  when encoding an RR.
+
+  When decoding, some informational fields may be added to `rdmap`, like
+  `_keytag` in an `:RRSIG`, which will not be required for encoding.  Such
+  fields are prefixed with an underscore.
 
 
   *List of RRs*
@@ -72,19 +75,19 @@ defmodule DNS.Msg.RR do
     ```
   * [`:CAA` (257)](https://www.rfc-editor.org/rfc/rfc8659#section-4)
     ```
-    rdmap: %{flags: u8, tag: str, value: str}
+    rdmap: %{flags: u8, tag: bin, value: bin, _critical: bool}
     ```
   * [`:CDNSKEY` (60)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2)
     ```
-    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin}
+    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin, _type: str, _keytag: u16}
     ```
   * [`:CDS` (59)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1)
     ```
-    rdmap: %{keytag: u16, algo: u8, type: u8, digest: str}
+    rdmap: %{keytag: u16, algo: u8, type: u8, digest: bin}
     ```
   * [`:CERT` (37)](https://www.rfc-editor.org/rfc/rfc4398.html#section-2)
     ```
-    rdmap: %{type: u16, keytag: u16, algo: u8, cert: str}
+    rdmap: %{type: u16, keytag: u16, algo: u8, cert: bin}
     ```
   * [`:CNAME` (5)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1)
     ```
@@ -92,7 +95,7 @@ defmodule DNS.Msg.RR do
     ```
   * [`:CSYNC` (62)](https://www.rfc-editor.org/rfc/rfc7477.html#section-2)
     ```
-    rdmap: %{soa_serial: u32, flags: u16, covers: [atom|u32]}
+    rdmap: %{soa_serial: u32, flags: u16, covers: [atom|u32], _bitmap: bin}
     ```
   * [`:DNAME` (39)](https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1)
     ```
@@ -100,11 +103,11 @@ defmodule DNS.Msg.RR do
     ```
   * [`:DNSKEY` (48)](https://www.rfc-editor.org/rfc/rfc4034#section-2)
     ```
-    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin, _keytype: str}
+    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin, _keytype: str, _keytag: u16}
     ```
   * [`:DS` (43)](https://www.rfc-editor.org/rfc/rfc4034#section-5)
     ```
-    rdmap: %{keytag: u16, algo: u8, type: u8, digest: str}
+    rdmap: %{keytag: u16, algo: u8, type: u8, digest: bin}
     ```
   * [`:HINFO` (13)](https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2)
     ```
@@ -144,15 +147,16 @@ defmodule DNS.Msg.RR do
     ```
   * [`:NSEC3` (50)](https://www.rfc-editor.org/rfc/rfc5155#section-3.2)
     ```
-    rdmap: %{algo: u8, flags: u8, iterations: u16, salt: str, next_name: str, covers: [atom|u16]}
+     rdmap: %{algo: u8, flags: u8, iterations: u16, salt: str, next_name: str,
+     covers: [atom|u16], _bitmap: bin}
     ```
   * [`:NSECPARAM3` (51)](https://www.rfc-editor.org/rfc/rfc5155#section-4.1)
     ```
-    rdmap: %{algo: u8, flags: u8, iterations: u16, salt: str}
+    rdmap: %{algo: u8, flags: u8, iterations: u16, salt: bin, salt_len: u8}
     ```
   * [`:NSEC` (47)](https://www.rfc-editor.org/rfc/rfc4034#section-4)
     ```
-    rdmap %{name: str, covers: [atom|u16]}
+    rdmap %{name: str, covers: [atom|u16], _bitmap: bin}
     ```
   * [`:NS` (2)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11)
     ```
@@ -160,7 +164,7 @@ defmodule DNS.Msg.RR do
     ```
   * [`:NULL` (10)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10)
     ```
-    rdmap: %{data: str}
+    rdmap: %{data: bin}  # same as RR's rdata
     ```
   * [`:OPENPGPKEY` (61)](https://www.rfc-editor.org/rfc/rfc4880#section-3)
     ```
@@ -181,7 +185,7 @@ defmodule DNS.Msg.RR do
   * [`:RRSIG` (46)](https://www.rfc-editor.org/rfc/rfc4034#section-3)
     ```
     rdmap: %{type: atom | u16, algo: u8, labels: u8, ttl: u32, notafter: u32,
-             notbefore: u32, keytag: u16, name: str, signature: bin} # TODO: fix field qualifiers
+             notbefore: u32, keytag: u16, name: str, signature: bin}
     ```
   * [`:RT` (21)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3)
     ```
@@ -198,11 +202,11 @@ defmodule DNS.Msg.RR do
     ```
   * [`:SSHFP` (44)](https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1)
     ```
-    rdmap: %{algo: u8, type: u8, fp: str}
+    rdmap: %{algo: u8, type: u8, fp: bin}
     ```
   * [`:TLSA` (52)](https://www.rfc-editor.org/rfc/rfc6698#section-2)
     ```
-    rdmap: %{usage: u8, selector: u8, type: u8, data: str}
+    rdmap: %{usage: u8, selector: u8, type: u8, data: bin}
     ```
   * [`:TXT` (16)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14)
     ```
@@ -210,11 +214,11 @@ defmodule DNS.Msg.RR do
     ```
   * [`:URI` (256)](https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5)
     ```
-    rdmap: %{prio: u16, weight: u16, target: str}
+    rdmap: %{prio: u16, weight: u16, target: bin}
     ```
   * [`:WKS` (11)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2)
     ```
-    rdmap: %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16]}
+    rdmap: %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16], _bitmap: bin}
     ```
   * [`:X25` (19)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1)
     ```
@@ -222,7 +226,7 @@ defmodule DNS.Msg.RR do
     ```
   * [`:ZONEMD` (63)](https://datatracker.ietf.org/doc/html/rfc8976#section-2)
     ```
-    rdmap: %{serial: u32, scheme: u8, algo: u8, digest: str}
+    rdmap: %{serial: u32, scheme: u8, algo: u8, digest: bin}
     ```
 
   """
@@ -1197,7 +1201,7 @@ defmodule DNS.Msg.RR do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<soa_serial::32, flags::16, bitmap::binary>> = rdata
     covers = bitmap_2_rrs(bitmap)
-    %{soa_serial: soa_serial, flags: flags, covers: covers}
+    %{soa_serial: soa_serial, flags: flags, covers: covers, _bitmap: bitmap}
   end
 
   # IN SOA (6)
@@ -1508,7 +1512,7 @@ defmodule DNS.Msg.RR do
     {offset, name} = dname_decode(0, rdata)
     <<_::binary-size(offset), bitmap::binary>> = rdata
     covers = bitmap_2_rrs(bitmap)
-    %{name: name, covers: covers}
+    %{name: name, covers: covers, _bitmap: bitmap}
   end
 
   # IN DNSKEY (48), https://www.rfc-editor.org/rfc/rfc4034#section-2
@@ -1537,9 +1541,9 @@ defmodule DNS.Msg.RR do
       flags: flags,
       proto: proto,
       algo: algo,
-      type: keytype,
-      keytag: keytag,
-      pubkey: pubkey
+      pubkey: pubkey,
+      _type: keytype,
+      _keytag: keytag
     }
   end
 
@@ -1560,7 +1564,8 @@ defmodule DNS.Msg.RR do
       salt: salt,
       hash_len: hlen,
       next_name: next_name,
-      covers: covers
+      covers: covers,
+      _bitmap: bitmap
     }
   end
 
@@ -1633,9 +1638,9 @@ defmodule DNS.Msg.RR do
       flags: flags,
       proto: proto,
       algo: algo,
-      type: keytype,
-      keytag: keytag,
-      pubkey: pubkey
+      pubkey: pubkey,
+      _type: keytype,
+      _keytag: keytag
     }
   end
 
@@ -1672,7 +1677,7 @@ defmodule DNS.Msg.RR do
       len: len,
       tag: tag,
       value: value,
-      critical: b0 == 1
+      _critical: b0 == 1
     }
   end
 

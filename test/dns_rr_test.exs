@@ -451,8 +451,8 @@ defmodule DNS.Msg.RRTest do
     assert 257 == rr.rdmap.flags
     assert 13 == rr.rdmap.algo
     assert 3 == rr.rdmap.proto
-    assert 22707 == rr.rdmap.keytag
-    assert "ksk" == rr.rdmap.type
+    assert 22707 == rr.rdmap._keytag
+    assert "ksk" == rr.rdmap._type
 
     assert Base.encode64(rr.rdmap.pubkey) ==
              "QA3dnKfJvTjvncs3FercMXITNIcpTwRA1aq+KaQF/VEbvWOBH90TZxgLuAwoh8/+s5/ayhkJiJ9VTY9BBciGJg=="
