@@ -198,6 +198,7 @@ defmodule Mix.Tasks.Iana.Update do
       |> Enum.map(fn m -> String.split(m["data"]) end)
       |> Enum.filter(fn [flags, _p, _a, _k] -> flags == "257" end)
       |> Enum.map(fn [flags, proto, algo, pubkey] ->
+        # String.to_integer is easier
         {f, ""} = Integer.parse(flags)
         {p, ""} = Integer.parse(proto)
         {a, ""} = Integer.parse(algo)

@@ -27,8 +27,8 @@ defmodule DNS do
   """
   @spec resolve(binary, atom) :: Msg.t()
   def resolve(name, type, opts \\ []) do
-    {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do, :cd])
-    {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode])
+    {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do])
+    {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode, :cd])
     qtn_opts = [name: name, type: type]
     edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, :OPT)]
 

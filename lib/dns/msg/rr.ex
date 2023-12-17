@@ -42,218 +42,177 @@ defmodule DNS.Msg.RR do
   - `u<n>`, an unsigned integer that fits in `n` bits
   - `s<n>`, a signed integer that fits in `n` bits
 
-  ### [`:A` (1)](https://www.rfc-editor.org/rfc/rfc1035#section-3.4.1)
-  ```
-  rdmap: %{ip: str | {u8, u8, u8, u8}}
-  ```
+  **:MNEMONIC, (RRtype) and rdmaps**
 
-  ### [`:NS` (2)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11)
+
+  * [`:A` (1)](https://www.rfc-editor.org/rfc/rfc1035#section-3.4.1)
+  ```
+  %{ip: str | {u8, u8, u8, u8}}
+  ```
+  * [`:NS` (2)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11)
   ```
   rdmap: %{name: str}
   ```
-
-  ### [`:CNAME` (5)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1)
+  * [`:CNAME` (5)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1)
   ```
   rdmap: %{name: str}
   ```
-
-  ### [`:SOA` (6)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13)
+  * [`:SOA` (6)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13)
   ```
   rdmap: %{mname: str, rname: str, serial: number, refresh: u32 (14400)
            retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
   ```
-
-  ### [`:MB` (7)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3)
+  * [`:MB` (7)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3)
   ```
   rdmap: %{name: str}
   ```
-
-  ### [`:MG` (8)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6)
+  * [`:MG` (8)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6)
   ```
   rdmap: %{name: str}
   ```
-
-  ### [`:MR` (9)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8)
+  * [`:MR` (9)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8)
   ```
   rdmap: %{name: str}
   ```
-
-  ### [`:NULL` (10)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10)
+  * [`:NULL` (10)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10)
   ```
   rdmap: %{data: str}
   ```
-
-  ### [`:WKS` (11)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2)
+  * [`:WKS` (11)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2)
   ```
   rdmap: %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16]}
   ```
-
-  ### [`:PTR` (12)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12)
+  * [`:PTR` (12)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12)
   ```
   rdmap: %{name: str}
   ```
-
-  ### [`:HINFO` (13)](https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2)
+  * [`:HINFO` (13)](https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2)
   ```
-  rdmap: %{cpu: str, os: str}
+  rdmap: %{cpu: str, os: str} # revived by rfc8482
   ```
-  Revived by RFC8482
-
-
-  ### [`:MINFO` (14)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.7)
+  * [`:MINFO` (14)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.7)
   ```
   rdmap: %{rmailbx: str, emailbx: str}
   ```
-
-  ### [`:MX` (15)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9)
+  * [`:MX` (15)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9)
   ```
   rdmap: %{name: str, pref: u16}
   ```
-
-  ### [`:TXT` (16)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14)
+  * [`:TXT` (16)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14)
   ```
   rdmap: %{txt: [str]}
   ```
-
-  ### [`:RP` (17)](https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2)
+  * [`:RP` (17)](https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2)
   ```
   rdmap: %{mail: str, txt: str}
   ```
-
-  ### [`:AFSDB` (18)](https://www.rfc-editor.org/rfc/rfc1183.html#section-1)
+  * [`:AFSDB` (18)](https://www.rfc-editor.org/rfc/rfc1183.html#section-1)
   ```
   rdmap: %{type: u16, name: str}
   ```
-
-  ### [`:X25` (19)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1)
+  * [`:X25` (19)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1)
   ```
   rdmap: %{address: str}
   ```
-
-  ### [`:ISDN` (20)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2)
+  * [`:ISDN` (20)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2)
   ```
   rdmap: %{address: str, sa: str}
   ```
-
-  ### [`:RT` (21)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3)
+  * [`:RT` (21)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3)
   ```
   rdmap: %{pref: u16, name: str}
   ```
-
-  ### [`:AAAA` (28)](https://www.rfc-editor.org/rfc/rfc3596#section-2.2)
+  * [`:AAAA` (28)](https://www.rfc-editor.org/rfc/rfc3596#section-2.2)
   ```
   rdmap: %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
   ```
-
-  ### [`:SRV` (33)](https://www.rfc-editor.org/rfc/rfc2782)
+  * [`:SRV` (33)](https://www.rfc-editor.org/rfc/rfc2782)
   ```
   rdmap: %{prio: u16, weight: u16, port: u16, target: str}
   ```
-
-  ### [`:KX` (36)](https://datatracker.ietf.org/doc/html/rfc2230#section-3)
+  * [`:KX` (36)](https://datatracker.ietf.org/doc/html/rfc2230#section-3)
   ```
   rdmap: %{pref: u16, name: str}
   ```
-
-  ### [`:CERT` (37)](https://www.rfc-editor.org/rfc/rfc4398.html#section-2)
+  * [`:CERT` (37)](https://www.rfc-editor.org/rfc/rfc4398.html#section-2)
   ```
   rdmap: %{type: u16, keytag: u16, algo: u8, cert: str}
   ```
-
-  ### [`:DNAME` (39)](https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1)
+  * [`:DNAME` (39)](https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1)
   ```
   rdmap: %{dname: str}
   ```
-
-  ### [`:OPT` (41)](https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2)
+  * [`:OPT` (41)](https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2)
   ```
   rdmap: %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
   ```
-
-  ### [`:DS` (43)](https://www.rfc-editor.org/rfc/rfc4034#section-5)
+  * [`:DS` (43)](https://www.rfc-editor.org/rfc/rfc4034#section-5)
   ```
   rdmap: %{keytag: u16, algo: u8, type: u8, digest: str}
   ```
-
-  ### [`:SSHFP` (44)](https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1)
+  * [`:SSHFP` (44)](https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1)
   ```
   rdmap: %{algo: u8, type: u8, fp: str}
   ```
-
-  ### [`:IPSECKEY` (45)](https://www.rfc-editor.org/rfc/rfc4025.html#section-2)
+  * [`:IPSECKEY` (45)](https://www.rfc-editor.org/rfc/rfc4025.html#section-2)
   ```
   rdmap: %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
   ```
-
-  ### [`:RRSIG` (46)](https://www.rfc-editor.org/rfc/rfc4034#section-3)
+  * [`:RRSIG` (46)](https://www.rfc-editor.org/rfc/rfc4034#section-3)
   ```
-  rdmap: %{type: atom | u16, algo: u8, labels: u8, ttl: u32, notAfter: u32
-           notBefore: u32, keytag: u16, name: str, signature: bin}
+  rdmap: %{type: atom | u16, algo: u8, labels: u8, ttl: u32, notafter: u32
+           notbefore: u32, keytag: u16, name: str, signature: bin}
+  # TODO: fix field qualifiers
   ```
-  TODO: fix field qualifiers
-
-  ### [`:NSEC` (47)](https://www.rfc-editor.org/rfc/rfc4034#section-4)
+  * [`:NSEC` (47)](https://www.rfc-editor.org/rfc/rfc4034#section-4)
   ```
   rdmap %{name: str, covers: [atom|u16]}
   ```
-
-  ### [`:DNSKEY` (48)](https://www.rfc-editor.org/rfc/rfc4034#section-2)
+  * [`:DNSKEY` (48)](https://www.rfc-editor.org/rfc/rfc4034#section-2)
   ```
   rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: str}
   ```
-
-  ### [`:NSEC3` (50)](https://www.rfc-editor.org/rfc/rfc5155#section-3.2)
+  * [`:NSEC3` (50)](https://www.rfc-editor.org/rfc/rfc5155#section-3.2)
   ```
   rdmap: %{algo: u8, flags: u8, iterations: u16, salt: str, next_name: str, covers: [atom|u16]}
   ```
-
-  ### [`:NSECPARAM3` (51)](https://www.rfc-editor.org/rfc/rfc5155#section-4.1)
+  * [`:NSECPARAM3` (51)](https://www.rfc-editor.org/rfc/rfc5155#section-4.1)
   ```
   rdmap: %{algo: u8, flags: u8, iterations: u16, salt: str}
   ```
-
-  ### [`:TLSA` (52)](https://www.rfc-editor.org/rfc/rfc6698#section-2)
+  * [`:TLSA` (52)](https://www.rfc-editor.org/rfc/rfc6698#section-2)
   ```
   rdmap: %{usage: u8, selector: u8, type: u8, data: str}
   ```
-
-  ### [`:CDS` (59)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1)
+  * [`:CDS` (59)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1)
   ```
   rdmap: %{keytag: u16, algo: u8, type: u8, digest: str}
   ```
-
-  ### [`:CDNSKEY` (60)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2)
+  * [`:CDNSKEY` (60)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2)
   ```
   rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: str}
   ```
-
-  ### [`:OPENPGPKEY` (61)](https://www.rfc-editor.org/rfc/rfc4880#section-3)
+  * [`:OPENPGPKEY` (61)](https://www.rfc-editor.org/rfc/rfc4880#section-3)
   ```
   rdmap: %{}, no en/decoding provided, rr.raw is true, use rr.rdata as-is
   ```
-  Yeah, not doing this one.
-
-  ### [`:CSYNC` (62)](https://www.rfc-editor.org/rfc/rfc7477.html#section-2)
+  * [`:CSYNC` (62)](https://www.rfc-editor.org/rfc/rfc7477.html#section-2)
   ```
   rdmap: %{soa_serial: u32, flags: u16, covers: [atom|u32]}
   ```
-
-  ### [`:ZONEMD` (63)](https://datatracker.ietf.org/doc/html/rfc8976#section-2)
+  * [`:ZONEMD` (63)](https://datatracker.ietf.org/doc/html/rfc8976#section-2)
   ```
   rdmap: %{serial: u32, scheme: u8, algo: u8, digest: str}
   ```
-
-  ### [`:URI` (256)](https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5)
+  * [`:URI` (256)](https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5)
   ```
   rdmap: %{prio: u16, weight: u16, target: str}
   ```
-
-  ### [`:CAA` (257)](https://www.rfc-editor.org/rfc/rfc8659#section-4)
+  * [`:CAA` (257)](https://www.rfc-editor.org/rfc/rfc8659#section-4)
   ```
   rdmap: %{flags: u8, tag: str, value: str}
   ```
-
-  ### [`:AMTRELAY` (260)](https://datatracker.ietf.org/doc/html/rfc8777#section-4)
+  * [`:AMTRELAY` (260)](https://datatracker.ietf.org/doc/html/rfc8777#section-4)
   ```
   %{pref: u8, d: 0|1, type: u7, relay: str}
   ```
