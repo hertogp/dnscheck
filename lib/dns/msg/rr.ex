@@ -32,11 +32,24 @@ defmodule DNS.Msg.RR do
 
   ## Encoding/decoding
 
-  In the following sections, these qualifiers have the following meaning:
-  - `str`, String.t
-  - `bin`, binary
+  The information in `RDATA` is represented by a map `rdmap`, since
+  the contents of RDATA depends (mostly) on the RR's `TYPE` and differs wildly
+  among the various RR types out there.
+
+  In the List of RR's, rdmap fields are listed with their 'type':
+  - `str`, String.t through conversion
+  - `bin`, binary as found on the wire
   - `u<n>`, an unsigned integer that fits in `n` bits
   - `s<n>`, a signed integer that fits in `n` bits
+
+  When encoding, the rdmap fields are validated before being used for constructing
+  the `RDATA` portion of the RR's wireformat data and vice versa for decoding.
+
+  Also, when encoding, some rdmap fields are optional in the sense that they'll
+  be given default values if missing.  In the list below, those fields have a
+  (value) listed in brackets.  Other fields present in the `rdmap` are ignored
+  when encoding an RR, since dome fields are informational (like `keytag` in an
+  `:RRSIG` which is computed during decoding, but not used for encoding)
 
 
   *List of RRs*
