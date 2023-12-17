@@ -100,7 +100,7 @@ defmodule DNS.Msg.RR do
     ```
   * [`:DNSKEY` (48)](https://www.rfc-editor.org/rfc/rfc4034#section-2)
     ```
-    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin}
+    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin, _keytype: str}
     ```
   * [`:DS` (43)](https://www.rfc-editor.org/rfc/rfc4034#section-5)
     ```
@@ -1116,25 +1116,14 @@ defmodule DNS.Msg.RR do
   # [[ DECODE RR ]]
 
   @doc """
-  Decodes an `RR` `t:t/0` struct at given `offset` in `msg`.
+  Decodes an `RR` `t:t/0` struct at given `offset` in `msg` in wireformat.
 
   Upon success, returns {`new_offset`, `t:t/0`}, where `new_offset` can be used
   to read the rest of the message (if any).  The `rdlen`, `rdata` and `wdata`-fields
   are set based on the octets read during decoding.
 
-  The `decode_rdata` is called with:
-  - `type`, the numeric value of type for given RR
-  - `offset`, the start of the `RR` in the DNS `msg`
-  - `rdlen`, as read from the start of the `RR`
-  - `msg`, the entire wire format of the DNS `msg` being decoded.
-
-  Sometimes it's necessary to jump around in the DNS `msg` while decoding
-  a single RR. The `decode_rdata` function should return an `rdmap` with
-  `key,value`-pairs based on the RR being decoded.
-
-  Not being able to decode a specific RR is not a fatal error in which an empty
-  map is returned.  Make sure you have a catch all that simply returns an empty
-  map.
+  Not being able to decode a specific RR's RDATA, is not a fatal error in which case
+  `rdmap` will be empty and the RR's `raw` field is set to true.
 
   ## Example
 
@@ -1146,6 +1135,7 @@ defmodule DNS.Msg.RR do
          type: :A,
          class: :IN,
          ttl: 0,
+         raw: false,
          rdlen: 4,
          rdmap: %{ip: "127.0.0.1"},
          rdata: <<127, 0, 0, 1>>,
