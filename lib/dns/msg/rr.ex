@@ -8,33 +8,29 @@ defmodule DNS.Msg.RR do
   Each RR has the following [format](https://www.rfc-editor.org/rfc/rfc1035#section-3.2.1):
 
   ```
-         0  1  2  3  4  5  6  7  8  9  0 11 12 13 14 15
-       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-       /                      NAME                     /
-       /                                               /
-       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-       |                      TYPE                     |
-       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-       |                     CLASS                     |
-       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-       |                      TTL                      |
-       |                                               |
-       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-       |                     RDLEN                     |
-       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--|
-       /                     RDATA                     /
-       /                                               /
-       +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    0  1  2  3  4  5  6  7  8  9  0 11 12 13 14 15
+  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  /                      NAME                     / length encoded owner domain name
+  /                                               /
+  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  |                      TYPE                     | unsigned 16 bit integer
+  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  |                     CLASS                     | unsigned 16 bit integer
+  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  |                      TTL                      | unsigned 32 bit integer in 0..2**31 -1
+  |                                               |
+  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+  |                     RDLEN                     | unsigned 16 bit integer, the length or RDATA
+  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--|
+  /                     RDATA                     / variable length binary
+  /                                               /
+  +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
   ```
-  where:
-  - `NAME`,     is a length encoded owner domain name
-  - `TYPE`,     is a 16 bit unsigned integer, an RR TYPE code
-  - `CLASS`,    is a 16 bit unsigned integer, usually an RR CLASS code
-  - `TTL`,      is a 32 bit unsigned integer, range 0..214748364, see [rfc2181](https://www.rfc-editor.org/rfc/rfc2181#section-8)
-  - `RDLEN`,    is a 16 bit unsigned integer, the length in octets of the RDATA field.
-  - `RDATA`,    interpretation depends on the RR TYPE and CLASS
 
-  ## RR's encoding/decoding
+  The `TTL` range is clarified in [rfc2181](https://www.rfc-editor.org/rfc/rfc2181#section-8).
+
+
+  ## Encoding/decoding
 
   In the following sections, these qualifiers have the following meaning:
   - `str`, String.t
@@ -42,25 +38,28 @@ defmodule DNS.Msg.RR do
   - `u<n>`, an unsigned integer that fits in `n` bits
   - `s<n>`, a signed integer that fits in `n` bits
 
-  **:MNEMONIC, (RRtype) and rdmaps**
 
+  ## :MNEMONIC, (RRtype) & their rdmaps
 
   * [`:A` (1)](https://www.rfc-editor.org/rfc/rfc1035#section-3.4.1)
   ```
   %{ip: str | {u8, u8, u8, u8}}
   ```
-  * [`:NS` (2)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11)
+  * [`:AFSDB` (18)](https://www.rfc-editor.org/rfc/rfc1183.html#section-1)
   ```
-  rdmap: %{name: str}
+  rdmap: %{type: u16, name: str}
   ```
   * [`:CNAME` (5)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1)
   ```
   rdmap: %{name: str}
   ```
-  * [`:SOA` (6)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13)
+  * [`:HINFO` (13)](https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2)
   ```
-  rdmap: %{mname: str, rname: str, serial: number, refresh: u32 (14400)
-           retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
+  rdmap: %{cpu: str, os: str} # revived by rfc8482
+  ```
+  * [`:ISDN` (20)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2)
+  ```
+  rdmap: %{address: str, sa: str}
   ```
   * [`:MB` (7)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3)
   ```
@@ -70,7 +69,19 @@ defmodule DNS.Msg.RR do
   ```
   rdmap: %{name: str}
   ```
+  * [`:MINFO` (14)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.7)
+  ```
+  rdmap: %{rmailbx: str, emailbx: str}
+  ```
   * [`:MR` (9)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8)
+  ```
+  rdmap: %{name: str}
+  ```
+  * [`:MX` (15)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9)
+  ```
+  rdmap: %{name: str, pref: u16}
+  ```
+  * [`:NS` (2)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11)
   ```
   rdmap: %{name: str}
   ```
@@ -78,45 +89,30 @@ defmodule DNS.Msg.RR do
   ```
   rdmap: %{data: str}
   ```
-  * [`:WKS` (11)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2)
-  ```
-  rdmap: %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16]}
-  ```
   * [`:PTR` (12)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12)
   ```
   rdmap: %{name: str}
-  ```
-  * [`:HINFO` (13)](https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2)
-  ```
-  rdmap: %{cpu: str, os: str} # revived by rfc8482
-  ```
-  * [`:MINFO` (14)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.7)
-  ```
-  rdmap: %{rmailbx: str, emailbx: str}
-  ```
-  * [`:MX` (15)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9)
-  ```
-  rdmap: %{name: str, pref: u16}
-  ```
-  * [`:TXT` (16)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14)
-  ```
-  rdmap: %{txt: [str]}
   ```
   * [`:RP` (17)](https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2)
   ```
   rdmap: %{mail: str, txt: str}
   ```
-  * [`:AFSDB` (18)](https://www.rfc-editor.org/rfc/rfc1183.html#section-1)
+  * [`:SOA` (6)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13)
   ```
-  rdmap: %{type: u16, name: str}
+  rdmap: %{mname: str, rname: str, serial: number, refresh: u32 (14400)
+           retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
+  ```
+  * [`:TXT` (16)](https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14)
+  ```
+  rdmap: %{txt: [str]}
+  ```
+  * [`:WKS` (11)](https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2)
+  ```
+  rdmap: %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16]}
   ```
   * [`:X25` (19)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1)
   ```
   rdmap: %{address: str}
-  ```
-  * [`:ISDN` (20)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2)
-  ```
-  rdmap: %{address: str, sa: str}
   ```
   * [`:RT` (21)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3)
   ```
