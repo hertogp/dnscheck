@@ -47,8 +47,8 @@ defmodule DNS.Msg.RR do
 
   Also, when encoding, some rdmap fields are optional in the sense that they'll
   be given default values if missing.  In the list below, those fields have a
-  (value) listed in brackets.  Other fields present in the `rdmap` are ignored
-  when encoding an RR, since dome fields are informational (like `keytag` in an
+  (value) listed in brackets.  Any other fields present in `rdmap` are ignored
+  when encoding an RR, since some fields are informational (like `keytag` in an
   `:RRSIG` which is computed during decoding, but not used for encoding)
 
 
@@ -76,7 +76,7 @@ defmodule DNS.Msg.RR do
     ```
   * [`:CDNSKEY` (60)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2)
     ```
-    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: str}
+    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin}
     ```
   * [`:CDS` (59)](https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1)
     ```
@@ -100,7 +100,7 @@ defmodule DNS.Msg.RR do
     ```
   * [`:DNSKEY` (48)](https://www.rfc-editor.org/rfc/rfc4034#section-2)
     ```
-    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: str}
+    rdmap: %{flags: u16, proto: u8, algo: u8, pubkey: bin}
     ```
   * [`:DS` (43)](https://www.rfc-editor.org/rfc/rfc4034#section-5)
     ```
@@ -112,7 +112,7 @@ defmodule DNS.Msg.RR do
     ```
   * [`:IPSECKEY` (45)](https://www.rfc-editor.org/rfc/rfc4025.html#section-2)
     ```
-    rdmap: %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
+    rdmap: %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: bin}
     ```
   * [`:ISDN` (20)](https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2)
     ```
@@ -599,63 +599,8 @@ defmodule DNS.Msg.RR do
 
   This requires the `:rdmap` to have the correct `key,value`-pairs for given
   `RR` `:type`. Missing `key,value`-pairs or invalid values will cause a
-  `DNS.Msg.Error` to be raised.
-
-  The following table lists the RR type's and their rdmap fields.
-
-      RR TYPE (num)    RDMAP
-      ---------------- ------------------------------------------------------------------
-      :A (1)           %{ip: str | {u8, u8, u8, u8}
-      :NS (2)          %{name: str}
-      :CNAME (5)       %{name: str}
-      :SOA (6)         %{mname: str, rname: str, serial: number, refresh: u32 (14400)
-                       retry: u32 (7200), expire: u32 (1209600), minimum: u32 (86400)}
-      :MB (7)          %{name: str}
-      :MG (8)          %{name: str}
-      :MR (9)          %{name: str}
-      :NULL (10)       %{data: str}
-      :WKS (11)        %{ip: str | {u8, u8, u8, u8}, proto: u8, services: [u16]}
-      :PTR (12)        %{name: str}
-      :HINFO (13)      %{cpu: str, os: str}
-      :MINFO (14)      %{rmailbx: str, emailbx: str}
-      :MX (15)         %{name: str, pref: number}
-      :TXT (16)        %{txt: [str]}
-      :RP (17)         %{mail: str, txt: str}
-      :AFSDB (18)      %{type: u16, name: str}
-      :X25 (19)        %{address: str}
-      :ISDN (20)       %{address: str, sa: str}
-      :RT (21)         %{pref: u16, name: str}
-      :AAAA (28)       %{ip: str | {u16, u16, u16, u16, u16, u16, u16, u16}}
-      :SRV (33)        %{prio: u16, weight: u16, port: u16, target: str}
-      :KX (36)         %{pref: u16, name: str}
-      :CERT (37)       %{type: u16, keytag: u16, algo: u8, cert: str}
-      :DNAME (39)      %{dname: str}
-      :OPT (41)        %{xrcode: u8, version: u8, do: 0|1, z: n15, opts: []}
-      :DS (43)         %{keytag: u16, algo: u8, type: u8, digest: str}
-      :SSHFP (44)      %{algo: u8, type: u8, fp: str}
-      :IPSECKEY (45)   %{pref: u8, algo: u8, gw_type: u8, gateway: str, pubkey: str}
-      :RRSIG (46)      %{type: atom | u16, algo: u8, labels: u8, ttl: u32, expiration: 32
-                       inception: u32, keytag: u16, name: str, signature: str}
-      :NSEC (47)       %{name: str, covers: [atom|u16]}
-      :DNSKEY (48)     %{flags: u16, proto: u8, algo: u8, pubkey: str}
-      :NSEC3 (50)      %{algo: u8, flags: u8, iterations: u16, salt: str,
-                       next_name: str, covers: [atom|u16]}
-      :NSECPARAM3 (51) %{algo: u8, flags: u8, iterations: u16, salt: str}
-      :TLSA (52)       %{usage: u8, selector: u8, type: u8, data: str}
-      :CDS (59)        %{keytag: u16, algo: u8, type: u8, digest: str}
-      :CDNSKEY (60)    %{flags: u16, proto: u8, algo: u8, pubkey: str}
-      :OPENPGPKEY (61) %{}, no en/decoding provided, rr.raw is true, use rr.rdata as-is
-      :ZONEMD (63)     %{serial: u32, scheme: u8, algo: u8, digest: str}
-      :CSYNC (62)      %{soa_serial: u32, flags: u16, covers: [atom|u32]}
-      :URI (256)       %{prio: u16, weight: u16, target: str}
-      :CAA (257)       %{flags: u8, tag: str, value: str}
-      :AMTRELAY (260)  %{pref: u8, d: 0|1, type: u7, relay: str}
-      ---------------- ------------------------------------------------------------------
-
-  where:
-  - str, denotes a binary
-  - u<x>, denotes an unsigned number of <x> bits
-  - optional fields have their (default value) listed as well
+  `DNS.Msg.Error` to be raised. See the list of RR's in
+  [Encoding/decoding](#module-encoding-decoding).
 
   ## Examples
 
