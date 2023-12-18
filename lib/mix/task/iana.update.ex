@@ -129,6 +129,8 @@ defmodule Mix.Tasks.Iana.Update do
     {:ok, new_body} = fetch(@root_hints)
     Mix.shell().info(" - fetched remote named.root")
     new_serial = get_serial(new_body)
+    # TODO make nameservers a list of [{ip-tuple, name}, ..]
+    # save result of inspect(nss) so its readable, root.nss
     new_rrs = hints_to_rrs(new_body)
 
     old_body = read_file(@fname_root)
@@ -199,6 +201,7 @@ defmodule Mix.Tasks.Iana.Update do
       |> Enum.filter(fn [flags, _p, _a, _k] -> flags == "257" end)
       |> Enum.map(fn [flags, proto, algo, pubkey] ->
         # String.to_integer is easier
+        # [f, p ,a] = [flags, proto, algo] |> Enum.map(fn n -> String.to_integer(n) end)
         {f, ""} = Integer.parse(flags)
         {p, ""} = Integer.parse(proto)
         {a, ""} = Integer.parse(algo)

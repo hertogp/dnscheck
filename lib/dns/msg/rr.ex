@@ -1777,19 +1777,6 @@ defmodule DNS.Msg.RR do
     |> bitmap_pad()
   end
 
-  defp bitmap_expand(bits, n) do
-    fill = n - bit_size(bits)
-    <<bits::bitstring, 0::size(fill), 1::1>>
-  end
-
-  defp bitmap_pad(bmap, b \\ 0)
-
-  defp bitmap_pad(bmap, _b) when rem(bit_size(bmap), 8) == 0,
-    do: bmap
-
-  defp bitmap_pad(bmap, b),
-    do: bitmap_pad(<<bmap::bitstring, b::1>>)
-
   # NSEC (3) bitmap conversion to/from list of RR type numbers
   # - https://www.rfc-editor.org/rfc/rfc4034#section-4.1.2
   defp bitmap_2_rrs(bin) do
@@ -1799,6 +1786,16 @@ defmodule DNS.Msg.RR do
     end
     |> List.flatten()
     |> Enum.map(fn n -> decode_rr_type(n) end)
+  end
+
+  defp bitmap_4_rrs(rrs) do
+    # TODO: maybe filter out QTYPEs like ANY (255), AXFR (252), IXFR (251), OPT (41)
+    # or leave that up to the caller so experimentation remains possible
+    Enum.map(rrs, fn n -> encode_rr_type(n) end)
+    |> Enum.sort(:asc)
+    |> Enum.group_by(fn n -> div(n, 256) end)
+    |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
+    |> Enum.join()
   end
 
   defp bitmap_block(w, nrs) do
@@ -1811,15 +1808,18 @@ defmodule DNS.Msg.RR do
     <<w::8, l::8, bmap::binary>>
   end
 
-  defp bitmap_4_rrs(rrs) do
-    # TODO: maybe filter out QTYPEs like ANY (255), AXFR (252), IXFR (251), OPT (41)
-    # or leave that up to the caller so experimentation remains possible
-    Enum.map(rrs, fn n -> encode_rr_type(n) end)
-    |> Enum.sort(:asc)
-    |> Enum.group_by(fn n -> div(n, 256) end)
-    |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
-    |> Enum.join()
+  defp bitmap_expand(bits, n) do
+    fill = n - bit_size(bits)
+    <<bits::bitstring, 0::size(fill), 1::1>>
   end
+
+  defp bitmap_pad(bmap, b \\ 0)
+
+  defp bitmap_pad(bmap, _b) when rem(bit_size(bmap), 8) == 0,
+    do: bmap
+
+  defp bitmap_pad(bmap, b),
+    do: bitmap_pad(<<bmap::bitstring, b::1>>)
 
   @spec bool_encode(boolean | 0 | 1) :: bitstring
   defp bool_encode(n) do
