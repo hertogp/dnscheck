@@ -1905,68 +1905,68 @@ defimpl String.Chars, for: DNS.Msg.RR do
       rdmap_tostr(rr.type, rr)
   end
 
-  def rdmap_tostr(type, %{rdmap: m}) when type in [:A, :AAAA],
+  defp rdmap_tostr(type, %{rdmap: m}) when type in [:A, :AAAA],
     do: "#{Pfx.new(m.ip)}"
 
-  def rdmap_tostr(:AFSDB, %{rdmap: m}),
+  defp rdmap_tostr(:AFSDB, %{rdmap: m}),
     do: "#{m.type} #{m.name}"
 
-  def rdmap_tostr(:AMTRELAY, %{rdmap: m}),
+  defp rdmap_tostr(:AMTRELAY, %{rdmap: m}),
     do: "#{m.pref} #{m.d} #{m.type} #{m.relay}"
 
-  def rdmap_tostr(:CAA, %{rdmap: m}),
+  defp rdmap_tostr(:CAA, %{rdmap: m}),
     do: "#{m.flags} #{m.tag} #{inspect(m.value)}"
 
-  def rdmap_tostr(type, %{rdmap: m}) when type in [:DNSKEY, :CDNSKEY],
+  defp rdmap_tostr(type, %{rdmap: m}) when type in [:DNSKEY, :CDNSKEY],
     do:
       "#{m.flags} #{m.proto} #{m.algo} #{Base.encode64(m.pubkey)}; {id = #{m._keytag} (#{m._type})}"
 
-  def rdmap_tostr(:CERT, %{rdmap: m}),
+  defp rdmap_tostr(:CERT, %{rdmap: m}),
     do: "#{m.type} #{m.keytag} #{m.algo} #{Base.encode16(m.cert, case: :lower)}"
 
-  def rdmap_tostr(:CNAME, %{rdmap: m}),
+  defp rdmap_tostr(:CNAME, %{rdmap: m}),
     do: "#{m.name}."
 
-  def rdmap_tostr(:CSYNC, %{rdmap: m}) do
+  defp rdmap_tostr(:CSYNC, %{rdmap: m}) do
     # TODO: ensure unknown types come out as TYPExx, rather than xx
     rrs = Enum.map(m.covers, fn rtype -> "#{rtype}" end) |> Enum.join(" ")
     "#{m.soa_serial} #{m.flags} #{rrs}"
   end
 
-  def rdmap_tostr(:DNAME, %{rdmap: m}),
+  defp rdmap_tostr(:DNAME, %{rdmap: m}),
     do: "#{m.dname}"
 
-  def rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
+  defp rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
     do: "#{m.keytag} #{m.algo} #{m.type} #{Base.encode16(m.digest, case: :lower)}"
 
-  def rdmap_tostr(:HINFO, %{rdmap: m}),
+  defp rdmap_tostr(:HINFO, %{rdmap: m}),
     do: "#{m.cpu} #{m.os}"
 
-  def rdmap_tostr(:IPSECKEY, %{rdmap: m}),
+  defp rdmap_tostr(:IPSECKEY, %{rdmap: m}),
     do: "#{m.pref} #{m.algo} #{m.gw_type} #{m.gateway} #{Base.encode64(m.pubkey)}"
 
-  def rdmap_tostr(:ISDN, %{rdmap: m}),
+  defp rdmap_tostr(:ISDN, %{rdmap: m}),
     do: "#{m.addess} #{m.sa}"
 
-  def rdmap_tostr(:KX, %{rdmap: m}),
+  defp rdmap_tostr(:KX, %{rdmap: m}),
     do: "#{m.pref} #{m.name}"
 
-  def rdmap_tostr(type, %{rdmap: m}) when type in [:MB, :MG, :MR],
+  defp rdmap_tostr(type, %{rdmap: m}) when type in [:MB, :MG, :MR],
     do: "#{m.name}"
 
-  def rdmap_tostr(:MINFO, %{rdmap: m}),
+  defp rdmap_tostr(:MINFO, %{rdmap: m}),
     do: "#{m.rmailbx} #{m.emailbx}"
 
-  def rdmap_tostr(:MX, %{rdmap: m}),
+  defp rdmap_tostr(:MX, %{rdmap: m}),
     do: "#{m.pref} #{m.name}"
 
-  def rdmap_tostr(:NSEC, %{rdmap: m}) do
+  defp rdmap_tostr(:NSEC, %{rdmap: m}) do
     # TODO: ensure unknown types come out as TYPExx, rather than xx
     rrs = Enum.map(m.covers, fn rtype -> "#{rtype}" end) |> Enum.join(" ")
     "#{m.name}. #{rrs}"
   end
 
-  def rdmap_tostr(:NSEC3, %{rdmap: m}) do
+  defp rdmap_tostr(:NSEC3, %{rdmap: m}) do
     # TODO: ensure unknown types come out as TYPExx, rather than xx
     rrs = Enum.map(m.covers, fn rtype -> "#{rtype}" end) |> Enum.join(" ")
 
@@ -1980,18 +1980,18 @@ defimpl String.Chars, for: DNS.Msg.RR do
     "#{m.algo} #{m.flags} #{m.iterations} #{salt} #{next} #{rrs}"
   end
 
-  def rdmap_tostr(:NSEC3PARAM, %{rdmap: m}) do
+  defp rdmap_tostr(:NSEC3PARAM, %{rdmap: m}) do
     salt = if(byte_size(m.salt) == 0, do: "-", else: Base.encode16(m.salt, case: :lower))
     "#{m.algo} #{m.flags} #{m.iterations} #{salt}"
   end
 
-  def rdmap_tostr(type, %{rdmap: m}) when type in [:NS, :PTR],
+  defp rdmap_tostr(type, %{rdmap: m}) when type in [:NS, :PTR],
     do: "#{m.name}."
 
-  def rdmap_tostr(:RP, %{rdmap: m}),
+  defp rdmap_tostr(:RP, %{rdmap: m}),
     do: "#{m.mail}. #{m.txt}."
 
-  def rdmap_tostr(:RRSIG, %{rdmap: m}) do
+  defp rdmap_tostr(:RRSIG, %{rdmap: m}) do
     sig = Base.encode64(m.signature)
     nb = DateTime.from_unix!(m.notbefore) |> date2str()
     na = DateTime.from_unix!(m.notafter) |> date2str()
@@ -1999,9 +1999,12 @@ defimpl String.Chars, for: DNS.Msg.RR do
     "#{m.type} #{m.algo} #{m.labels} #{m.ttl} #{na} #{nb} #{m.keytag} #{m.name}. #{sig}"
   end
 
+  defp rdmap_tostr(:RT, %{rdmap: m}),
+    do: "#{m.pref} #{m.name}"
+
   # catch all
   # some types have no string representation in a zone db, like :OPT and :NULL
-  def rdmap_tostr(type, %{rdmap: m}),
+  defp rdmap_tostr(type, %{rdmap: m}),
     do: "; no string representation for #{type}, rdmap #{inspect(m)}"
 
   defp date2str(datetime) do
