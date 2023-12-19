@@ -304,7 +304,7 @@ defmodule DNS.Msg.RR do
   - `type`, the RR type (default `:A`)
   - `class`, the DNS class (default `:IN`)
   - `ttl`, the time-to-live for this RR (default 0)
-  - `raw`, indicates `rdata` could be encoded/decoded (default false)
+  - `raw`, `rdata` could not be decoded, encoding will use `rdata` as-is  (default false)
   - `rdmap`, contains the (decoded) key,value-pairs of `rdata` (default `%{}`)
   - `rdlen`, the number of octets in the `rdata` field (default 0)
   - `rdata`, RR's rdata in wireformat (default `<<>>`)
