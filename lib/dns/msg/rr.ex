@@ -2005,6 +2005,12 @@ defimpl String.Chars, for: DNS.Msg.RR do
   defp rdmap_tostr(:SOA, %{rdmap: m}),
     do: "#{m.mname}. #{m.rname}. #{m.serial} #{m.refresh} #{m.retry} #{m.expire} #{m.minimum}"
 
+  defp rdmap_tostr(:SRV, %{rdmap: m}),
+    do: "#{m.prio} #{m.weight} #{m.port} #{m.target}."
+
+  defp rdmap_tostr(:SSHFP, %{rdmap: m}),
+    do: "#{m.algo} #{m.type} #{Base.encode16(m.fp, case: :lower)}"
+
   # catch all
   # some types have no string representation in a zone db, like :OPT and :NULL
   defp rdmap_tostr(type, %{rdmap: m}),
