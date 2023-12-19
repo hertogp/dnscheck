@@ -1933,6 +1933,9 @@ defimpl String.Chars, for: DNS.Msg.RR do
     "#{m.soa_serial} #{m.flags} #{rrs}"
   end
 
+  def rdmap_tostr(:DNAME, %{rdmap: m}),
+    do: "#{m.dname}"
+
   def rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
     do: "#{m.keytag} #{m.algo} #{m.type} #{Base.encode16(m.digest, case: :lower)}"
 
