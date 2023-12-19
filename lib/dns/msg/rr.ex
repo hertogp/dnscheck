@@ -1936,11 +1936,14 @@ defimpl String.Chars, for: DNS.Msg.RR do
   def rdmap_tostr(:DNAME, %{rdmap: m}),
     do: "#{m.dname}"
 
+  def rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
+    do: "#{m.keytag} #{m.algo} #{m.type} #{Base.encode16(m.digest, case: :lower)}"
+
   def rdmap_tostr(:HINFO, %{rdmap: m}),
     do: "#{m.cpu} #{m.os}"
 
-  def rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
-    do: "#{m.keytag} #{m.algo} #{m.type} #{Base.encode16(m.digest, case: :lower)}"
+  def rdmap_tostr(:IPSECKEY, %{rdmap: m}),
+    do: "#{m.pref} #{m.algo} #{m.gw_type} #{m.gateway} #{Base.encode64(m.pubkey)}"
 
   # catch all
   def rdmap_tostr(type, _rr),
