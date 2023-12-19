@@ -1915,6 +1915,9 @@ defimpl String.Chars, for: DNS.Msg.RR do
     do:
       "#{m.flags} #{m.proto} #{m.algo} #{Base.encode64(m.pubkey)}; {id = #{m._keytag} (#{m._type})}"
 
+  def rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
+    do: "#{m.keytag} #{m.algo} #{m.type} #{Base.encode16(m.digest, case: :lower)}"
+
   # catch all
   def rdmap_tostr(type, _rr),
     do: "rdmap_tostr not implemented for #{type}"
