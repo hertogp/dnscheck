@@ -1927,6 +1927,12 @@ defimpl String.Chars, for: DNS.Msg.RR do
   def rdmap_tostr(:CNAME, %{rdmap: m}),
     do: "#{m.name}"
 
+  def rdmap_tostr(:CSYNC, %{rdmap: m}) do
+    # TODO: ensure unknown types come out as TYPExx, rather than xx
+    rrs = Enum.map(m.covers, fn rtype -> "#{rtype}" end) |> Enum.join(" ")
+    "#{m.soa_serial} #{m.flags} #{rrs}"
+  end
+
   def rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
     do: "#{m.keytag} #{m.algo} #{m.type} #{Base.encode16(m.digest, case: :lower)}"
 
