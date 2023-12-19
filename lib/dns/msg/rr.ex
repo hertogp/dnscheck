@@ -1981,7 +1981,11 @@ defimpl String.Chars, for: DNS.Msg.RR do
   end
 
   defp rdmap_tostr(:NSEC3PARAM, %{rdmap: m}) do
-    salt = if(byte_size(m.salt) == 0, do: "-", else: Base.encode16(m.salt, case: :lower))
+    salt =
+      if byte_size(m.salt) == 0,
+        do: "-",
+        else: Base.encode16(m.salt, case: :lower)
+
     "#{m.algo} #{m.flags} #{m.iterations} #{salt}"
   end
 
@@ -2010,6 +2014,12 @@ defimpl String.Chars, for: DNS.Msg.RR do
 
   defp rdmap_tostr(:SSHFP, %{rdmap: m}),
     do: "#{m.algo} #{m.type} #{Base.encode16(m.fp, case: :lower)}"
+
+  defp rdmap_tostr(:TLSA, %{rdmap: m}),
+    do: "#{m.usage} #{m.selector} #{m.type} #{Base.encode16(m.data, case: :lower)}"
+
+  defp rdmap_tostr(:TXT, %{rdmap: m}),
+    do: "#{inspect(Enum.join(m.txt))}"
 
   # catch all
   # some types have no string representation in a zone db, like :OPT and :NULL
