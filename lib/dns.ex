@@ -41,8 +41,8 @@ defmodule DNS do
 
     msg =
       Msg.new(qtn: qtn_opts, hdr: hdr_opts, add: edns_opts)
-      |> IO.inspect(label: :query)
       |> Msg.encode()
+      |> IO.inspect(label: :query)
 
     udp_query(msg.wdata, opts)
     |> case do
@@ -59,9 +59,12 @@ defmodule DNS do
     :ok = :gen_udp.send(sock, nameserver, msg)
 
     timeout_ms = 500
+    time_sent = System.monotonic_time(:millisecond)
 
     case :gen_udp.recv(sock, 0, timeout_ms) do
-      {:ok, {_address, _port, response}} ->
+      {:ok, {address, port, response}} ->
+        duration = System.monotonic_time(:millisecond) - time_sent
+        IO.puts("#{inspect(address)}:#{port} replied, took #{duration} ms")
         response
 
       {:error, reason} ->

@@ -112,7 +112,7 @@ defmodule DNS.Msg do
   """
   @spec new(Keyword.t()) :: t()
 
-  def new(opts) do
+  def new(opts \\ []) do
     hdr_opts = Keyword.get(opts, :hdr, [])
     qtn_opts = Keyword.get(opts, :qtn, [])
     ans_opts = Keyword.get(opts, :ans, [])
@@ -148,7 +148,15 @@ defmodule DNS.Msg do
   """
   @spec encode(t) :: t
   def encode(msg) do
-    hdr = Hdr.encode(msg.header)
+    # donot assume qd/an/ns/ad counters are set properly!
+    lens = [
+      qdc: length(msg.question),
+      anc: length(msg.answer),
+      nsc: length(msg.authority),
+      adc: length(msg.additional)
+    ]
+
+    hdr = Hdr.put(msg.header, lens) |> Hdr.encode()
     qtn = do_encode_section(msg.question, &Qtn.encode/1)
     ans = do_encode_section(msg.answer, &RR.encode/1)
     aut = do_encode_section(msg.authority, &RR.encode/1)
