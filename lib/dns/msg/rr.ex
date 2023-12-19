@@ -1980,6 +1980,11 @@ defimpl String.Chars, for: DNS.Msg.RR do
     "#{m.algo} #{m.flags} #{m.iterations} #{salt} #{next} #{rrs}"
   end
 
+  def rdmap_tostr(:NSEC3PARAM, %{rdmap: m}) do
+    salt = if(byte_size(m.salt) == 0, do: "-", else: Base.encode16(m.salt, case: :lower))
+    "#{m.algo} #{m.flags} #{m.iterations} #{salt}"
+  end
+
   # catch all
   def rdmap_tostr(type, _rr),
     do: "rdmap_tostr not implemented for #{type}"
