@@ -1898,3 +1898,16 @@ defimpl Inspect, for: DNS.Msg.RR do
     |> Inspect.Any.inspect(opts)
   end
 end
+
+defimpl String.Chars, for: DNS.Msg.RR do
+  def to_string(rr) do
+    "#{rr.name}.\t#{rr.class}\t#{rr.type}\t" <>
+      do_rdmap(rr.type, rr)
+  end
+
+  def do_rdmap(type, rr) when type in [:A, :AAAA],
+    do: "#{Pfx.new(rr.rdmap.ip)}"
+
+  def do_rdmap(type, _rr),
+    do: "do_rdmap not implemented for #{type}"
+end
