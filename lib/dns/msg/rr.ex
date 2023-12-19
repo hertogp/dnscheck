@@ -1985,10 +1985,11 @@ defimpl String.Chars, for: DNS.Msg.RR do
     "#{m.algo} #{m.flags} #{m.iterations} #{salt}"
   end
 
-  def rdmap_tostr(:NS, %{rdmap: m}),
+  def rdmap_tostr(type, %{rdmap: m}) when type in [:NS, :PTR],
     do: "#{m.name}."
 
   # catch all
-  def rdmap_tostr(type, _rr),
-    do: "rdmap_tostr not implemented for #{type}"
+  # some types have no string representation in a zone db, like :OPT and :NULL
+  def rdmap_tostr(type, %{rdmap: m}),
+    do: "; no string representation for #{type}, rdmap #{inspect(m)}"
 end
