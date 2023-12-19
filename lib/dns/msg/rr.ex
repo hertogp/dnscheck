@@ -2021,6 +2021,16 @@ defimpl String.Chars, for: DNS.Msg.RR do
   defp rdmap_tostr(:TXT, %{rdmap: m}),
     do: "#{inspect(Enum.join(m.txt))}"
 
+  defp rdmap_tostr(:URI, %{rdmap: m}),
+    do: "#{m.prio} #{m.weight} #{inspect(m.target)}"
+
+  # TODO: map proto, ports to names defined by IANA?
+  defp rdmap_tostr(:WKS, %{rdmap: m}),
+    do: "#{Pfx.new(m.ip)} #{m.proto} #{Enum.join(m.services, " ")}"
+
+  defp rdmap_tostr(:X25, %{rdmap: m}),
+    do: "#{m.address}"
+
   # catch all
   # some types have no string representation in a zone db, like :OPT and :NULL
   defp rdmap_tostr(type, %{rdmap: m}),
