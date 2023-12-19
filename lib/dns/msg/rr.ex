@@ -1988,8 +1988,32 @@ defimpl String.Chars, for: DNS.Msg.RR do
   def rdmap_tostr(type, %{rdmap: m}) when type in [:NS, :PTR],
     do: "#{m.name}."
 
+  def rdmap_tostr(:RP, %{rdmap: m}),
+    do: "#{m.mail}. #{m.txt}."
+
+  def rdmap_tostr(:RRSIG, %{rdmap: m}) do
+    sig = Base.encode64(m.signature)
+    nb = DateTime.from_unix!(m.notbefore) |> date2str()
+    na = DateTime.from_unix!(m.notafter) |> date2str()
+
+    "#{m.type} #{m.algo} #{m.labels} #{m.ttl} #{na} #{nb} #{m.keytag} #{m.name}. #{sig}"
+  end
+
   # catch all
   # some types have no string representation in a zone db, like :OPT and :NULL
   def rdmap_tostr(type, %{rdmap: m}),
     do: "; no string representation for #{type}, rdmap #{inspect(m)}"
+
+  defp date2str(datetime) do
+    y = datetime.year |> num2str(4)
+    m = datetime.month |> num2str(2)
+    d = datetime.day |> num2str(2)
+    h = datetime.hour |> num2str(2)
+    min = datetime.minute |> num2str(2)
+    s = datetime.second |> num2str(2)
+    y <> m <> d <> h <> min <> s
+  end
+
+  defp num2str(n, width, ch \\ "0"),
+    do: "#{n}" |> String.pad_leading(width, ch)
 end
