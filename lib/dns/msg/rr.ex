@@ -1945,6 +1945,12 @@ defimpl String.Chars, for: DNS.Msg.RR do
   def rdmap_tostr(:IPSECKEY, %{rdmap: m}),
     do: "#{m.pref} #{m.algo} #{m.gw_type} #{m.gateway} #{Base.encode64(m.pubkey)}"
 
+  def rdmap_tostr(:ISDN, %{rdmap: m}),
+    do: "#{m.addess} #{m.sa}"
+
+  def rdmap_tostr(:KX, %{rdmap: m}),
+    do: "#{m.pref} #{m.name}"
+
   # catch all
   def rdmap_tostr(type, _rr),
     do: "rdmap_tostr not implemented for #{type}"
