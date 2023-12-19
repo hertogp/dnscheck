@@ -2031,6 +2031,9 @@ defimpl String.Chars, for: DNS.Msg.RR do
   defp rdmap_tostr(:X25, %{rdmap: m}),
     do: "#{m.address}"
 
+  defp rdmap_tostr(:ZONEMD, %{rdmap: m}),
+    do: "#{m.serial} #{m.scheme} #{m.algo} #{Base.encode16(m.digest, case: :lower)}"
+
   # catch all
   # some types have no string representation in a zone db, like :OPT and :NULL
   defp rdmap_tostr(type, %{rdmap: m}),
