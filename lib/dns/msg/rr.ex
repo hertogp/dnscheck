@@ -1908,12 +1908,24 @@ defimpl String.Chars, for: DNS.Msg.RR do
   def rdmap_tostr(type, %{rdmap: m}) when type in [:A, :AAAA],
     do: "#{Pfx.new(m.ip)}"
 
+  def rdmap_tostr(:AFSDB, %{rdmap: m}),
+    do: "#{m.type} #{m.name}"
+
+  def rdmap_tostr(:AMTRELAY, %{rdmap: m}),
+    do: "#{m.pref} #{m.d} #{m.type} #{m.relay}"
+
   def rdmap_tostr(:CAA, %{rdmap: m}),
     do: "#{m.flags} #{m.tag} #{inspect(m.value)}"
 
   def rdmap_tostr(type, %{rdmap: m}) when type in [:DNSKEY, :CDNSKEY],
     do:
       "#{m.flags} #{m.proto} #{m.algo} #{Base.encode64(m.pubkey)}; {id = #{m._keytag} (#{m._type})}"
+
+  def rdmap_tostr(:CERT, %{rdmap: m}),
+    do: "#{m.type} #{m.keytag} #{m.algo} #{Base.encode16(m.cert, case: :lower)}"
+
+  def rdmap_tostr(:CNAME, %{rdmap: m}),
+    do: "#{m.name}"
 
   def rdmap_tostr(type, %{rdmap: m}) when type in [:DS, :CDS],
     do: "#{m.keytag} #{m.algo} #{m.type} #{Base.encode16(m.digest, case: :lower)}"
