@@ -1985,6 +1985,9 @@ defimpl String.Chars, for: DNS.Msg.RR do
     "#{m.algo} #{m.flags} #{m.iterations} #{salt}"
   end
 
+  def rdmap_tostr(:NS, %{rdmap: m}),
+    do: "#{m.name}."
+
   # catch all
   def rdmap_tostr(type, _rr),
     do: "rdmap_tostr not implemented for #{type}"
