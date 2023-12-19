@@ -311,3 +311,20 @@ defmodule DNS.Msg.Hdr do
     {12, %{hdr | wdata: :binary.part(msg, {0, 12})}}
   end
 end
+
+defimpl String.Chars, for: DNS.Msg.Hdr do
+  # ;; ->>HEADER<<- opcode: QUERY, rcode: NXDOMAIN, id: 8496
+  # ;; flags: qr rd ra ad ; QUERY: 1, ANSWER: 0, AUTHORITY: 6, ADDITIONAL: 0
+  @flags [:qr, :aa, :tc, :rd, :ra, :ad, :cd]
+
+  def to_string(hdr) do
+    flags =
+      Enum.reduce(@flags, [], fn f, acc ->
+        if Map.get(hdr, f) == 1, do: ["#{f}" | acc], else: acc
+      end)
+      |> Enum.join(" ")
+
+    "opcode: #{hdr.opcode}, rcode: #{hdr.rcode}, id: #{hdr.id}, flags: [#{flags}], z: #{hdr.z}," <>
+      " QUERY: #{hdr.qdc}, ANSWER: #{hdr.anc}, AUTHORITY: #{hdr.nsc}, ADDITIONAL: #{hdr.arc}"
+  end
+end

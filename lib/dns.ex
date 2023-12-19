@@ -62,7 +62,7 @@ defmodule DNS do
 
     case rcode do
       :NOERROR -> validate(qry, rsp)
-      other -> IO.puts("ohoh #{inspect(other)}\n\n#{inspect(rsp, pretty: true)}")
+      other -> {other, rsp}
     end
   end
 
