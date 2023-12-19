@@ -217,20 +217,20 @@ end
 
 defimpl String.Chars, for: DNS.Msg do
   def to_string(msg) do
-    hdr = "#{msg.header}" |> String.replace(" flags", "\n; flags")
-    qtn = Enum.map(msg.question, fn qtn -> "#{qtn}" end) |> Enum.join("\n")
+    hdr = "#{msg.header}" |> String.replace(" flags", "\n;; flags")
+    qtn = Enum.map(msg.question, fn qtn -> "#{qtn}" end) |> Enum.join("\n; ")
     ans = Enum.map(msg.answer, fn rr -> "#{rr}" end) |> Enum.join("\n")
     aut = Enum.map(msg.authority, fn rr -> "#{rr}" end) |> Enum.join("\n")
     add = Enum.map(msg.additional, fn rr -> "#{rr}" end) |> Enum.join("\n")
 
-    "; HEADER\n; " <>
+    ";; ->>HEADER<<-- " <>
       hdr <>
-      "\n\n; QUESTION:\n" <>
+      "\n\n;; QUESTION:\n" <>
       qtn <>
-      "\n\n; ANSWER:\n" <>
+      "\n\n;; ANSWER:\n" <>
       ans <>
-      "\n\n; AUTHORITY:\n" <>
+      "\n\n;; AUTHORITY:\n" <>
       aut <>
-      "\n\n; ADDITIONAL:\n" <> add
+      "\n\n;; ADDITIONAL:\n" <> add
   end
 end

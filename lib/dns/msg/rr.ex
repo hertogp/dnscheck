@@ -2036,8 +2036,8 @@ defimpl String.Chars, for: DNS.Msg.RR do
 
   # catch all
   # some types have no string representation in a zone db, like :OPT and :NULL
-  defp rdmap_tostr(type, %{rdmap: m}),
-    do: "; no string representation for #{type}, rdmap #{inspect(m)}"
+  defp rdmap_tostr(_type, %{rdmap: m}),
+    do: ";; rdmap: #{inspect(m)}"
 
   defp date2str(datetime) do
     y = datetime.year |> num2str(4)

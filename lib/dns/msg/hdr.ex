@@ -324,7 +324,7 @@ defimpl String.Chars, for: DNS.Msg.Hdr do
       end)
       |> Enum.join(" ")
 
-    "opcode: #{hdr.opcode}, rcode: #{hdr.rcode}, id: #{hdr.id}, flags: [#{flags}], z: #{hdr.z}," <>
+    "opcode: #{hdr.opcode}, rcode: #{hdr.rcode}, id: #{hdr.id}, flags: #{flags} ; z: #{hdr.z}," <>
       " QUERY: #{hdr.qdc}, ANSWER: #{hdr.anc}, AUTHORITY: #{hdr.nsc}, ADDITIONAL: #{hdr.arc}"
   end
 end
