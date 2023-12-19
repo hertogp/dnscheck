@@ -1925,7 +1925,7 @@ defimpl String.Chars, for: DNS.Msg.RR do
     do: "#{m.type} #{m.keytag} #{m.algo} #{Base.encode16(m.cert, case: :lower)}"
 
   def rdmap_tostr(:CNAME, %{rdmap: m}),
-    do: "#{m.name}"
+    do: "#{m.name}."
 
   def rdmap_tostr(:CSYNC, %{rdmap: m}) do
     # TODO: ensure unknown types come out as TYPExx, rather than xx
@@ -1950,6 +1950,35 @@ defimpl String.Chars, for: DNS.Msg.RR do
 
   def rdmap_tostr(:KX, %{rdmap: m}),
     do: "#{m.pref} #{m.name}"
+
+  def rdmap_tostr(type, %{rdmap: m}) when type in [:MB, :MG, :MR],
+    do: "#{m.name}"
+
+  def rdmap_tostr(:MINFO, %{rdmap: m}),
+    do: "#{m.rmailbx} #{m.emailbx}"
+
+  def rdmap_tostr(:MX, %{rdmap: m}),
+    do: "#{m.pref} #{m.name}"
+
+  def rdmap_tostr(:NSEC, %{rdmap: m}) do
+    # TODO: ensure unknown types come out as TYPExx, rather than xx
+    rrs = Enum.map(m.covers, fn rtype -> "#{rtype}" end) |> Enum.join(" ")
+    "#{m.name}. #{rrs}"
+  end
+
+  def rdmap_tostr(:NSEC3, %{rdmap: m}) do
+    # TODO: ensure unknown types come out as TYPExx, rather than xx
+    rrs = Enum.map(m.covers, fn rtype -> "#{rtype}" end) |> Enum.join(" ")
+
+    salt =
+      if byte_size(m.salt) == 0,
+        do: "-",
+        else: Base.encode16(m.salt, case: :lower, padding: false)
+
+    next = Base.hex_encode32(m.next_name, case: :lower)
+    IO.inspect({m.next_name, next})
+    "#{m.algo} #{m.flags} #{m.iterations} #{salt} #{next} #{rrs}"
+  end
 
   # catch all
   def rdmap_tostr(type, _rr),
