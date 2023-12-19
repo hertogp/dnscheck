@@ -1901,13 +1901,21 @@ end
 
 defimpl String.Chars, for: DNS.Msg.RR do
   def to_string(rr) do
-    "#{rr.name}.\t#{rr.class}\t#{rr.type}\t" <>
-      do_rdmap(rr.type, rr)
+    "#{rr.name}.\t#{rr.ttl}\t#{rr.class}\t#{rr.type}\t" <>
+      rdmap_tostr(rr.type, rr)
   end
 
-  def do_rdmap(type, rr) when type in [:A, :AAAA],
-    do: "#{Pfx.new(rr.rdmap.ip)}"
+  def rdmap_tostr(type, %{rdmap: m}) when type in [:A, :AAAA],
+    do: "#{Pfx.new(m.ip)}"
 
-  def do_rdmap(type, _rr),
-    do: "do_rdmap not implemented for #{type}"
+  def rdmap_tostr(:CAA, %{rdmap: m}),
+    do: "#{m.flags} #{m.tag} #{inspect(m.value)}"
+
+  def rdmap_tostr(type, %{rdmap: m}) when type in [:DNSKEY, :CDNSKEY],
+    do:
+      "#{m.flags} #{m.proto} #{m.algo} #{Base.encode64(m.pubkey)}; {id = #{m._keytag} (#{m._type})}"
+
+  # catch all
+  def rdmap_tostr(type, _rr),
+    do: "rdmap_tostr not implemented for #{type}"
 end
