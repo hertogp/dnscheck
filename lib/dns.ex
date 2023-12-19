@@ -12,6 +12,13 @@ defmodule DNS do
   # - udp & fallback to tcp
   # - do iterative queries, unless required to do rd=1 to specific nameserver
   # - handle timeout and multiple nameservers
+  # Notes
+  # - public-dns.info has lists of public nameservers
+  # - when asking for google.nl & google.com in 1 query, some servers:
+  #   - timeout (simply donot respond it seems)
+  #   - respond with FORMERR
+  #   - answer only the first question (e.g. 8.8.8.8 or 9.9.9.9)
+  #   - answer both! (e.g. 46.166.189.67)
 
   # [[ RESOLVE ]]
 
@@ -32,23 +39,75 @@ defmodule DNS do
 
 
   """
-  @spec resolve(binary, atom) :: Msg.t()
+  @spec resolve(binary, atom) :: {:ok, Msg.t()} | {:error, any}
   def resolve(name, type, opts \\ []) do
+    opts = Keyword.put_new(opts, :id, Enum.random(0..65535))
     {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do])
     {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode, :cd])
+    # only one question
     qtn_opts = [[name: name, type: type]]
     edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, :OPT)]
 
-    msg =
+    qry =
       Msg.new(qtn: qtn_opts, hdr: hdr_opts, add: edns_opts)
       |> Msg.encode()
       |> IO.inspect(label: :query)
 
-    udp_query(msg.wdata, opts)
-    |> case do
-      {:error, reason} -> {:error, reason}
-      response -> Msg.decode(response)
+    {rcode, rsp} =
+      udp_query(qry.wdata, opts)
+      |> case do
+        {:error, reason} -> {:error, reason}
+        response -> decode_response(response)
+      end
+
+    case rcode do
+      :NOERROR -> validate(qry, rsp)
+      other -> IO.puts("ohoh #{inspect(other)}\n\n#{inspect(rsp, pretty: true)}")
     end
+  end
+
+  defp decode_response(wdata) do
+    # decode wdata, calculate rcode (no TSIG's yet)
+    rsp = Msg.decode(wdata)
+
+    xrcode =
+      Enum.find(rsp.additional, %{}, fn rr -> rr.type == :OPT end)
+      |> Map.get(:rdmap, %{})
+      |> Map.get(:xrcode, :NOERROR)
+      |> Msg.Terms.encode_dns_rcode()
+
+    rcode =
+      (16 * xrcode + DNS.Msg.Terms.encode_dns_rcode(rsp.header.rcode))
+      |> Msg.Terms.decode_dns_rcode()
+
+    {rcode, rsp}
+  end
+
+  defp validate(qry, rsp) do
+    # https://github.com/erlang/otp/blob/master/lib/kernel/src/inet_res.erl#L1093C5-L1093C5
+    # https://github.com/erlang/otp/blob/master/lib/kernel/src/inet_res.erl#L1131
+    # erlang's inet_res checks:
+    # - that header fields id, opcode and rd are the same
+    # - that header qr == 1
+    # - rr TYPE, CLASS and dname correspond with the question asked
+    [rq] = rsp.question
+
+    with true <- qry.header.id == rsp.header.id,
+         1 <- rsp.header.qr,
+         true <- Enum.all?(rsp.answer, fn rr -> validate_rsp_rr(rr, rq) end) do
+      {:ok, rsp}
+    else
+      _ -> {:error, {:bad_response, rsp}}
+    end
+  end
+
+  defp validate_rsp_rr(rr, rq) do
+    # todo:
+    # - case-insensitive compare of names
+    # - are there more DNSSEC related RR's that might show up in answer RR's?
+    rr.name == rq.name and
+      rr.class == rq.class and
+      (rr.type == rq.type or rr.type in [:RRSIG])
   end
 
   # [[ SEND/RECV MSG ]]
@@ -58,7 +117,7 @@ defmodule DNS do
     {:ok, sock} = :gen_udp.open(0, [:binary, active: false, recbuf: 4000])
     :ok = :gen_udp.send(sock, nameserver, msg)
 
-    timeout_ms = 500
+    timeout_ms = 3000
     time_sent = System.monotonic_time(:millisecond)
 
     case :gen_udp.recv(sock, 0, timeout_ms) do

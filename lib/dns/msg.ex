@@ -149,14 +149,14 @@ defmodule DNS.Msg do
   @spec encode(t) :: t
   def encode(msg) do
     # donot assume qd/an/ns/ad counters are set properly!
-    lens = [
+    lengths = [
       qdc: length(msg.question),
       anc: length(msg.answer),
       nsc: length(msg.authority),
       adc: length(msg.additional)
     ]
 
-    hdr = Hdr.put(msg.header, lens) |> Hdr.encode()
+    hdr = Hdr.put(msg.header, lengths) |> Hdr.encode()
     qtn = do_encode_section(msg.question, &Qtn.encode/1)
     ans = do_encode_section(msg.answer, &RR.encode/1)
     aut = do_encode_section(msg.authority, &RR.encode/1)
