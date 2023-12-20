@@ -15,7 +15,7 @@ defmodule DNS do
   # Notes
   # - public-dns.info has lists of public nameservers
   # - when asking for google.nl & google.com in 1 query, some servers:
-  #   - timeout (simply donot respond it seems)
+  #   - timeout (simply do not respond it seems)
   #   - respond with FORMERR
   #   - answer only the first question (e.g. 8.8.8.8 or 9.9.9.9)
   #   - answer both! (e.g. 46.166.189.67)
@@ -35,7 +35,7 @@ defmodule DNS do
   - `nameserver`, defaults to `{{8,8,8,8}, 53}`
 
   If any of the `bufsize, do or cd` options is used, a pseudo-RR
-  is added to the additonal section of the `Msg`.
+  is added to the additional section of the `Msg`.
 
 
   """
@@ -70,6 +70,10 @@ defmodule DNS do
     # decode wdata, calculate rcode (no TSIG's yet)
     rsp = Msg.decode(wdata)
 
+    # TODO: move this to DNS.Msg en/decode ..
+    # if rcode > 16, then update the EDNS RR (or add one if missing)
+    # update docu to reflect that the rcode is the extended rcode
+    # when encoding: <<132::4>> still only encodes lowest 4 bits
     xrcode =
       Enum.find(rsp.additional, %{}, fn rr -> rr.type == :OPT end)
       |> Map.get(:rdmap, %{})
