@@ -45,6 +45,11 @@ defmodule DNS.Cache do
       iex> DNS.Cache.get("example.com", :IN, :A)
       []
 
+      iex> rr = DNS.Msg.RR.new(name: "example.net", type: :A, ttl: 0, rdmap: %{ip: "10.2.2.2"})
+      iex> init()
+      iex> put(rr)
+      :ignored
+
   """
   @spec put(DNS.Msg.RR.t()) :: :ok | :ignored | :error
   def put(rr) do
