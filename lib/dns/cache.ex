@@ -26,10 +26,63 @@ defmodule DNS.Cache do
 
   ## Examples
 
-      iex> rr = DNS.Msg.RR.new(name: "example.com", type: :A, ttl: 1, rdmap: %{ip: "10.1.1.1"})
+      iex> rr = DNS.Msg.RR.new(name: "example.com", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"})
       iex> init()
       iex> put(rr)
       :ok
+      iex> :ets.tab2list(:dns_cache)
+      ...> |> hd() |> elem(1) |> hd() |> elem(1)
+      %DNS.Msg.RR{
+        name: "example.com",
+        type: :A,
+        class: :IN,
+        ttl: 10,
+        raw: false,
+        rdlen: 0,
+        rdmap: %{ip: "10.1.1.1"},
+        rdata: "",
+        wdata: ""}
+
+      # TTL < 1 is ignored
+      iex> rr = DNS.Msg.RR.new(name: "example.net", type: :A, ttl: 0, rdmap: %{ip: "10.2.2.2"})
+      iex> init()
+      iex> put(rr)
+      :ignored
+
+  """
+  @spec put(DNS.Msg.RR.t()) :: :ok | :ignored | :error
+  def put(rr) do
+    # TODO: there are more pseudo-RR types that need to be ignored here!
+    with {:ttl, false} <- {:ttl, rr.ttl < 1},
+         {:type, false} <- {:type, rr.ttl in [41, :OPT]},
+         {:ok, key} <- make_key(rr.name, rr.class, rr.type),
+         {:ok, crrs} <- lookup(key),
+         crrs <- Enum.filter(crrs, &alive?/1),
+         crrs <- Enum.filter(crrs, fn {_ttd, crr} -> crr.rdmap != rr.rdmap end) do
+      :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
+      :ok
+    else
+      {:type, _} -> :ignored
+      {:ttl, _} -> :ignored
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Gets the RRs for given `name`, `class` and `type`.
+
+  A list of RR's is retrieved from the cache, expired
+  RR's are removed from the results and deleted from the
+  cache.
+
+  Returns either a list of RR's or `:error` if any one
+  of the arguments are invalid
+
+  # Example
+
+      iex> rr = DNS.Msg.RR.new(name: "example.com", type: :A, ttl: 1, rdmap: %{ip: "10.1.1.1"})
+      iex> init()
+      iex> put(rr)
       iex> get("example.com", :IN, :A)
       [%DNS.Msg.RR{
         name: "example.com",
@@ -50,35 +103,6 @@ defmodule DNS.Cache do
       iex> init()
       iex> put(rr)
       :ignored
-
-  """
-  @spec put(DNS.Msg.RR.t()) :: :ok | :ignored | :error
-  def put(rr) do
-    with {:ttl, false} <- {:ttl, rr.ttl < 1},
-         {:type, false} <- {:type, rr.ttl in [41, :OPT]},
-         {:ok, key} <- make_key(rr.name, rr.class, rr.type),
-         {:ok, crrs} <- lookup(key),
-         crrs <- Enum.filter(crrs, &alive?/1),
-         crrs <- Enum.filter(crrs, fn {_ttd, crr} -> crr.rdmap != rr.rdmap end) do
-      :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
-      :ok
-    else
-      {:type, _} -> :ignored
-      {:ttl, _} -> :ignored
-      _ -> :error
-    end
-  end
-
-  @doc """
-  Gets the RRs for given `name`, `class` and `type`.
-
-  A list of RR's is retrieved from the cache and expired
-  RR's are removed from the results and deleted from the
-  cache.
-
-  Returns either a list of RR's or `:error` if any one
-  of the arguments are invalid
-
   """
   @spec get(String.t(), atom, atom) :: [DNS.Msg.RR.t()] | :error
   def get(name, class, type) do
