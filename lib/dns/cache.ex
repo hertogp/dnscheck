@@ -53,6 +53,7 @@ defmodule DNS.Cache do
   @spec put(DNS.Msg.RR.t()) :: :ok | :ignored | :error
   def put(rr) do
     # TODO: there are more pseudo-RR types that need to be ignored here!
+    # need a is_pseudo_rr/1 generic function from DNS.Msg.Utils or something
     with {:ttl, false} <- {:ttl, rr.ttl < 1},
          {:type, false} <- {:type, rr.ttl in [41, :OPT]},
          {:ok, key} <- make_key(rr.name, rr.class, rr.type),
@@ -106,10 +107,13 @@ defmodule DNS.Cache do
   """
   @spec get(String.t(), atom, atom) :: [DNS.Msg.RR.t()] | :error
   def get(name, class, type) do
+    # TODO: when we server a cached RR, shouldn't its TTL be decreased by the
+    # amount of time it lived in the cache?
     with {:ok, key} <- make_key(name, class, type),
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
-      # some died, save the living (if any)
+      # some died, save the living (if any);
+      # decrease TTL here with amount of time cached?
       if rrs != [] and dead != [],
         do: :ets.insert(@cache, {key, rrs})
 
@@ -139,14 +143,16 @@ defmodule DNS.Cache do
   end
 
   # [[ HELPERS ]]
+  # ttd is time_to_die
   defp alive?({ttd, _rr}),
     do: now() < ttd
 
   defp lookup(key) do
     # since @cache is a set, last clause should never be hit
+    # crrs are cached rrs that each are wrapped in a {ttd, rr}
     case :ets.lookup(@cache, key) do
       [] -> {:ok, []}
-      [{^key, rrs}] -> {:ok, rrs}
+      [{^key, crrs}] -> {:ok, crrs}
       _ -> :error
     end
   end
