@@ -29,6 +29,7 @@ defmodule DNS.Cache do
       iex> rr = DNS.Msg.RR.new(name: "example.com", type: :A, ttl: 1, rdmap: %{ip: "10.1.1.1"})
       iex> init()
       iex> put(rr)
+      :ok
       iex> get("example.com", :IN, :A)
       [%DNS.Msg.RR{
         name: "example.com",
