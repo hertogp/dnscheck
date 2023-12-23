@@ -57,6 +57,7 @@ defmodule Mix.Tasks.Iana.Update do
       ["hints"] -> hints(forced)
       ["trust"] -> trust(forced)
       [] -> all(forced)
+      ["all"] -> all(forced)
       huh -> Mix.shell().info("\n#{huh} not supported, try: 'hints', 'trust', 'all' or nothing")
     end
   end

@@ -41,6 +41,7 @@ defmodule DNS do
   """
   @spec resolve(binary, atom) :: {:ok, Msg.t()} | {:error, any}
   def resolve(name, type, opts \\ []) do
+    # TODO: move all this option splitting to Msg.new()
     opts = Keyword.put_new(opts, :id, Enum.random(0..65535))
     {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do])
     {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode, :cd])
