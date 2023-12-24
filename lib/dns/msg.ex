@@ -1,7 +1,24 @@
 defmodule DNS.Msg do
   @moduledoc """
-  Low level functions to create, Encode or decode a `DNS.Msg` `t:/0` struct
-  representing a DNS message..
+  Low level functions to create, encode or decode a DNS message.
+
+  [RFC10135](https://www.rfc-editor.org/rfc/rfc1035#section-4) defines
+  A DNS message's format as follows:
+
+  ```
+      +---------------------+
+      |        Header       |
+      +---------------------+
+      |       Question      | the question for the name server
+      +---------------------+
+      |        Answer       | RRs answering the question
+      +---------------------+
+      |      Authority      | RRs pointing toward an authority
+      +---------------------+
+      |      Additional     | RRs holding additional information
+      +---------------------+
+  ```
+
 
   """
 
@@ -9,31 +26,6 @@ defmodule DNS.Msg do
   alias DNS.Msg.Qtn
   alias DNS.Msg.RR
 
-  # see RFC10135, section 4
-  # The top level format of message is divided
-  # into 5 sections (some of which are empty in certain cases) shown below:
-  #
-  #     +---------------------+
-  #     |        Header       | DnsHeader
-  #     +---------------------+
-  #     |       Question      | [DnsQuestion]
-  #     +---------------------+
-  #     |        Answer       | [DnsRR]
-  #     +---------------------+
-  #     |      Authority      | [DnsRR]
-  #     +---------------------+
-  #     |      Additional     | [DnsRR]
-  #     +---------------------+
-  #
-  #     where RR = <<NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA>>=
-  #     NAME, RDATA are variable length
-  #
-  # TODO: add nameserver component somewhere that:
-  # - registers ns IP, ns Port, start/stop time in ms
-  # ;; Query time: 3 msec
-  # ;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)
-  # ;; WHEN: Sun Nov 19 07:44:06 CET 2023
-  # ;; MSG SIZE  rcvd: 51
   defstruct header: nil, question: [], answer: [], authority: [], additional: [], wdata: <<>>
 
   @type t :: %__MODULE__{
@@ -44,9 +36,6 @@ defmodule DNS.Msg do
           additional: [RR.t()],
           wdata: binary
         }
-
-  @type class :: non_neg_integer | binary | atom
-  @type type :: non_neg_integer | binary | atom
 
   @doc ~S"""
   Create a new `t:DNS.Msg.t/0` struct.
@@ -119,7 +108,8 @@ defmodule DNS.Msg do
     aut_opts = Keyword.get(opts, :aut, [])
     add_opts = Keyword.get(opts, :add, [])
 
-    # FIXME: this only works because new is only ever used
+    # FIXME: need to be able to return errors as well.
+    # this currently only works because new is only ever used
     # with only qtn_opts as list of opts for N questions.
     # ans/aut/add opts are always empty lists!
 
