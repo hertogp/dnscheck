@@ -38,7 +38,11 @@ defmodule DNS.Msg do
         }
 
   @doc ~S"""
-  Create a new `t:DNS.Msg.t/0` struct.
+  Creates a new `t:DNS.Msg.t/0` struct.
+
+  Returns the result in an `:ok/:error` tuple, so either:
+  - `{:ok, DNS.Msg.t}`, or
+  - `{:error, DNS.Msg.Error.t}`
 
   `new/1` takes options for each of its constituents:
   - hdr: `[opts]`, options for `t:DNS.Msg.Hdr.t/0` header
@@ -54,7 +58,7 @@ defmodule DNS.Msg do
       ...> qtn: [[name: "host.domain.tld", type: :A]],
       ...> add: [[type: :OPT, bufsize: 1410, do: 1]]
       ...> )
-      %DNS.Msg{
+      {:ok, %DNS.Msg{
         header: %DNS.Msg.Hdr{
           id: 0,
           qr: 0,
@@ -95,12 +99,13 @@ defmodule DNS.Msg do
             wdata: ""
           }
         ],
-        wdata: ""
+        wdata: ""}
       }
 
+      iex> DNS.Msg.new(hdr: [qr: 3])
+      {:error, %DNS.Msg.Error{reason: :evalue, data: "Hdr.qr valid range 0..1,  got: 3"}}
   """
-  @spec new(Keyword.t()) :: t() | DNS.Msg.Error.t()
-
+  @spec new(Keyword.t()) :: {:ok, t()} | {:error, DNS.Msg.Error.t()}
   def new(opts \\ []) do
     hdr_opts = Keyword.get(opts, :hdr, [])
     qtn_opts = Keyword.get(opts, :qtn, [])
@@ -121,15 +126,27 @@ defmodule DNS.Msg do
       |> Keyword.put(:arc, length(additional))
       |> Hdr.new()
 
-    %__MODULE__{
-      header: header,
-      question: question,
-      answer: answer,
-      authority: authority,
-      additional: additional
-    }
+    {:ok,
+     %__MODULE__{
+       header: header,
+       question: question,
+       answer: answer,
+       authority: authority,
+       additional: additional
+     }}
   rescue
-    e -> {:error, Exception.message(e)}
+    e -> {:error, e}
+  end
+
+  @doc """
+  Returns a `DNS.Msg.t/0` upon success, raises in case of any failure.
+  """
+  @spec new!(Keyword.t()) :: t() | no_return
+  def new!(opts \\ []) do
+    case new(opts) do
+      {:ok, msg} -> msg
+      {:error, e} -> raise e
+    end
   end
 
   # [[ ENCODE MSG ]]
