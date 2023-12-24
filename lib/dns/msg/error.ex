@@ -18,8 +18,8 @@ defmodule DNS.Msg.Error do
     erdata: "[invalid rdata]",
     erdmap: "[invalid rdmap]",
     errtype: "[unknown RR type]",
-    euser: "[user contribution]",
-    evalue: "[invalid value]"
+    evalue: "[invalid value]",
+    ewdata: "[invalid wire data]"
   }
 
   defexception [:reason, :data]
@@ -47,7 +47,13 @@ defmodule DNS.Msg.Error do
   @spec message(Exception.t()) :: String.t()
   def message(%__MODULE__{reason: reason, data: data}) do
     category = Map.get(@reasons, reason, "[#{inspect(reason)}]")
-    "#{category} #{inspect(data, limit: 50)}"
+
+    data =
+      if is_binary(data),
+        do: data,
+        else: "#{inspect(data, limit: 50)}"
+
+    "#{category} #{data}"
   end
 
   @doc """
@@ -58,6 +64,9 @@ defmodule DNS.Msg.Error do
 
   """
   @spec error(atom, any) :: Error.t()
+  def error(reason, data) when is_binary(data),
+    do: raise(exception(reason, data))
+
   def error(reason, data),
     do: raise(exception(reason, inspect(data)))
 end

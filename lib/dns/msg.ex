@@ -108,17 +108,6 @@ defmodule DNS.Msg do
     aut_opts = Keyword.get(opts, :aut, [])
     add_opts = Keyword.get(opts, :add, [])
 
-    # FIXME: need to be able to return errors as well.
-    # this currently only works because new is only ever used
-    # with only qtn_opts as list of opts for N questions.
-    # ans/aut/add opts are always empty lists!
-
-    IO.inspect(hdr_opts, label: :hdr_opts)
-    IO.inspect(add_opts, label: :add_opts)
-    IO.inspect(qtn_opts, label: :qtn_opts)
-    IO.inspect(ans_opts, label: :ans_opts)
-    IO.inspect(aut_opts, label: :aut_opts)
-
     question = for o <- qtn_opts, do: Qtn.new(o)
     answer = for o <- ans_opts, do: RR.new(o)
     authority = for o <- aut_opts, do: RR.new(o)
@@ -128,7 +117,7 @@ defmodule DNS.Msg do
       hdr_opts
       |> Keyword.put(:qdc, length(question))
       |> Keyword.put(:anc, length(answer))
-      |> Keyword.put(:adc, length(authority))
+      |> Keyword.put(:nsc, length(authority))
       |> Keyword.put(:arc, length(additional))
       |> Hdr.new()
 
@@ -139,6 +128,8 @@ defmodule DNS.Msg do
       authority: authority,
       additional: additional
     }
+  rescue
+    e -> {:error, Exception.message(e)}
   end
 
   # [[ ENCODE MSG ]]

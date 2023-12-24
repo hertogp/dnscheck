@@ -101,6 +101,8 @@ defmodule DNS.Msg.Qtn do
 
     # new(..) will not set calculated wdata-field
     {offset2 + 4, %{qtn | wdata: wdata}}
+  rescue
+    _ -> error(:ewdata, "Qtn.decode error at offset #{offset}")
   end
 
   # [[ ENCODE ]]

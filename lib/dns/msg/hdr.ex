@@ -309,6 +309,8 @@ defmodule DNS.Msg.Hdr do
       )
 
     {12, %{hdr | wdata: :binary.part(msg, {0, 12})}}
+  rescue
+    _ -> error(:ewdata, "Hdr.decode error at offset #{offset}")
   end
 end
 

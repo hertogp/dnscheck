@@ -1164,6 +1164,8 @@ defmodule DNS.Msg.RR do
     offset = offset2 + 10 + rdlen
 
     {offset, rr}
+  rescue
+    _ -> error(:ewdata, "RR.decode error at offset #{offset}")
   end
 
   # [[ DECODE RDATA ]]
