@@ -96,7 +96,7 @@ defmodule DNS.Msg.Fields do
       []
 
       iex> dname_to_labels(".example.com")
-      ** (DNS.Msg.Error) [invalid dname] "empty label"
+      ** (DNS.Msg.Error) [invalid dname] empty label
 
   """
   def dname_to_labels(name) when is_binary(name) do
@@ -258,7 +258,7 @@ defmodule DNS.Msg.Fields do
       "com.example"
 
       iex> dname_reverse(".example.com")
-      ** (DNS.Msg.Error) [invalid dname] "empty label"
+      ** (DNS.Msg.Error) [invalid dname] empty label
 
   """
   @spec dname_reverse(binary) :: binary

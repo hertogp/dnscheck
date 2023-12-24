@@ -140,7 +140,7 @@ defmodule DNS.Msg.Hdr do
       }
 
       iex> new(opcode: 16)
-      ** (DNS.Msg.Error) [invalid opcode] "valid range is 0..15, got: 16"
+      ** (DNS.Msg.Error) [invalid opcode] valid range is 0..15, got: 16
 
 
   """
@@ -186,7 +186,7 @@ defmodule DNS.Msg.Hdr do
 
       # in a header, an rcode value should fit in 4 bites
       iex> new() |> put(rcode: 16)
-      ** (DNS.Msg.Error) [invalid (x)rcode] "valid range is 0..15, got: 16"
+      ** (DNS.Msg.Error) [invalid (x)rcode] valid range is 0..15, got: 16
 
   """
   @spec put(t(), Keyword.t()) :: t()

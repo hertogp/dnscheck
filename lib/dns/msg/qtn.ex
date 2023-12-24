@@ -171,7 +171,7 @@ defmodule DNS.Msg.Qtn do
   that would only result in `FORMERROR`'s.
 
       iex> new(name: "example.123")
-      ** (DNS.Msg.Error) [invalid dname] "example.123"
+      ** (DNS.Msg.Error) [invalid dname] example.123
 
   But if you want to see how nameservers respond to illegal names, you can set
   the name manually before encoding, since `encode/1` uses `DNS.Msg.Fields.dname_encode/1` which
@@ -224,7 +224,7 @@ defmodule DNS.Msg.Qtn do
       }
 
       iex> new() |> put(name: "example.123")
-      ** (DNS.Msg.Error) [invalid dname] "example.123"
+      ** (DNS.Msg.Error) [invalid dname] example.123
 
   """
   @spec put(t(), Keyword.t()) :: t()

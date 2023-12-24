@@ -119,11 +119,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_dns_class(:ABBA)
-      ** (DNS.Msg.Error) [invalid class] "ABBA is unknown"
+      ** (DNS.Msg.Error) [invalid class] ABBA is unknown
 
       # raises on invalid values
       iex> encode_dns_class(65536)
-      ** (DNS.Msg.Error) [invalid class] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [invalid class] valid range is 0..65535, got: 65536
 
 
   """
@@ -149,11 +149,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_dns_class(:ABBA)
-      ** (DNS.Msg.Error) [invalid class] "ABBA is unknown"
+      ** (DNS.Msg.Error) [invalid class] ABBA is unknown
 
       # raises on invalid values
       iex> decode_dns_class(65536)
-      ** (DNS.Msg.Error) [invalid class] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [invalid class] valid range is 0..65535, got: 65536
 
   """
   @spec decode_dns_class(atom | non_neg_integer) :: atom | non_neg_integer()
@@ -197,11 +197,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_dns_opcode(:ABC)
-      ** (DNS.Msg.Error) [invalid opcode] "ABC is unknown"
+      ** (DNS.Msg.Error) [invalid opcode] ABC is unknown
 
       # raises on invalid values
       iex> encode_dns_opcode(16)
-      ** (DNS.Msg.Error) [invalid opcode] "valid range is 0..15, got: 16"
+      ** (DNS.Msg.Error) [invalid opcode] valid range is 0..15, got: 16
 
   """
   @spec encode_dns_opcode(atom | non_neg_integer) :: non_neg_integer
@@ -229,11 +229,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_dns_opcode(:FOO_BAR)
-      ** (DNS.Msg.Error) [invalid opcode] "FOO_BAR is unknown"
+      ** (DNS.Msg.Error) [invalid opcode] FOO_BAR is unknown
 
       # raises on invalid values
       iex> decode_dns_opcode(16)
-      ** (DNS.Msg.Error) [invalid opcode] "valid range is 0..15, got: 16"
+      ** (DNS.Msg.Error) [invalid opcode] valid range is 0..15, got: 16
 
   """
   @spec decode_dns_opcode(atom | non_neg_integer) :: atom | non_neg_integer
@@ -296,11 +296,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_dns_rcode(:ABC)
-      ** (DNS.Msg.Error) [invalid (x)rcode] "ABC is unknown"
+      ** (DNS.Msg.Error) [invalid (x)rcode] ABC is unknown
 
       # raises on invalid values
       iex> encode_dns_rcode(65536)
-      ** (DNS.Msg.Error) [invalid (x)rcode] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [invalid (x)rcode] valid range is 0..65535, got: 65536
 
 
   """
@@ -323,11 +323,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_dns_rcode(:OKIDOKI)
-      ** (DNS.Msg.Error) [invalid (x)rcode] "OKIDOKI is unknown"
+      ** (DNS.Msg.Error) [invalid (x)rcode] OKIDOKI is unknown
 
       # raises on invalid values
       iex> decode_dns_rcode(65536)
-      ** (DNS.Msg.Error) [invalid (x)rcode] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [invalid (x)rcode] valid range is 0..65535, got: 65536
 
   """
   @spec decode_dns_rcode(atom | non_neg_integer) :: atom | non_neg_integer
@@ -422,11 +422,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_rr_type(:ABC)
-      ** (DNS.Msg.Error) [unknown RR type] "ABC is unknown"
+      ** (DNS.Msg.Error) [unknown RR type] ABC is unknown
 
       # raises on invalid value
       iex> encode_rr_type(65536)
-      ** (DNS.Msg.Error) [unknown RR type] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [unknown RR type] valid range is 0..65535, got: 65536
 
   """
   @spec encode_rr_type(atom | non_neg_integer) :: non_neg_integer()
@@ -455,11 +455,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_rr_type(:ABC)
-      ** (DNS.Msg.Error) [unknown RR type] "ABC is unknown"
+      ** (DNS.Msg.Error) [unknown RR type] ABC is unknown
 
       # raises on invalid value
       iex> decode_rr_type(65536)
-      ** (DNS.Msg.Error) [unknown RR type] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [unknown RR type] valid range is 0..65535, got: 65536
 
   See:
   - [IANA - DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
@@ -516,11 +516,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_rropt_code(:ABC)
-      ** (DNS.Msg.Error) [invalid edns] "ABC is unknown"
+      ** (DNS.Msg.Error) [invalid edns] ABC is unknown
 
       # raises on invalid values
       iex> encode_rropt_code(65536)
-      ** (DNS.Msg.Error) [invalid edns] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [invalid edns] valid range is 0..65535, got: 65536
 
   """
   @spec encode_rropt_code(atom | non_neg_integer) :: non_neg_integer()
@@ -548,11 +548,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_rropt_code(:ABC)
-      ** (DNS.Msg.Error) [invalid edns] "ABC is unknown"
+      ** (DNS.Msg.Error) [invalid edns] ABC is unknown
 
       # raises on invalid values
       iex> decode_rropt_code(65536)
-      ** (DNS.Msg.Error) [invalid edns] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [invalid edns] valid range is 0..65535, got: 65536
 
 
   """

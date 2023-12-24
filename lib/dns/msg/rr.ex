@@ -413,7 +413,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new(name: 123)
-      ** (DNS.Msg.Error) [invalid dname] "123"
+      ** (DNS.Msg.Error) [invalid dname] 123
 
   """
   @spec new(Keyword.t()) :: t
@@ -450,7 +450,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new() |> put(type: 65536)
-      ** (DNS.Msg.Error) [unknown RR type] "valid range is 0..65535, got: 65536"
+      ** (DNS.Msg.Error) [unknown RR type] valid range is 0..65535, got: 65536
 
   """
   @spec put(t(), Keyword.t()) :: t
