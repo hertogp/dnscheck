@@ -6,6 +6,11 @@ defmodule DNS.Cache do
 
   @cache :dns_cache
 
+  # TODO:
+  # [ ] initialize cache with root name servers (query via priv/named.root.rrs)
+  # [ ] normalize dname properly
+  # [ ] add get_ns(domain name) -> searches the cache
+
   @doc """
     Creates and initializes the cache
 
@@ -112,8 +117,8 @@ defmodule DNS.Cache do
     with {:ok, key} <- make_key(name, class, type),
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
-      # some died, save the living (if any);
-      # decrease TTL here with amount of time cached?
+      # if some died, save the living (if any);
+      # TODO: decrease TTL here with amount of time cached?
       if rrs != [] and dead != [],
         do: :ets.insert(@cache, {key, rrs})
 

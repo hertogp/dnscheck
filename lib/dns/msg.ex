@@ -99,7 +99,7 @@ defmodule DNS.Msg do
       }
 
   """
-  @spec new(Keyword.t()) :: t()
+  @spec new(Keyword.t()) :: t() | DNS.Msg.Error.t()
 
   def new(opts \\ []) do
     hdr_opts = Keyword.get(opts, :hdr, [])
