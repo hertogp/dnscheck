@@ -1529,7 +1529,7 @@ defmodule DNS.Msg.RR do
         _ -> "other"
       end
 
-    # TODO keytag depends on algo!
+    # FIXME: keytag depends on algo!
     # see https://www.rfc-editor.org/rfc/rfc4034#appendix-B.1
     keytag =
       rdata
