@@ -133,7 +133,7 @@ defmodule DNS.Msg.Fields do
   - name consists of only ASCII characters
   - tld label does not start or end with a hyphen
   - tld label consists of letter-digit-hyphen chars only
-  = tld label is not all numeric
+  - tld label is not all numeric
 
   ## Examples
 

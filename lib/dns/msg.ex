@@ -139,7 +139,7 @@ defmodule DNS.Msg do
   end
 
   @doc """
-  Returns a `DNS.Msg.t/0` upon success, raises in case of any failure.
+  Returns a `t:DNS.Msg.t/0` upon success, raises in case of any failure.
   """
   @spec new!(Keyword.t()) :: t() | no_return
   def new!(opts \\ []) do
