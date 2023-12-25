@@ -10,7 +10,7 @@ defmodule DNS do
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
   # https://www.rfc-editor.org/rfc/rfc1035#section-7
   # - udp & fallback to tcp
-  # - do iterative queries, unless required to do rd=1 to specific nameserver
+  # - do iterative queries, unless required to do rd=0 to specific nameserver
   # - handle timeout and multiple nameservers
   # Notes
   # - public-dns.info has lists of public nameservers
@@ -19,6 +19,17 @@ defmodule DNS do
   #   - respond with FORMERR
   #   - answer only the first question (e.g. 8.8.8.8 or 9.9.9.9)
   #   - answer both! (e.g. 46.166.189.67)
+  # - A resolver MUST:
+  #   a. Ignore non-authoritative answers
+  #      - accept only answers to the question asked
+  #      - exception is glue records from parent zone
+  #   b. check that:
+  #      - IP src and Port are correct (IP stack does that)
+  #      - DNS ID field is correct
+  #   c. make cache poisining harder:
+  #      - randomize src Port
+  #      - randomize ID field
+  #   d. use DNSSEC validation to be safe from on-path villains
 
   # [[ RESOLVE ]]
 
@@ -50,7 +61,7 @@ defmodule DNS do
     edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, :OPT)]
 
     qry =
-      Msg.new(qtn: qtn_opts, hdr: hdr_opts, add: edns_opts)
+      Msg.new!(qtn: qtn_opts, hdr: hdr_opts, add: edns_opts)
       |> Msg.encode()
       |> IO.inspect(label: :query)
 
