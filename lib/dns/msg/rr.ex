@@ -556,7 +556,7 @@ defmodule DNS.Msg.RR do
       with true <- is_u8(xrcode),
            true <- is_u8(version),
            true <- do_bit in 0..1,
-           true <- z in 0..32767 do
+           true <- is_u15(z) do
         <<ttl::32>> = <<xrcode::8, version::8, do_bit::1, z::15>>
         ttl
       else
