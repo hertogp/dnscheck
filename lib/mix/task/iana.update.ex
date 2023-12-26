@@ -360,7 +360,7 @@ defmodule Mix.Tasks.Iana.Update do
             do: DateTime.from_iso8601(to_string(until)),
             else: {:ok, nil, 0}
 
-        # TODO: make sure KeyTag elements indeed come out in alphabetical order!
+        # TODO: check and make sure KeyTag elements indeed come out in alphabetical order!
         [algo, digest, digestType, keytag] =
           :xmerl_xpath.string('Algorithm | Digest | DigestType | KeyTag', key)
           |> Enum.map(fn elm -> xmlElement(elm, :content) end)

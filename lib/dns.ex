@@ -30,6 +30,7 @@ defmodule DNS do
   #      - randomize src Port
   #      - randomize ID field
   #   d. use DNSSEC validation to be safe from on-path villains
+  #   e. handle loops (NS, DS, CNAME, NAPTR, loops etc)
 
   # [[ RESOLVE ]]
 
