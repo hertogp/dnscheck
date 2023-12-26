@@ -1,8 +1,8 @@
-defmodule DNS.Msg.FieldsTest do
+defmodule DNS.UtilsTest do
   use ExUnit.Case
-  doctest DNS.Msg.Fields, import: true
+  doctest DNS.Utils, import: true
 
-  import DNS.Msg.Fields
+  import DNS.Utils
 
   test "DNAME - dname_decode" do
     # normal case
