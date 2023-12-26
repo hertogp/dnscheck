@@ -34,7 +34,7 @@ defmodule DNS.Msg.Qtn do
   """
 
   import DNS.Msg.Error, only: [error: 2]
-  import DNS.Msg.Fields
+  import DNS.Utils
   import DNS.Msg.Terms
 
   defstruct name: "", type: :A, class: :IN, wdata: <<>>

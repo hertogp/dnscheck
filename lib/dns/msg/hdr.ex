@@ -1,7 +1,4 @@
 defmodule DNS.Msg.Hdr do
-  import DNS.Msg.Terms
-  import DNS.Msg.Error, only: [error: 2]
-
   @moduledoc """
 
   Low level functions to create, encode or decode a `Hdr` `t:t/0` struct.
@@ -40,6 +37,10 @@ defmodule DNS.Msg.Hdr do
   - [IANA - DNS Parameters](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
 
   """
+
+  import DNS.Msg.Terms
+  import DNS.Msg.Error, only: [error: 2]
+
   defstruct id: 0,
             qr: 0,
             opcode: :QUERY,

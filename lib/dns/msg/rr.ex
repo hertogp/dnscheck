@@ -270,8 +270,7 @@ defmodule DNS.Msg.RR do
   #     [x] WKS (11) https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
 
   import DNS.Msg.Error, only: [error: 2]
-  import DNS.Msg.Fields
-  import DNS.Guards
+  import DNS.Utils
   import DNS.Msg.Terms
 
   defstruct name: "",
