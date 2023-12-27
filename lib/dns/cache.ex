@@ -4,6 +4,8 @@ defmodule DNS.Cache do
 
   """
 
+  import DNS.Utils
+
   @cache :dns_cache
 
   # TODO:
@@ -150,7 +152,7 @@ defmodule DNS.Cache do
   # [[ HELPERS ]]
   # ttd is time_to_die
   defp alive?({ttd, _rr}),
-    do: now() < ttd
+    do: time(ttd) > 0
 
   defp lookup(key) do
     # since @cache is a set, last clause should never be hit
@@ -183,15 +185,11 @@ defmodule DNS.Cache do
     {:ok, String.downcase(name)}
   end
 
-  # TODO: move this into Utils somewhere
-  defp now(),
-    do: System.os_time(:second)
-
   # (un)wrap time to die
   defp unwrap_ttd({_ttd, rr}),
     do: rr
 
   defp wrap_ttd(rr) do
-    {now() + rr.ttl, rr}
+    {time(rr.ttl * 1000), rr}
   end
 end

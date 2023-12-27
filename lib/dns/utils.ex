@@ -8,7 +8,37 @@ defmodule DNS.Utils do
 
   import DNS.Msg.Error, only: [error: 2]
 
-  # [[ HELPERS ]]
+  # [[ GUARDS ]]
+
+  @doc "Returns true if `n` is true, false, 0 or 1"
+  defguard is_bool(n) when is_boolean(n) or n in 0..1
+
+  @doc "Returns true if `n` fits in an unsigned 7 bit integer"
+  defguard is_u7(n) when n in 0..127
+
+  @doc "Returns `true` if `n` fits in an unsigned 8 bit integer, `false` otherwise."
+  defguard is_u8(n) when n in 0..255
+
+  @doc "Returns `true` if `n` fits in an unsigned 15 bit integer, `false` otherwise."
+  # 2**15 -1
+  defguard is_u15(n) when n in 0..32767
+
+  @doc "Returns `true` if `n` fits in an unsigned 16 bit integer, `false` otherwise."
+  # 2**16 - 1
+  defguard is_u16(n) when n in 0..65535
+
+  @doc "Returns `true` if `n` fits in an unsigned 32 bit integer, `false` otherwise."
+  # 2**32 - 1
+  defguard is_u32(n) when n in 0..4_294_967_295
+
+  @doc "Returns `true` if `n` fits in a signed 32 bit integer, `false` otherwise."
+  # -2**31..2**31-1
+  defguard is_s32(n) when n in -2_147_483_648..2_147_483_647
+
+  @doc "Returns `true` if `n` is a valid ttl in range of 0..2**31-1"
+  defguard is_ttl(n) when n in 0..2_147_483_647
+
+  # [[ DNAME HELPERS ]]
 
   defp do_labels(a, l, <<>>), do: add_label(a, l)
   defp do_labels(a, l, <<?.>>), do: add_label(a, l)
@@ -288,7 +318,7 @@ defmodule DNS.Utils do
   - turn all keys into uppercase ATOM keys
   - add reverse mapping value -> :KEY
 
-  Best used on maps that have all either upper or lowercase, unique keys.
+  Best used on maps that already has uppercase keys and unique values.
 
   ## Examples
 
@@ -310,39 +340,35 @@ defmodule DNS.Utils do
     |> Enum.reduce(%{}, fn {k, v}, acc -> acc |> Map.put(up.(k), v) |> Map.put(v, up.(k)) end)
   end
 
-  @doc """
-  Returns System.monotonic time in given `unit`'s (i.e. `:second` or `:millisecond`)
-  """
-  def now(unit) when unit in [:second, :millisecond],
-    do: System.monotonic_time(unit)
+  # [[ TIME ]]
 
-  # [[ GUARDS ]]
+  @doc false
+  def now(),
+    do: System.monotonic_time(:millisecond)
 
-  @doc "Returns true if `n` is true, false, 0 or 1"
-  defguard is_bool(n) when is_boolean(n) or n in 0..1
+  @doc false
+  def time(timeout),
+    do: now() + timeout
 
-  @doc "Returns true if `n` fits in an unsigned 7 bit integer"
-  defguard is_u7(n) when n in 0..127
+  @doc false
+  def timeout(time),
+    do: timeout(now(), time)
 
-  @doc "Returns `true` if `n` fits in an unsigned 8 bit integer, `false` otherwise."
-  defguard is_u8(n) when n in 0..255
+  def timeout(time, maxtime) do
+    if time < maxtime,
+      do: maxtime - time,
+      else: 0
+  end
 
-  @doc "Returns `true` if `n` fits in an unsigned 15 bit integer, `false` otherwise."
-  # 2**15 -1
-  defguard is_u15(n) when n in 0..32767
+  @doc false
+  def wait(0),
+    do: :ok
 
-  @doc "Returns `true` if `n` fits in an unsigned 16 bit integer, `false` otherwise."
-  # 2**16 - 1
-  defguard is_u16(n) when n in 0..65535
-
-  @doc "Returns `true` if `n` fits in an unsigned 32 bit integer, `false` otherwise."
-  # 2**32 - 1
-  defguard is_u32(n) when n in 0..4_294_967_295
-
-  @doc "Returns `true` if `n` fits in a signed 32 bit integer, `false` otherwise."
-  # -2**31..2**31-1
-  defguard is_s32(n) when n in -2_147_483_648..2_147_483_647
-
-  @doc "Returns `true` if `n` is a valid ttl in range of 0..2**31-1"
-  defguard is_ttl(n) when n in 0..2_147_483_647
+  def wait(time) do
+    # don't match any messages!
+    receive do
+    after
+      time -> :ok
+    end
+  end
 end
