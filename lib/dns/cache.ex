@@ -152,7 +152,7 @@ defmodule DNS.Cache do
   # [[ HELPERS ]]
   # ttd is time_to_die
   defp alive?({ttd, _rr}),
-    do: time(ttd) > 0
+    do: timeout(ttd) > 0
 
   defp lookup(key) do
     # since @cache is a set, last clause should never be hit

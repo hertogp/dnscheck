@@ -311,6 +311,56 @@ defmodule DNS.Utils do
   def dname_reverse(noname),
     do: error(:edname, "#{inspect(noname)}")
 
+  @doc ~S"""
+  Returns true if given domain names are equal, false otherwise
+
+  Basically a case-insensitive comparison.  Note that this does not
+  check whether given domain names are actually valid.
+
+  ## Examples
+
+      iex> dname_equal?("example.com", "EXAMPLE.COM")
+      true
+
+      iex> dname_equal?("example.com.", "EXAMPLE.com")
+      true
+
+      iex> dname_equal?("EXAmple.com", "exaMPLE.COM.")
+      true
+
+      iex> dname_equal?("9xample.com", "YXAMPLE.COM.")
+      false
+
+      iex> dname_equal?(42, 42)
+      false
+
+
+  """
+  def dname_equal?(aname, bbame)
+
+  def dname_equal?(<<>>, <<>>),
+    do: true
+
+  def dname_equal?(<<?.>>, <<>>),
+    do: true
+
+  def dname_equal?(<<>>, <<?.>>),
+    do: true
+
+  def dname_equal?(<<a::8, arest::binary>>, <<b::8, brest::binary>>) do
+    cond do
+      a == b -> dname_equal?(arest, brest)
+      a == b + 32 and a in ?a..?z -> dname_equal?(arest, brest)
+      a + 32 == b and a in ?A..?Z -> dname_equal?(arest, brest)
+      true -> false
+    end
+  end
+
+  def dname_equal?(_, _),
+    do: false
+
+  # [[ MAPS ]]
+
   @doc """
   Normalizes a `:NAME,value` lookup map.
 
