@@ -48,7 +48,7 @@ defmodule DNS do
   end
 
   def query_nss([] = _nss, _qry, _opts, _tstop, _n, [] = _failed),
-    do: {:error, :nxdomain}
+    do: {:error, :noservers}
 
   def query_nss([] = _nss, qry, opts, tstop, n, failed),
     do: query_nss(Enum.reverse(failed), qry, opts, tstop, n + 1, [])
@@ -66,16 +66,19 @@ defmodule DNS do
 
         case query_ns(ns, qry, opts, tstop, n) do
           {:error, :servfail} ->
+            log(opts.verbose, "pushing #{inspect(ns)} onto failed list (:servfail)")
             query_nss(nss, qry, opts, tstop, n, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, :timeout} ->
+            log(opts.verbose, "pushing #{inspect(ns)} onto failed list (:timeout)")
             query_nss(nss, qry, opts, tstop, n, [wrap(ns, opts.srvfail_wait) | failed])
+
+          {:error, error} ->
+            log(opts.verbose, "dropping #{inspect(ns)}, due to error: #{inspect(error)}")
+            query_nss(nss, qry, opts, tstop, n, failed)
 
           {:ok, rsp} ->
             {:ok, rsp}
-
-          result ->
-            result
         end
     end
   end
@@ -100,29 +103,55 @@ defmodule DNS do
   def query_udp(_ns, _qry, 0, _bufsize),
     do: {:error, :timeout}
 
-  def query_udp({ip, _port} = ns, qry, timeout, bufsize) do
+  def query_udp({ip, port} = ns, qry, timeout, bufsize) do
     iptype =
       case Pfx.type(ip) do
         :ip4 -> :inet
         :ip6 -> :inet6
       end
 
-    # TODO: handle case where gen_udp.open/send fails
-    {:ok, sock} = :gen_udp.open(0, [:binary, iptype, active: false, recbuf: bufsize])
-    :ok = :gen_udp.send(sock, ns, qry.wdata)
+    # TODO: handle case where:
+    # - gen_udp.open fails
+    # - gen_udp.send fails
+    # - gen_udp.recv fails
+    # - sender IP is not who we asked the question to
+    # - rsp cannot be decoded
+    # - rsp is truncated
+    # and
+    # - how about time/duration?
+    # use random src port, returns j0
 
-    time_sent = now()
-    IO.puts("query_udp #{qry} using timeout #{inspect(timeout)}")
+    opts = [:binary, iptype, active: false, recbuf: bufsize]
 
-    case :gen_udp.recv(sock, 0, timeout) do
-      {:ok, {address, port, rsp}} ->
-        duration = now() - time_sent
-        IO.puts("#{inspect(address)}:#{port} replied, took #{duration} ms")
-        {:ok, Msg.decode(rsp)}
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:o, {:ok, sock}} <- {:o, :gen_udp.open(0, opts)},
+         {:s, :ok} <- {:s, :gen_udp.send(sock, ns, qry.wdata)},
+         tsent <- now(),
+         {:r, {:ok, {addr, _port, rsp}}} <- {:r, :gen_udp.recv(sock, 0, timeout)},
+         {:i, ^ip} <- {:i, addr} do
+      duration = now() - tsent
+      IO.puts("#{inspect(ip)}, port #{port} replied, took #{duration} ms")
+      {:ok, Msg.decode(rsp)}
+    else
+      {:o, _} -> {:error, :esocket}
+      {:s, _} -> {:error, :esend}
+      {:r, _} -> {:error, :erecv}
+      {:i, a} -> {:error, IO.inspect(a, label: :wrong_sender)}
+      e -> {:error, inspect(e)}
     end
+
+    # {:ok, sock} = :gen_udp.open(0, [:binary, iptype, active: false, recbuf: bufsize])
+    # :ok = :gen_udp.send(sock, ns, qry.wdata)
+    # time_sent = now()
+    # IO.puts("query_udp #{qry} using timeout #{inspect(timeout)}")
+    # {:ok, {address, port, rsp}} = :gen_udp.recv(sock, 0, timeout)
+    # # matcherror if different
+    # ip = address
+    # duration = now() - time_sent
+    # IO.puts("#{inspect(ip)}, port #{port} replied, took #{duration} ms")
+    # {:ok, Msg.decode(rsp)}
+  rescue
+    error ->
+      IO.inspect(error)
   end
 
   @doc """
@@ -185,8 +214,6 @@ defmodule DNS do
       {:ok, qry} -> {:ok, Msg.encode(qry)}
       {:error, e} -> {e.reason, e.data}
     end
-  rescue
-    e -> {e.reason, e.data}
   end
 
   # [[ SEND/RECV MSG ]]
@@ -226,7 +253,6 @@ defmodule DNS do
       verbose: Keyword.get(opts, :verbose, false),
       bufsize: Keyword.get(opts, :bufsize, 1280),
       timeout: Keyword.get(opts, :timeout, 2000),
-      timemax: Keyword.get(opts, :timemax, :infinity),
       retry: Keyword.get(opts, :retry, 3),
       tcp: Keyword.get(opts, :tcp, false),
       do: Keyword.get(opts, :do, 0),
@@ -318,10 +344,9 @@ defmodule DNS do
 
   defp validate_rsp_rr(rr, rq) do
     # todo:
-    # - case-insensitive compare of names
     # - are there more DNSSEC related RR's that might show up in answer RR's?
     # - when rr.type is ANY what do we accept then?
-    rr.name == rq.name and
+    dname_equal?(rr.name, rq.name) and
       rr.class == rq.class and
       (rr.type == rq.type or rr.type in [:RRSIG])
   end
@@ -338,14 +363,11 @@ defmodule DNS do
     do: ns
 
   defp udp_timeout(timeout, retry, n, tstop) do
-    IO.inspect({timeout, retry, n, tstop}, label: :input)
-
     tdelta = div(timeout * 2 ** n, retry)
 
     tdelta
     |> time()
     |> timeout(tstop)
     |> min(tdelta)
-    |> IO.inspect(label: :output)
   end
 end
