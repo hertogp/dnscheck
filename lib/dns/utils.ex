@@ -393,27 +393,33 @@ defmodule DNS.Utils do
   # [[ TIME ]]
 
   @doc false
+  # current moment in monotonic time
   def now(),
     do: System.monotonic_time(:millisecond)
 
   @doc false
+  # create T, a future, monotonic point in time
   def time(timeout),
     do: now() + timeout
 
   @doc false
+  # how many ms till `time` (a T)
   def timeout(time),
     do: timeout(now(), time)
 
-  def timeout(time, maxtime) do
-    if time < maxtime,
-      do: maxtime - time,
+  # how many ms has time T left?
+  def timeout(time, endtime) do
+    if time < endtime,
+      do: endtime - time,
       else: 0
   end
 
   @doc false
+  # donot wait
   def wait(0),
     do: :ok
 
+  # wait for `time` ms
   def wait(time) do
     # don't match any messages!
     receive do

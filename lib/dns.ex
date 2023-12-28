@@ -101,17 +101,24 @@ defmodule DNS do
 
   def query_ns(ns, qry, opts, tstop, n) do
     bufsize = opts.bufsize
+    timeout = opts.timeout
     payload = byte_size(qry.wdata)
 
     if payload > bufsize or opts.tcp do
       {:error, :notcp}
     else
-      timeout = udp_timeout(opts.timeout, opts.retry, n, tstop)
+      udp_timeout = udp_timeout(timeout, opts.retry, n, tstop)
+      log(true, "udp: t0 is #{udp_timeout}, t1 is #{timeout(tstop)}")
 
-      case query_udp(ns, qry, timeout, opts.bufsize) do
-        {:ok, rsp} when rsp.header.tc == 1 -> {:error, :notcp}
-        {:ok, rsp} -> {:ok, rsp}
-        other -> other
+      case query_udp(ns, qry, udp_timeout, opts.bufsize) do
+        {:ok, rsp} when rsp.header.tc == 1 ->
+          query_tcp(ns, qry, timeout, tstop)
+
+        {:ok, rsp} ->
+          {:ok, rsp}
+
+        other ->
+          other
       end
     end
   end
@@ -120,6 +127,8 @@ defmodule DNS do
     do: {:error, :timeout}
 
   def query_udp({ip, port} = ns, qry, timeout, bufsize) do
+    log(true, "udp: t0 #{inspect(timeout)}")
+
     iptype =
       case Pfx.type(ip) do
         :ip4 -> :inet
@@ -133,6 +142,7 @@ defmodule DNS do
     # Msg.decode -> {:ok, Msg.t} | {:error, DNS.Msg.Error.t}
     # TODO
     # - query_udp_recv to poll, with limit, the socket for correct answer
+    # - query_udp_connect -> only receive replies from 'connected' ns
 
     opts = [:binary, iptype, active: false, recbuf: bufsize]
 
@@ -141,18 +151,50 @@ defmodule DNS do
          tsent <- now(),
          {:ok, {addr, _port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
          ^ip <- addr do
+      :gen_udp.close(sock)
       duration = now() - tsent
-      IO.puts("#{inspect(ip)}, port #{port} replied, took #{duration} ms")
-      Msg.decode(rsp)
+      IO.puts("#{inspect(ip)}, port #{port}/udp replied, took #{duration} ms")
+      Msg.decode(<<0>> <> rsp)
     else
       {:error, reason} -> {:error, reason}
-      # DNS.Msg.Error -> {:error, :formerr}
       t when is_tuple(t) -> {:error, :esender}
       e -> {:error, inspect(e, label: :elseclause)}
     end
+  end
+
+  def query_tcp(_ns, _qry, 0),
+    do: {:error, :timeout}
+
+  def query_tcp({ip, port}, qry, timeout, tstop) do
+    # port = port + 1
+    tcp_timeout = min(timeout, timeout(tstop))
+
+    iptype =
+      case Pfx.type(ip) do
+        :ip4 -> :inet
+        :ip6 -> :inet6
+      end
+
+    opts = [:binary, iptype, active: false, packet: 2]
+
+    # :gen_tcp.connect -> {:ok, sock} | {:error, :timeout | posix}
+    # connect outside with block, so we can always close the socket
+    {:ok, sock} = :gen_tcp.connect(ip, port, opts, tcp_timeout)
+
+    with :ok <- :gen_tcp.send(sock, qry.wdata),
+         {:ok, rsp} <- :gen_tcp.recv(sock, 0, timeout) do
+      :gen_tcp.close(sock)
+      log(true, "query_tcp received #{byte_size(rsp)} bytes")
+      Msg.decode(rsp)
+    else
+      {:error, e} ->
+        log(true, "query_tcp error #{inspect(e)}")
+        :gen_tcp.close(sock)
+        {:error, e}
+    end
   rescue
-    e in DNS.Msg.Error ->
-      {:error, IO.inspect(e, label: :rescued)}
+    # when gen_tcp.connect fails, {:ok, sock} won't match {:error, reason}
+    e in MatchError -> e.term
   end
 
   # [[ MAKE QRY MSG ]]
@@ -285,12 +327,15 @@ defmodule DNS do
       (rr.type == rq.type or rr.type in [:RRSIG])
   end
 
+  # wrap a nameserver with an absolute point in time,
+  # later on, when revisited, we'll wait the remaining time
   defp wrap(ns, timeout),
     do: {ns, time(timeout)}
 
-  defp unwrap({{ip, port}, t}) do
+  defp unwrap({{_ip, _port} = ns, t}) do
     wait(timeout(t))
-    {ip, port}
+    # {ip, port}
+    ns
   end
 
   defp unwrap(ns),
