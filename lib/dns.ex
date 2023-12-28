@@ -110,48 +110,33 @@ defmodule DNS do
         :ip6 -> :inet6
       end
 
-    # TODO: handle case where:
-    # - gen_udp.open fails
-    # - gen_udp.send fails
-    # - gen_udp.recv fails
-    # - sender IP is not who we asked the question to
-    # - rsp cannot be decoded
-    # - rsp is truncated
-    # and
-    # - how about time/duration?
-    # use random src port, returns j0
+    # gen_udp:
+    # - open -> {:ok, socket} | {:error, posix | :system_limit}
+    # - send -> :ok | {:error, posix | not_owner}
+    # - recv -> {:ok, dta} | {:error, posix | not_owner | timeout}
+    # Msg.decode -> Msg.t or raises
+    # TODO
+    # - query_udp_recv to poll, with limit, the socket for correct answer
 
     opts = [:binary, iptype, active: false, recbuf: bufsize]
 
-    with {:o, {:ok, sock}} <- {:o, :gen_udp.open(0, opts)},
-         {:s, :ok} <- {:s, :gen_udp.send(sock, ns, qry.wdata)},
+    with {:ok, sock} <- :gen_udp.open(0, opts),
+         :ok <- :gen_udp.send(sock, ns, qry.wdata),
          tsent <- now(),
-         {:r, {:ok, {addr, _port, rsp}}} <- {:r, :gen_udp.recv(sock, 0, timeout)},
-         {:i, ^ip} <- {:i, addr} do
+         {:ok, {addr, _port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
+         ^ip <- addr do
       duration = now() - tsent
       IO.puts("#{inspect(ip)}, port #{port} replied, took #{duration} ms")
-      {:ok, Msg.decode(rsp)}
+      {:ok, Msg.decode(<<0>> <> rsp)}
     else
-      {:o, _} -> {:error, :esocket}
-      {:s, _} -> {:error, :esend}
-      {:r, _} -> {:error, :erecv}
-      {:i, a} -> {:error, IO.inspect(a, label: :wrong_sender)}
-      e -> {:error, inspect(e)}
+      {:error, reason} -> {:error, reason}
+      MatchError -> {:error, :esender}
+      DNS.Msg.Error -> {:error, :formerr}
+      e -> {:error, inspect(e, label: :elseclause)}
     end
-
-    # {:ok, sock} = :gen_udp.open(0, [:binary, iptype, active: false, recbuf: bufsize])
-    # :ok = :gen_udp.send(sock, ns, qry.wdata)
-    # time_sent = now()
-    # IO.puts("query_udp #{qry} using timeout #{inspect(timeout)}")
-    # {:ok, {address, port, rsp}} = :gen_udp.recv(sock, 0, timeout)
-    # # matcherror if different
-    # ip = address
-    # duration = now() - time_sent
-    # IO.puts("#{inspect(ip)}, port #{port} replied, took #{duration} ms")
-    # {:ok, Msg.decode(rsp)}
   rescue
-    error ->
-      IO.inspect(error)
+    e in DNS.Msg.Error ->
+      {:error, IO.inspect(e, label: :rescued)}
   end
 
   @doc """
