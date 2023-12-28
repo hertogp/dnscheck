@@ -36,6 +36,22 @@ defmodule DNS do
 
   # [[ RESOLVE ]]
 
+  @doc """
+  Queries DNS for given `name` and `type`, returns `t:DNS.Msg.t/0`
+
+  Options include:
+  - `rd`, defaults to 1 (recursion desired, true)
+  - `id`, defaults to 0 (used to link replies to requests)
+  - `opcode`, defaults to 0
+  - `bufsize`, defaults to 1410 if edns0 is used
+  - `do`, defaults to 0 (dnssec ok, false)
+  - `cd`, defaults to 0 (dnssec check disable, fals)
+  - `nameserver`, defaults to `{{8,8,8,8}, 53}`
+
+  If any of the `bufsize, do or cd` options is used, a pseudo-RR
+  is added to the additional section of the `Msg`.
+
+  """
   def resolve(name, type, opts \\ []) do
     with {:ok, opts} <- make_options(opts),
          {:ok, qry} <- make_query(name, type, opts) do
@@ -114,7 +130,7 @@ defmodule DNS do
     # - open -> {:ok, socket} | {:error, posix | :system_limit}
     # - send -> :ok | {:error, posix | not_owner}
     # - recv -> {:ok, dta} | {:error, posix | not_owner | timeout}
-    # Msg.decode -> Msg.t or raises
+    # Msg.decode -> {:ok, Msg.t} | {:error, DNS.Msg.Error.t}
     # TODO
     # - query_udp_recv to poll, with limit, the socket for correct answer
 
@@ -127,11 +143,11 @@ defmodule DNS do
          ^ip <- addr do
       duration = now() - tsent
       IO.puts("#{inspect(ip)}, port #{port} replied, took #{duration} ms")
-      {:ok, Msg.decode(<<0>> <> rsp)}
+      Msg.decode(rsp)
     else
       {:error, reason} -> {:error, reason}
-      MatchError -> {:error, :esender}
-      DNS.Msg.Error -> {:error, :formerr}
+      # DNS.Msg.Error -> {:error, :formerr}
+      t when is_tuple(t) -> {:error, :esender}
       e -> {:error, inspect(e, label: :elseclause)}
     end
   rescue
@@ -139,52 +155,9 @@ defmodule DNS do
       {:error, IO.inspect(e, label: :rescued)}
   end
 
-  @doc """
-  Queries DNS for given `name` and `type`, returns `t:DNS.Msg.t/0`
+  # [[ MAKE QRY MSG ]]
 
-  Options include:
-  - `rd`, defaults to 1 (recursion desired, true)
-  - `id`, defaults to 0 (used to link replies to requests)
-  - `opcode`, defaults to 0
-  - `bufsize`, defaults to 1410 if edns0 is used
-  - `do`, defaults to 0 (dnssec ok, false)
-  - `cd`, defaults to 0 (dnssec check disable, fals)
-  - `nameserver`, defaults to `{{8,8,8,8}, 53}`
-
-  If any of the `bufsize, do or cd` options is used, a pseudo-RR
-  is added to the additional section of the `Msg`.
-
-  """
-  @spec old_resolve(binary, atom) :: {:ok, Msg.t()} | {:error, any}
-  def old_resolve(name, type, opts \\ []) do
-    # TODO: move all this option splitting to Msg.new()
-    opts = Keyword.put_new(opts, :id, Enum.random(0..65535))
-    {edns_opts, opts} = Keyword.split(opts, [:bufsize, :do])
-    {hdr_opts, opts} = Keyword.split(opts, [:rd, :id, :opcode, :cd])
-    # only one question
-    qtn_opts = [[name: name, type: type]]
-    edns_opts = if edns_opts == [], do: [], else: [Keyword.put(edns_opts, :type, :OPT)]
-
-    qry =
-      Msg.new!(qtn: qtn_opts, hdr: hdr_opts, add: edns_opts)
-      |> Msg.encode()
-      |> IO.inspect(label: :query)
-
-    {rcode, rsp} =
-      case old_udp_query(qry.wdata, opts) do
-        {:error, reason} -> {:error, reason}
-        response -> decode_response(response)
-      end
-
-    case rcode do
-      :NOERROR -> validate(qry, rsp)
-      other -> {other, rsp}
-    end
-  end
-
-  # [[ BUILD QRY MSG ]]
-
-  def make_query(name, type, opts \\ %{}) do
+  def make_query(name, type, opts) do
     # assumes opts is safe (made by make_options)
 
     edns_opts =
@@ -196,36 +169,12 @@ defmodule DNS do
     hdr_opts = [rd: opts.rd, cd: opts.cd, id: Enum.random(0..65535)]
 
     case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
-      {:ok, qry} -> {:ok, Msg.encode(qry)}
+      {:ok, qry} -> Msg.encode(qry)
       {:error, e} -> {e.reason, e.data}
     end
   end
 
   # [[ SEND/RECV MSG ]]
-
-  def old_udp_query(msg, opts \\ []) do
-    nameserver = Keyword.get(opts, :nameserver, {{8, 8, 8, 8}, 53})
-    {:ok, sock} = :gen_udp.open(0, [:binary, active: false, recbuf: 4000])
-    :ok = :gen_udp.send(sock, nameserver, msg)
-
-    timeout_ms = 3000
-    time_sent = now()
-
-    case :gen_udp.recv(sock, 0, timeout_ms) do
-      {:ok, {address, port, response}} ->
-        duration = now() - time_sent
-        IO.puts("#{inspect(address)}:#{port} replied, took #{duration} ms")
-        response
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  def tcp_query(_msg, _opts) do
-    # TODO
-    {:error, :notimp}
-  end
 
   # [[ OPTIONS ]]
 

@@ -216,7 +216,7 @@ defmodule DNS.Msg.RRTest do
     assert length(samples) > 0, "no wiredata samples found"
 
     for {name, type, output, wiredata} <- samples do
-      resp = DNS.Msg.decode(wiredata)
+      {:ok, resp} = DNS.Msg.decode(wiredata)
       assert %DNS.Msg{} = resp, "failed for #{name}, #{type}"
       # basic value test
       id = List.first(output) |> String.split(" ") |> List.last()
@@ -247,7 +247,7 @@ defmodule DNS.Msg.RRTest do
 
   test "A RR" do
     {name, type, _output, wiredata} = get_sample("example.com", :A)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 27830 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -261,7 +261,7 @@ defmodule DNS.Msg.RRTest do
 
   test "AAAA RR" do
     {name, type, _output, wiredata} = get_sample("example.com", :AAAA)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 54473 = resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -276,7 +276,7 @@ defmodule DNS.Msg.RRTest do
 
   test "AFSDB RR" do
     {name, type, _output, wiredata} = get_sample("afsdb.dns.netmeister.org", :AFSDB)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 4707 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -296,7 +296,7 @@ defmodule DNS.Msg.RRTest do
     # drill doesnt know AMTRELAY as mnemonic, so use TYPE260
     {name, _type, _output, wiredata} = get_sample("amtrelay.dns.netmeister.org", "TYPE260")
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 62613 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -315,7 +315,7 @@ defmodule DNS.Msg.RRTest do
 
   test "CAA RR" do
     {name, type, _output, wiredata} = get_sample("google.nl", :CAA)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 29394 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -331,7 +331,7 @@ defmodule DNS.Msg.RRTest do
 
   test "CDNSKEY RR" do
     {name, type, _output, wiredata} = get_sample("dnsimple.zone", :CDNSKEY)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 24524 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -352,7 +352,7 @@ defmodule DNS.Msg.RRTest do
 
   test "CDS RR" do
     {name, type, _output, wiredata} = get_sample("dnsimple.zone", :CDS)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 24465 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -372,7 +372,7 @@ defmodule DNS.Msg.RRTest do
   test "CERT RR" do
     {name, type, _output, wiredata} = get_sample("cert.dns.netmeister.org", :CERT, useD: true)
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 20547 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -391,7 +391,7 @@ defmodule DNS.Msg.RRTest do
 
   test "CNAME RR" do
     {name, type, _output, wiredata} = get_sample("www.sidn.nl", :CNAME)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 59056 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -405,7 +405,7 @@ defmodule DNS.Msg.RRTest do
 
   test "DNAME RR" do
     {name, type, _output, wiredata} = get_sample("dname.dns.netmeister.org", :DNAME)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 53721 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -421,7 +421,7 @@ defmodule DNS.Msg.RRTest do
 
   test "CSYNC RR" do
     {name, type, _output, wiredata} = get_sample("csync.dns.netmeister.org", :CSYNC)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 10012 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -439,7 +439,7 @@ defmodule DNS.Msg.RRTest do
 
   test "DNSKEY RR" do
     {name, type, _output, wiredata} = get_sample("internet.nl", :DNSKEY)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 1320 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -460,7 +460,7 @@ defmodule DNS.Msg.RRTest do
 
   test "DS RR" do
     {name, type, _output, wiredata} = get_sample("internet.nl", :DS)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 17034 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -480,7 +480,7 @@ defmodule DNS.Msg.RRTest do
   test "IPSECKEY RR" do
     {name, type, _output, wiredata} = get_sample("twokeys.libreswan.org", :IPSECKEY, useD: true)
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 42737 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -505,7 +505,7 @@ defmodule DNS.Msg.RRTest do
 
   test "ISDN RR" do
     {name, type, _output, wiredata} = get_sample("isdn.dns.netmeister.org", :ISDN)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 11650 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -522,7 +522,7 @@ defmodule DNS.Msg.RRTest do
 
   test "KX RR" do
     {name, type, _output, wiredata} = get_sample("kx.dns.netmeister.org", :KX)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 57000 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -539,7 +539,7 @@ defmodule DNS.Msg.RRTest do
 
   test "MB RR" do
     {name, type, _output, wiredata} = get_sample("mb.dns.netmeister.org", :MB)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 10231 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -558,7 +558,7 @@ defmodule DNS.Msg.RRTest do
     # omg: google's 8.8.8.8 doesn't do MG
     {name, type, _output, wiredata} = get_sample("mg.dns.netmeister.org", :MG, ns: "166.84.7.99")
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 4254 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -576,7 +576,7 @@ defmodule DNS.Msg.RRTest do
   test "MR RR" do
     {name, type, _output, wiredata} = get_sample("mr.dns.netmeister.org", :MR)
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 46657 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -595,7 +595,7 @@ defmodule DNS.Msg.RRTest do
     # omg: google's 8.8.8.8 doesn't do MG
     {name, type, _output, wiredata} = get_sample("minfo.dns.netmeister.org", :MINFO)
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 35568 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -613,7 +613,7 @@ defmodule DNS.Msg.RRTest do
 
   test "MX RR" do
     {name, type, _output, wiredata} = get_sample("sidn.nl", :MX)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 30869 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -628,7 +628,7 @@ defmodule DNS.Msg.RRTest do
 
   test "NS RR" do
     {name, type, _output, wiredata} = get_sample("sidn.nl", :NS)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 4442 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -644,7 +644,7 @@ defmodule DNS.Msg.RRTest do
 
   test "NSEC RR" do
     {name, type, _output, wiredata} = get_sample("einbeispiel.ch", :NSEC)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 8916 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -664,7 +664,7 @@ defmodule DNS.Msg.RRTest do
   test "NSEC3 RR" do
     {_name, type, _output, wiredata} = get_sample("x.example.com", :NSEC3, useD: true)
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 33209 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -695,7 +695,7 @@ defmodule DNS.Msg.RRTest do
 
   test "NSEC3PARAM RR" do
     {name, type, _output, wiredata} = get_sample("example.com", :NSEC3PARAM, useD: true)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 16829 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -714,7 +714,7 @@ defmodule DNS.Msg.RRTest do
   test "NULL RR" do
     {name, type, _output, wiredata} = get_sample("null.dns.netmeister.org", :NULL)
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 50474 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -733,7 +733,7 @@ defmodule DNS.Msg.RRTest do
     {name, type, _output, wiredata} =
       get_sample("openpgpkey.dns.netmeister.org", :OPENPGPKEY, useD: true)
 
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 20232 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -747,7 +747,7 @@ defmodule DNS.Msg.RRTest do
 
   test "OPT RR" do
     {_name, type, _output, wiredata} = get_sample("dnssec-failed.org", :OPT, useD: true)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 59961 == resp.header.id, "sample was updated, need to update test!"
     assert :SERVFAIL == resp.header.rcode
@@ -769,7 +769,7 @@ defmodule DNS.Msg.RRTest do
 
   test "PTR RR" do
     {name, type, _output, wiredata} = get_sample("27.27.250.142.in-addr.arpa", :PTR)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 43852 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -784,7 +784,7 @@ defmodule DNS.Msg.RRTest do
 
   test "HINFO RR" do
     {name, _type, _output, wiredata} = get_sample("cloudflare.com", :ANY)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 9711 == resp.header.id, "sample was updated, need to update test!"
     assert 2 == length(resp.answer)
@@ -797,7 +797,7 @@ defmodule DNS.Msg.RRTest do
 
   test "RP RR" do
     {name, type, _output, wiredata} = get_sample("rp.dns.netmeister.org", :RP)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 28153 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -815,7 +815,7 @@ defmodule DNS.Msg.RRTest do
 
   test "RRSIG RR" do
     {name, _type, _output, wiredata} = get_sample("example.com", :RRSIG, useD: true)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 6603 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -836,7 +836,7 @@ defmodule DNS.Msg.RRTest do
 
   test "RT RR" do
     {name, type, _output, wiredata} = get_sample("rt.dns.netmeister.org", :RT)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 24964 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -853,7 +853,7 @@ defmodule DNS.Msg.RRTest do
 
   test "SOA RR" do
     {name, type, _output, wiredata} = get_sample("example.com", :SOA)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 62121 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -873,7 +873,7 @@ defmodule DNS.Msg.RRTest do
 
   test "SRV RR" do
     {name, type, _output, wiredata} = get_sample("_sip._udp.sipgate.co.uk", :SRV)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 57124 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -893,7 +893,7 @@ defmodule DNS.Msg.RRTest do
 
   test "SSHFP RR" do
     {name, type, _output, wiredata} = get_sample("salsa.debian.org", :SSHFP)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 7178 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -914,7 +914,7 @@ defmodule DNS.Msg.RRTest do
 
   test "TSLA" do
     {name, type, _output, wiredata} = get_sample("_25._tcp.esa.sidn.nl", :TLSA)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 26213 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -933,7 +933,7 @@ defmodule DNS.Msg.RRTest do
 
   test "TXT RR" do
     {name, type, _output, wiredata} = get_sample("example.com", :TXT)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 60410 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -947,7 +947,7 @@ defmodule DNS.Msg.RRTest do
 
   test "URI RR" do
     {name, type, _output, wiredata} = get_sample("uri.dns.netmeister.org", :URI)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 26668 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -965,7 +965,7 @@ defmodule DNS.Msg.RRTest do
 
   test "WKS RR" do
     {name, type, _output, wiredata} = get_sample("wks.dns.netmeister.org", :WKS)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 1855 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -984,7 +984,7 @@ defmodule DNS.Msg.RRTest do
 
   test "X25 RR" do
     {name, type, _output, wiredata} = get_sample("x25.dns.netmeister.org", :X25)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 40903 == resp.header.id, "sample was updated, need to update test!"
     # answer
@@ -1000,7 +1000,7 @@ defmodule DNS.Msg.RRTest do
 
   test "ZONEMD RR" do
     {name, type, _output, wiredata} = get_sample("zonemd.dns.netmeister.org", :ZONEMD)
-    resp = DNS.Msg.decode(wiredata)
+    {:ok, resp} = DNS.Msg.decode(wiredata)
     assert %DNS.Msg{} = resp
     assert 8222 == resp.header.id, "sample was updated, need to update test!"
     # answer

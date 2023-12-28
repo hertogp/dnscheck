@@ -138,17 +138,6 @@ defmodule DNS.Msg do
     e -> {:error, e}
   end
 
-  @doc """
-  Returns a `t:DNS.Msg.t/0` upon success, raises in case of any failure.
-  """
-  @spec new!(Keyword.t()) :: t() | no_return
-  def new!(opts \\ []) do
-    case new(opts) do
-      {:ok, msg} -> msg
-      {:error, e} -> raise e
-    end
-  end
-
   # [[ ENCODE MSG ]]
 
   @doc """
@@ -177,15 +166,18 @@ defmodule DNS.Msg do
         Enum.reduce(aut, <<>>, fn elm, acc -> acc <> elm.wdata end) <>
         Enum.reduce(add, <<>>, fn elm, acc -> acc <> elm.wdata end)
 
-    %{
-      msg
-      | header: hdr,
-        question: qtn,
-        answer: ans,
-        authority: aut,
-        additional: add,
-        wdata: wdata
-    }
+    {:ok,
+     %{
+       msg
+       | header: hdr,
+         question: qtn,
+         answer: ans,
+         authority: aut,
+         additional: add,
+         wdata: wdata
+     }}
+  rescue
+    e in DNS.Msg.Error -> {:error, e}
   end
 
   defp do_encode_section(elms, fun) do
@@ -204,14 +196,17 @@ defmodule DNS.Msg do
     {offset, aut} = do_decode_section(hdr.nsc, offset, msg, &RR.decode/2, [])
     {_offset, add} = do_decode_section(hdr.arc, offset, msg, &RR.decode/2, [])
 
-    %__MODULE__{
-      header: hdr,
-      question: qtn,
-      answer: ans,
-      authority: aut,
-      additional: add,
-      wdata: msg
-    }
+    {:ok,
+     %__MODULE__{
+       header: hdr,
+       question: qtn,
+       answer: ans,
+       authority: aut,
+       additional: add,
+       wdata: msg
+     }}
+  rescue
+    e in DNS.Msg.Error -> {:error, e}
   end
 
   defp do_decode_section(0, offset, _msg, _fun, acc),
