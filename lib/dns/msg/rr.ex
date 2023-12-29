@@ -412,7 +412,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new(name: 123)
-      ** (DNS.MsgError) [invalid dname] 123
+      ** (DNS.MsgError) [create] RR domain name invalid: 123
 
   """
   @spec new(Keyword.t()) :: t
@@ -449,7 +449,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new() |> put(type: 65536)
-      ** (DNS.MsgError) [decode] RR type valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [create] RR type valid range is 0..65535, got: 65536
 
   """
   @spec put(t(), Keyword.t()) :: t
@@ -467,12 +467,14 @@ defmodule DNS.Msg.RR do
     if type == :OPT,
       do: do_edns(opts),
       else: Enum.reduce(opts, %{rr | rdata: <<>>, wdata: <<>>, rdlen: 0}, &do_put/2)
+  rescue
+    e in DNS.MsgError -> error(:ecreate, "RR " <> e.data)
   end
 
   defp do_put({k, v}, rr) when k == :name do
     if dname_valid?(v),
       do: Map.put(rr, k, v),
-      else: error(:edname, "#{inspect(v)}")
+      else: error(:ecreate, "domain name invalid: #{inspect(v)}")
   end
 
   defp do_put({k, v}, rr) when k == :class do

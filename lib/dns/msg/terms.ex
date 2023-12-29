@@ -424,16 +424,16 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_rr_type(:ABC)
-      ** (DNS.MsgError) [encode] RR type ABC is unknown
+      ** (DNS.MsgError) [encode] type ABC is unknown
 
       # raises on invalid value
       iex> encode_rr_type(65536)
-      ** (DNS.MsgError) [encode] RR type valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [encode] type valid range is 0..65535, got: 65536
 
   """
   @spec encode_rr_type(atom | non_neg_integer) :: non_neg_integer()
   def encode_rr_type(type),
-    do: do_encode(@rr_types, type, "RR type", 0..65535)
+    do: do_encode(@rr_types, type, "type", 0..65535)
 
   @doc """
   Decode an RR type to its name, if possible.
@@ -457,11 +457,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_rr_type(:ABC)
-      ** (DNS.MsgError) [decode] RR type ABC is unknown
+      ** (DNS.MsgError) [decode] type ABC is unknown
 
       # raises on invalid value
       iex> decode_rr_type(65536)
-      ** (DNS.MsgError) [decode] RR type valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [decode] type valid range is 0..65535, got: 65536
 
   See:
   - [IANA - DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
@@ -470,7 +470,7 @@ defmodule DNS.Msg.Terms do
   """
   @spec decode_rr_type(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_rr_type(type),
-    do: do_decode(@rr_types, type, "RR type", 0..65535)
+    do: do_decode(@rr_types, type, "type", 0..65535)
 
   # [[ DNS OPT CODE ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
