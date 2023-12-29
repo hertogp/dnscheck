@@ -25,10 +25,10 @@ defmodule DNS.Msg.HdrTest do
     assert h.wdata == <<>>
 
     # raises on invalid values
-    assert_raise DNS.Msg.Error, fn -> new(id: 65536) end
-    assert_raise DNS.Msg.Error, fn -> new(qr: 2) end
-    assert_raise DNS.Msg.Error, fn -> new(opcode: 16) end
-    assert_raise DNS.Msg.Error, fn -> new(rcode: 16) end
+    assert_raise DNS.MsgError, fn -> new(id: 65536) end
+    assert_raise DNS.MsgError, fn -> new(qr: 2) end
+    assert_raise DNS.MsgError, fn -> new(opcode: 16) end
+    assert_raise DNS.MsgError, fn -> new(rcode: 16) end
 
     # wdata is ignored
     h = new(wdata: "ignored")
@@ -46,8 +46,8 @@ defmodule DNS.Msg.HdrTest do
     assert h.rcode == 12
 
     # raises on crazy values
-    assert_raise DNS.Msg.Error, fn -> new(opcode: ["asdf"]) end
-    assert_raise DNS.Msg.Error, fn -> new(rcode: ["asdf"]) end
-    assert_raise DNS.Msg.Error, fn -> new(qr: ["asdf"]) end
+    assert_raise DNS.MsgError, fn -> new(opcode: ["asdf"]) end
+    assert_raise DNS.MsgError, fn -> new(rcode: ["asdf"]) end
+    assert_raise DNS.MsgError, fn -> new(qr: ["asdf"]) end
   end
 end

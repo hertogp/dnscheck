@@ -100,25 +100,22 @@ defmodule DNS do
   end
 
   def query_ns(ns, qry, opts, tstop, n) do
+    # queries a single nameserver, returns {:ok, msg} | {:error, reason}
+    # - servfail or timeout -> ns will be tried later again
+    # - any other error -> ns is dropped and not visited again
     bufsize = opts.bufsize
     timeout = opts.timeout
     payload = byte_size(qry.wdata)
 
     if payload > bufsize or opts.tcp do
-      {:error, :notcp}
+      query_tcp(ns, qry, timeout, tstop)
     else
       udp_timeout = udp_timeout(timeout, opts.retry, n, tstop)
       log(true, "udp: t0 is #{udp_timeout}, t1 is #{timeout(tstop)}")
 
-      case query_udp(ns, qry, udp_timeout, opts.bufsize) do
-        {:ok, rsp} when rsp.header.tc == 1 ->
-          query_tcp(ns, qry, timeout, tstop)
-
-        {:ok, rsp} ->
-          {:ok, rsp}
-
-        other ->
-          other
+      case query_udp(ns, qry, udp_timeout, bufsize) do
+        {:ok, rsp} when rsp.header.tc == 1 -> query_tcp(ns, qry, timeout, tstop)
+        result -> result
       end
     end
   end
@@ -126,7 +123,7 @@ defmodule DNS do
   def query_udp(_ns, _qry, 0, _bufsize),
     do: {:error, :timeout}
 
-  def query_udp({ip, port} = ns, qry, timeout, bufsize) do
+  def query_udp({ip, port}, qry, timeout, bufsize) do
     log(true, "udp: t0 #{inspect(timeout)}")
 
     iptype =
@@ -137,6 +134,7 @@ defmodule DNS do
 
     # gen_udp:
     # - open -> {:ok, socket} | {:error, posix | :system_limit}
+    # - connect -> :ok, {:error, reason}
     # - send -> :ok | {:error, posix | not_owner}
     # - recv -> {:ok, dta} | {:error, posix | not_owner | timeout}
     # Msg.decode -> {:ok, Msg.t} | {:error, DNS.Msg.Error.t}
@@ -147,18 +145,14 @@ defmodule DNS do
     opts = [:binary, iptype, active: false, recbuf: bufsize]
 
     with {:ok, sock} <- :gen_udp.open(0, opts),
-         :ok <- :gen_udp.send(sock, ns, qry.wdata),
+         :ok <- :gen_udp.connect(sock, ip, port),
+         :ok <- :gen_udp.send(sock, qry.wdata),
          tsent <- now(),
-         {:ok, {addr, _port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
-         ^ip <- addr do
+         {:ok, {addr, port, rsp}} <- :gen_udp.recv(sock, 0, timeout) do
       :gen_udp.close(sock)
       duration = now() - tsent
-      IO.puts("#{inspect(ip)}, port #{port}/udp replied, took #{duration} ms")
-      Msg.decode(<<0>> <> rsp)
-    else
-      {:error, reason} -> {:error, reason}
-      t when is_tuple(t) -> {:error, :esender}
-      e -> {:error, inspect(e, label: :elseclause)}
+      log(true, "#{inspect(addr)}, port #{port}/udp replied, took #{duration} ms")
+      Msg.decode(rsp)
     end
   end
 
@@ -320,7 +314,6 @@ defmodule DNS do
 
   defp validate_rsp_rr(rr, rq) do
     # todo:
-    # - are there more DNSSEC related RR's that might show up in answer RR's?
     # - when rr.type is ANY what do we accept then?
     dname_equal?(rr.name, rq.name) and
       rr.class == rq.class and
@@ -328,13 +321,12 @@ defmodule DNS do
   end
 
   # wrap a nameserver with an absolute point in time,
-  # later on, when revisited, we'll wait the remaining time
+  # later on, when revisiting, we'll wait the remaining time
   defp wrap(ns, timeout),
     do: {ns, time(timeout)}
 
   defp unwrap({{_ip, _port} = ns, t}) do
     wait(timeout(t))
-    # {ip, port}
     ns
   end
 

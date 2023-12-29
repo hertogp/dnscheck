@@ -39,7 +39,7 @@ defmodule DNS.Msg.Hdr do
   """
 
   import DNS.Msg.Terms
-  import DNS.Msg.Error, only: [error: 2]
+  import DNS.MsgError, only: [error: 2]
 
   defstruct id: 0,
             qr: 0,
@@ -141,7 +141,7 @@ defmodule DNS.Msg.Hdr do
       }
 
       iex> new(opcode: 16)
-      ** (DNS.Msg.Error) [invalid opcode] valid range is 0..15, got: 16
+      ** (DNS.MsgError) [invalid opcode] valid range is 0..15, got: 16
 
 
   """
@@ -152,7 +152,7 @@ defmodule DNS.Msg.Hdr do
   @doc """
   Sets `Hdr` `t:t/0` fields for given `opts`, if the key refers to a field.
 
-  Raises `DNS.Msg.Error` if a value is out of bounds.
+  Raises `DNS.MsgError` if a value is out of bounds.
 
   Values for fields `opcode:` and `rcode:` can be given as either a numeric
   value, or their mnemonic atom name (e.g. :SERVFAIL).  See
@@ -187,7 +187,7 @@ defmodule DNS.Msg.Hdr do
 
       # in a header, an rcode value should fit in 4 bites
       iex> new() |> put(rcode: 16)
-      ** (DNS.Msg.Error) [invalid (x)rcode] valid range is 0..15, got: 16
+      ** (DNS.MsgError) [invalid (x)rcode] valid range is 0..15, got: 16
 
   """
   @spec put(t(), Keyword.t()) :: t()

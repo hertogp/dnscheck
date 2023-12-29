@@ -251,7 +251,7 @@ defmodule DNS.Msg.RR do
   # [ ] rename DNS.Msg.Fields to ...(DNS.Msg.Utils?)
   #     dname_decode/encode, ip4_decode/encode, ip6_decode/encode,
   #     bitmap_decode/encode etc...
-  # [x] move error func into DNS.Msg.Error, and use import DNS.Msg.Error, only: [error: 2]
+  # [x] move error func into DNS.MsgError, and use import DNS.MsgError, only: [error: 2]
   # [ ] add logging (Logger?)
   # [ ] ad RRs: Maybe add these (check out <type>.dns.netmeister.org
   #     [ ] NSEC3PARAM hash, see
@@ -269,7 +269,7 @@ defmodule DNS.Msg.RR do
   #     [ ] KEY (25) https://www.rfc-editor.org/rfc/rfc3445.html
   #     [x] WKS (11) https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
 
-  import DNS.Msg.Error, only: [error: 2]
+  import DNS.MsgError, only: [error: 2]
   import DNS.Utils
   import DNS.Msg.Terms
 
@@ -412,7 +412,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new(name: 123)
-      ** (DNS.Msg.Error) [invalid dname] 123
+      ** (DNS.MsgError) [invalid dname] 123
 
   """
   @spec new(Keyword.t()) :: t
@@ -429,7 +429,7 @@ defmodule DNS.Msg.RR do
   RR struct.  Note that whenever `put/2` is used, the `rdlen`, `rdata` and
   `wdata` fields are cleared.
 
-  Raises `DNS.Msg.Error` if a value is out of bounds.
+  Raises `DNS.MsgError` if a value is out of bounds.
 
   See `new/1` for possible options and when using `type: 41` as an option.
 
@@ -449,7 +449,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new() |> put(type: 65536)
-      ** (DNS.Msg.Error) [unknown RR type] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [unknown RR type] valid range is 0..65535, got: 65536
 
   """
   @spec put(t(), Keyword.t()) :: t
@@ -602,7 +602,7 @@ defmodule DNS.Msg.RR do
 
   This requires the `:rdmap` to have the correct `key,value`-pairs for given
   `RR` `:type`. Missing `key,value`-pairs or invalid values will cause a
-  `DNS.Msg.Error` to be raised. See the list of RR's in
+  `DNS.MsgError` to be raised. See the list of RR's in
   [Encoding/decoding](#module-encoding-decoding).
 
   ## Examples

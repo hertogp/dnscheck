@@ -42,7 +42,7 @@ defmodule DNS.Msg do
 
   Returns the result in an `:ok/:error` tuple, so either:
   - `{:ok, DNS.Msg.t}`, or
-  - `{:error, DNS.Msg.Error.t}`
+  - `{:error, DNS.MsgError.t}`
 
   `new/1` takes options for each of its constituents:
   - hdr: `[opts]`, options for `t:DNS.Msg.Hdr.t/0` header
@@ -103,9 +103,9 @@ defmodule DNS.Msg do
       }
 
       iex> DNS.Msg.new(hdr: [qr: 3])
-      {:error, %DNS.Msg.Error{reason: :evalue, data: "Hdr.qr valid range 0..1,  got: 3"}}
+      {:error, %DNS.MsgError{reason: :evalue, data: "Hdr.qr valid range 0..1,  got: 3"}}
   """
-  @spec new(Keyword.t()) :: {:ok, t()} | {:error, DNS.Msg.Error.t()}
+  @spec new(Keyword.t()) :: {:ok, t()} | {:error, DNS.MsgError.t()}
   def new(opts \\ []) do
     hdr_opts = Keyword.get(opts, :hdr, [])
     qtn_opts = Keyword.get(opts, :qtn, [])
@@ -143,7 +143,7 @@ defmodule DNS.Msg do
   @doc """
   Sets `wdata`-field of the `Msg` `t:t/0` struct and its sections.
   """
-  @spec encode(t) :: t
+  @spec encode(t) :: t | {:error, DNS.MsgError.t()}
   def encode(msg) do
     # donot assume qd/an/ns/ad counters are set properly!
     lengths = [
@@ -177,7 +177,7 @@ defmodule DNS.Msg do
          wdata: wdata
      }}
   rescue
-    e in DNS.Msg.Error -> {:error, e}
+    e in DNS.MsgError -> {:error, e}
   end
 
   defp do_encode_section(elms, fun) do
@@ -188,7 +188,7 @@ defmodule DNS.Msg do
 
   # [[ DECODE MSG ]]
 
-  @spec decode(binary) :: t
+  @spec decode(binary) :: t | {:error, DNS.MsgError.t()}
   def decode(msg) do
     {offset, hdr} = Hdr.decode(0, msg)
     {offset, qtn} = do_decode_section(hdr.qdc, offset, msg, &Qtn.decode/2, [])
@@ -206,7 +206,7 @@ defmodule DNS.Msg do
        wdata: msg
      }}
   rescue
-    e in DNS.Msg.Error -> {:error, e}
+    e in DNS.MsgError -> {:error, e}
   end
 
   defp do_decode_section(0, offset, _msg, _fun, acc),

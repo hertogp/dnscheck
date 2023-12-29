@@ -12,10 +12,10 @@ defmodule DNS.Msg.TermsTest do
     assert 65535 == encode_dns_class(65535)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> encode_dns_class(:in) end
+    assert_raise DNS.MsgError, fn -> encode_dns_class(:in) end
 
     # raises on invalid (unknown) numbers
-    assert_raise DNS.Msg.Error, fn -> encode_dns_class(65536) end
+    assert_raise DNS.MsgError, fn -> encode_dns_class(65536) end
   end
 
   test "Decode DNS class" do
@@ -26,10 +26,10 @@ defmodule DNS.Msg.TermsTest do
     assert 1410 == decode_dns_class(1410)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> decode_dns_class(:reserved) end
+    assert_raise DNS.MsgError, fn -> decode_dns_class(:reserved) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> decode_dns_class(65536) end
+    assert_raise DNS.MsgError, fn -> decode_dns_class(65536) end
   end
 
   test "Encode DNS opcode" do
@@ -40,10 +40,10 @@ defmodule DNS.Msg.TermsTest do
     assert 15 == encode_dns_opcode(15)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> encode_dns_opcode(:query) end
+    assert_raise DNS.MsgError, fn -> encode_dns_opcode(:query) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> encode_dns_opcode(16) end
+    assert_raise DNS.MsgError, fn -> encode_dns_opcode(16) end
   end
 
   test "Decode DNS opcode" do
@@ -54,10 +54,10 @@ defmodule DNS.Msg.TermsTest do
     assert 15 == decode_dns_opcode(15)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> decode_dns_opcode(:query) end
+    assert_raise DNS.MsgError, fn -> decode_dns_opcode(:query) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> decode_dns_opcode(16) end
+    assert_raise DNS.MsgError, fn -> decode_dns_opcode(16) end
   end
 
   test "Encode DNS rcode" do
@@ -68,10 +68,10 @@ defmodule DNS.Msg.TermsTest do
     assert 65535 == encode_dns_rcode(65535)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> encode_dns_rcode(:noerror) end
+    assert_raise DNS.MsgError, fn -> encode_dns_rcode(:noerror) end
 
     # raises on invalid (unknown) numbers
-    assert_raise DNS.Msg.Error, fn -> encode_dns_rcode(65536) end
+    assert_raise DNS.MsgError, fn -> encode_dns_rcode(65536) end
   end
 
   test "Decode DNS rcode" do
@@ -82,10 +82,10 @@ defmodule DNS.Msg.TermsTest do
     assert 65535 == decode_dns_rcode(65535)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> decode_dns_rcode(:noerror) end
+    assert_raise DNS.MsgError, fn -> decode_dns_rcode(:noerror) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> decode_dns_rcode(65536) end
+    assert_raise DNS.MsgError, fn -> decode_dns_rcode(65536) end
   end
 
   test "Encode RR type" do
@@ -96,10 +96,10 @@ defmodule DNS.Msg.TermsTest do
     assert 65535 == encode_rr_type(65535)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> encode_rr_type(:a) end
+    assert_raise DNS.MsgError, fn -> encode_rr_type(:a) end
 
     # raises on invalid (unknown) numbers
-    assert_raise DNS.Msg.Error, fn -> encode_rr_type(65536) end
+    assert_raise DNS.MsgError, fn -> encode_rr_type(65536) end
   end
 
   test "Decode RR type" do
@@ -110,10 +110,10 @@ defmodule DNS.Msg.TermsTest do
     assert 65535 == decode_rr_type(65535)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> decode_rr_type(:a) end
+    assert_raise DNS.MsgError, fn -> decode_rr_type(:a) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> decode_rr_type(65536) end
+    assert_raise DNS.MsgError, fn -> decode_rr_type(65536) end
   end
 
   # [[ DNS OPT-RR ]]
@@ -125,10 +125,10 @@ defmodule DNS.Msg.TermsTest do
     assert 65535 == encode_rropt_code(65535)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> encode_rropt_code(:llq) end
+    assert_raise DNS.MsgError, fn -> encode_rropt_code(:llq) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> encode_rropt_code(65536) end
+    assert_raise DNS.MsgError, fn -> encode_rropt_code(65536) end
   end
 
   test "Decode OPT RR code" do
@@ -139,9 +139,9 @@ defmodule DNS.Msg.TermsTest do
     assert 65535 == decode_rropt_code(65535)
 
     # raises on unknown names
-    assert_raise DNS.Msg.Error, fn -> decode_rropt_code(:llq) end
+    assert_raise DNS.MsgError, fn -> decode_rropt_code(:llq) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> decode_rropt_code(65536) end
+    assert_raise DNS.MsgError, fn -> decode_rropt_code(65536) end
   end
 end

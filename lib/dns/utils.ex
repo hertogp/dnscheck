@@ -6,7 +6,7 @@ defmodule DNS.Utils do
 
   @ldh Enum.concat([?a..?z, [?-], ?0..?9, ?A..?Z])
 
-  import DNS.Msg.Error, only: [error: 2]
+  import DNS.MsgError, only: [error: 2]
 
   # [[ GUARDS ]]
 
@@ -127,7 +127,7 @@ defmodule DNS.Utils do
       []
 
       iex> dname_to_labels(".example.com")
-      ** (DNS.Msg.Error) [invalid dname] empty label
+      ** (DNS.MsgError) [invalid dname] empty label
 
   """
   def dname_to_labels(name) when is_binary(name) do
@@ -289,7 +289,7 @@ defmodule DNS.Utils do
       "com.example"
 
       iex> dname_reverse(".example.com")
-      ** (DNS.Msg.Error) [invalid dname] empty label
+      ** (DNS.MsgError) [invalid dname] empty label
 
   """
   @spec dname_reverse(binary) :: binary

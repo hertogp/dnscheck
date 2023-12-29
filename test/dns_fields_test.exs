@@ -16,11 +16,11 @@ defmodule DNS.UtilsTest do
     assert {15, "example.net"} == dname_decode(5, msg)
 
     msg = <<3, ?n, ?e, ?t, 192, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>
-    assert_raise DNS.Msg.Error, fn -> dname_decode(6, msg) end
+    assert_raise DNS.MsgError, fn -> dname_decode(6, msg) end
 
     # not <<0>> terminated, raises
     msg = "stuff" <> <<7, ?E, ?x, ?A, ?m, ?P, ?l, ?E, 3, ?c, ?O, ?m>> <> "more stuff"
-    assert_raise DNS.Msg.Error, fn -> dname_decode(5, msg) end
+    assert_raise DNS.MsgError, fn -> dname_decode(5, msg) end
   end
 
   test "DNAME - dname_to_labels" do
@@ -43,13 +43,13 @@ defmodule DNS.UtilsTest do
     assert ["example", "com-"] == dname_to_labels("example.com-")
 
     # raises on empty labels
-    assert_raise DNS.Msg.Error, fn -> dname_to_labels("example..com") end
-    assert_raise DNS.Msg.Error, fn -> dname_to_labels(".example.com") end
-    assert_raise DNS.Msg.Error, fn -> dname_to_labels("example.com..") end
+    assert_raise DNS.MsgError, fn -> dname_to_labels("example..com") end
+    assert_raise DNS.MsgError, fn -> dname_to_labels(".example.com") end
+    assert_raise DNS.MsgError, fn -> dname_to_labels("example.com..") end
 
     # raises on labels too long
     name = String.duplicate("a", 64) <> ".com"
-    assert_raise DNS.Msg.Error, fn -> dname_to_labels(name) end
+    assert_raise DNS.MsgError, fn -> dname_to_labels(name) end
 
     # raises on name too long
     name =
@@ -59,7 +59,7 @@ defmodule DNS.UtilsTest do
       |> Kernel.<>(".abcdefghijklmnopqrstuv")
 
     assert 254 = String.length(name)
-    assert_raise DNS.Msg.Error, fn -> dname_to_labels(name) end
+    assert_raise DNS.MsgError, fn -> dname_to_labels(name) end
   end
 
   test "DNAME - dname_valid?" do
@@ -94,13 +94,13 @@ defmodule DNS.UtilsTest do
     assert <<7, "eXampLe", 3, "cOm", 0>> = dname_encode("eXampLe.cOm")
 
     # raises on empty labels
-    assert_raise DNS.Msg.Error, fn -> dname_encode("example..com") end
-    assert_raise DNS.Msg.Error, fn -> dname_encode(".example.com") end
-    assert_raise DNS.Msg.Error, fn -> dname_encode("example.com..") end
+    assert_raise DNS.MsgError, fn -> dname_encode("example..com") end
+    assert_raise DNS.MsgError, fn -> dname_encode(".example.com") end
+    assert_raise DNS.MsgError, fn -> dname_encode("example.com..") end
 
     # raises on labels too long
     name = String.duplicate("a", 64) <> ".com"
-    assert_raise DNS.Msg.Error, fn -> dname_encode(name) end
+    assert_raise DNS.MsgError, fn -> dname_encode(name) end
 
     # raises on name too long
     name =
@@ -110,7 +110,7 @@ defmodule DNS.UtilsTest do
       |> Kernel.<>(".abcdefghijklmnopqrstuv")
 
     assert 254 = String.length(name)
-    assert_raise DNS.Msg.Error, fn -> dname_encode(name) end
+    assert_raise DNS.MsgError, fn -> dname_encode(name) end
   end
 
   test "DNAME - dname_reverse" do
@@ -120,13 +120,13 @@ defmodule DNS.UtilsTest do
     assert "com.example.www" == dname_reverse("www.example.com.")
 
     # raises on empty labels
-    assert_raise DNS.Msg.Error, fn -> dname_reverse("example..com") end
-    assert_raise DNS.Msg.Error, fn -> dname_reverse(".example.com") end
-    assert_raise DNS.Msg.Error, fn -> dname_reverse("example.com..") end
+    assert_raise DNS.MsgError, fn -> dname_reverse("example..com") end
+    assert_raise DNS.MsgError, fn -> dname_reverse(".example.com") end
+    assert_raise DNS.MsgError, fn -> dname_reverse("example.com..") end
 
     # raises on labels too long
     name = String.duplicate("a", 64) <> ".com"
-    assert_raise DNS.Msg.Error, fn -> dname_reverse(name) end
+    assert_raise DNS.MsgError, fn -> dname_reverse(name) end
 
     # raises on name too long
     name =
@@ -136,6 +136,6 @@ defmodule DNS.UtilsTest do
       |> Kernel.<>(".abcdefghijklmnopqrstuv")
 
     assert 254 = String.length(name)
-    assert_raise DNS.Msg.Error, fn -> dname_reverse(name) end
+    assert_raise DNS.MsgError, fn -> dname_reverse(name) end
   end
 end

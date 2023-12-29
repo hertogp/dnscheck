@@ -1,15 +1,24 @@
-defmodule DNS.Msg.Error do
+defmodule DNS.MsgError do
   @moduledoc """
-  `t:DNS.Msg.Error.t/0` provides information on errors encountered when
+  `t:DNS.MsgError.t/0` provides information on errors encountered when
   encoding or decoding a `t:DNS.Msg.t/0`.
 
   """
 
+  # Only 3 error types needed:
+  # :eencode -> error during encoding
+  # :edecode -> error during decoding
+  # :eoption -> error during creation
+  # the errmsg should say what was wrong
+
   @reasons %{
+    eencode: "[encode]",
+    edecode: "[decode]",
+    eoption: "[option]",
+    ebinary: "[binary]",
     eclass: "[invalid class]",
     edname: "[invalid dname]",
     eedns: "[invalid edns]",
-    eencode: "[RR encoding]",
     efield: "[invalid field]",
     elabel: "[invalid label]",
     enotimp: "[not implemented]",
@@ -57,9 +66,9 @@ defmodule DNS.Msg.Error do
   end
 
   @doc """
-  Raises a DNS.Msg.Error exception for given `reason` and `data` provided.
+  Raises a DNS.MsgError exception for given `reason` and `data` provided.
 
-  A convenience function used in various modules that do `import DNS.Msg.Error
+  A convenience function used in various modules that do `import DNS.MsgError
   only: [error: 2]`.
 
   """

@@ -33,7 +33,7 @@ defmodule DNS.Msg.Qtn do
 
   """
 
-  import DNS.Msg.Error, only: [error: 2]
+  import DNS.MsgError, only: [error: 2]
   import DNS.Utils
   import DNS.Msg.Terms
 
@@ -102,7 +102,7 @@ defmodule DNS.Msg.Qtn do
     # new(..) will not set calculated wdata-field
     {offset2 + 4, %{qtn | wdata: wdata}}
   rescue
-    _ -> error(:ewdata, "Qtn.decode error at offset #{offset}")
+    _ -> error(:edecode, "Qtn decode error at offset #{offset}")
   end
 
   # [[ ENCODE ]]
@@ -135,6 +135,9 @@ defmodule DNS.Msg.Qtn do
     type = encode_rr_type(qtn.type)
     %{qtn | wdata: <<dname::binary, type::16, class::16>>}
   end
+
+  def encode(arg),
+    do: error(:eencode, "Qtn expected a Qtn.t, got: #{inspect(arg, limit: 50)}")
 
   # [[ NEW ]]
 
@@ -171,7 +174,7 @@ defmodule DNS.Msg.Qtn do
   that would only result in `FORMERROR`'s.
 
       iex> new(name: "example.123")
-      ** (DNS.Msg.Error) [invalid dname] example.123
+      ** (DNS.MsgError) [invalid dname] example.123
 
   But if you want to see how nameservers respond to illegal names, you can set
   the name manually before encoding, since `encode/1` uses `DNS.Msg.Fields.dname_encode/1` which
@@ -200,7 +203,7 @@ defmodule DNS.Msg.Qtn do
   @doc """
   Sets `Qtn` `t:t/0` fields for given `opts`, if the key refers to a field.
 
-  Raises `DNS.Msg.Error` if a value is out of bounds.
+  Raises `DNS.MsgError` if a value is out of bounds.
 
   Ignores `:wdata` since that should be set via `encode/1`, which is called
   by `DNS.Msg.encode/1` when constructing the wire format of a DNS message.
@@ -224,7 +227,7 @@ defmodule DNS.Msg.Qtn do
       }
 
       iex> new() |> put(name: "example.123")
-      ** (DNS.Msg.Error) [invalid dname] example.123
+      ** (DNS.MsgError) [invalid dname] example.123
 
   """
   @spec put(t(), Keyword.t()) :: t()

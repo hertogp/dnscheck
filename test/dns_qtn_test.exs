@@ -47,14 +47,14 @@ defmodule DNS.Msg.QtnTest do
     assert q.wdata == <<>>
 
     # raises on illegal domain names
-    assert_raise DNS.Msg.Error, fn -> new(name: "example.-com") end
-    assert_raise DNS.Msg.Error, fn -> new(name: "example.com-") end
-    assert_raise DNS.Msg.Error, fn -> new(name: "example.123") end
-    assert_raise DNS.Msg.Error, fn -> new(name: 123) end
+    assert_raise DNS.MsgError, fn -> new(name: "example.-com") end
+    assert_raise DNS.MsgError, fn -> new(name: "example.com-") end
+    assert_raise DNS.MsgError, fn -> new(name: "example.123") end
+    assert_raise DNS.MsgError, fn -> new(name: 123) end
 
     # raises on invalid numbers
-    assert_raise DNS.Msg.Error, fn -> new(type: 65536) end
-    assert_raise DNS.Msg.Error, fn -> new(class: 65536) end
+    assert_raise DNS.MsgError, fn -> new(type: 65536) end
+    assert_raise DNS.MsgError, fn -> new(class: 65536) end
 
     # manual override of name and encoding is possible
     q = %{new() | name: "example.123"}
@@ -64,13 +64,13 @@ defmodule DNS.Msg.QtnTest do
 
     q = %{new() | name: 123}
     assert q.name == 123
-    assert_raise DNS.Msg.Error, fn -> encode(q) end
+    assert_raise DNS.MsgError, fn -> encode(q) end
 
     # encoding numbers cannot be overridden
     q = %{new() | type: 65536}
-    assert_raise DNS.Msg.Error, fn -> encode(q) end
+    assert_raise DNS.MsgError, fn -> encode(q) end
     q = %{new() | class: 65536}
-    assert_raise DNS.Msg.Error, fn -> encode(q) end
+    assert_raise DNS.MsgError, fn -> encode(q) end
 
     # ignores unknown options
     q = new(foo: :bar)
@@ -92,10 +92,10 @@ defmodule DNS.Msg.QtnTest do
 
     # raises on illegal name and numbers
     q = new()
-    assert_raise DNS.Msg.Error, fn -> put(q, name: "example.123") end
-    assert_raise DNS.Msg.Error, fn -> put(q, name: 123) end
-    assert_raise DNS.Msg.Error, fn -> put(q, type: 65536) end
-    assert_raise DNS.Msg.Error, fn -> put(q, class: 65536) end
+    assert_raise DNS.MsgError, fn -> put(q, name: "example.123") end
+    assert_raise DNS.MsgError, fn -> put(q, name: 123) end
+    assert_raise DNS.MsgError, fn -> put(q, type: 65536) end
+    assert_raise DNS.MsgError, fn -> put(q, class: 65536) end
   end
 
   test "String.chars implementation" do

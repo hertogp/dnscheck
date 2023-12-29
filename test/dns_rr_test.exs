@@ -7,20 +7,20 @@ defmodule DNS.Msg.RRTest do
 
   test "RR - new" do
     # input validation
-    assert_raise DNS.Msg.Error, fn -> RR.new(type: 65536) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(type: -1) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(class: 65536) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(class: -1) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(ttl: 4_294_967_296) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(rdmap: []) end
-    assert_raise DNS.Msg.Error, fn -> RR.new(name: "example.123") end
-    assert_raise DNS.Msg.Error, fn -> RR.new(name: "example.-om") end
-    assert_raise DNS.Msg.Error, fn -> RR.new(name: "example.co-") end
+    assert_raise DNS.MsgError, fn -> RR.new(type: 65536) end
+    assert_raise DNS.MsgError, fn -> RR.new(type: -1) end
+    assert_raise DNS.MsgError, fn -> RR.new(class: 65536) end
+    assert_raise DNS.MsgError, fn -> RR.new(class: -1) end
+    assert_raise DNS.MsgError, fn -> RR.new(ttl: 4_294_967_296) end
+    assert_raise DNS.MsgError, fn -> RR.new(rdmap: []) end
+    assert_raise DNS.MsgError, fn -> RR.new(name: "example.123") end
+    assert_raise DNS.MsgError, fn -> RR.new(name: "example.-om") end
+    assert_raise DNS.MsgError, fn -> RR.new(name: "example.co-") end
     label_too_long = String.duplicate("a", 64)
-    assert_raise DNS.Msg.Error, fn -> RR.new(name: label_too_long <> ".com") end
+    assert_raise DNS.MsgError, fn -> RR.new(name: label_too_long <> ".com") end
     name_too_long = String.duplicate("aa", 84) |> String.replace("aa", "a.a") |> Kernel.<>(".a")
     assert 254 == String.length(name_too_long)
-    assert_raise DNS.Msg.Error, fn -> RR.new(name: name_too_long) end
+    assert_raise DNS.MsgError, fn -> RR.new(name: name_too_long) end
 
     # new accepts :rdata, sets :raw to true, ignores :wdata
     rr = RR.new(rdlen: 7, rdata: <<"not-ignored">>, wdata: <<"ignored">>)
@@ -49,22 +49,22 @@ defmodule DNS.Msg.RRTest do
   test "RR - put" do
     rr = RR.new()
     # input validation
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, type: 65536) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, type: -1) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, type: "A") end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, type: :a) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, class: 65536) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, class: -1) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, ttl: 4_294_967_296) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, rdmap: []) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, name: "example.123") end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, name: "example.-om") end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, name: "example.co-") end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, type: 65536) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, type: -1) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, type: "A") end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, type: :a) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, class: 65536) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, class: -1) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, ttl: 4_294_967_296) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, rdmap: []) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, name: "example.123") end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, name: "example.-om") end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, name: "example.co-") end
     label_too_long = String.duplicate("a", 64)
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, name: label_too_long <> ".com") end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, name: label_too_long <> ".com") end
     name_too_long = String.duplicate("aa", 84) |> String.replace("aa", "a.a") |> Kernel.<>(".a")
     assert 254 == String.length(name_too_long)
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, name: name_too_long) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, name: name_too_long) end
 
     # good put's
     rr =
@@ -101,11 +101,11 @@ defmodule DNS.Msg.RRTest do
     assert rr == rr2
 
     # raises when missing fields or invalid rdmap values
-    assert_raise DNS.Msg.Error, fn -> RR.new() |> RR.encode() end
-    assert_raise DNS.Msg.Error, fn -> RR.new(rdmap: %{}) |> RR.encode() end
-    assert_raise DNS.Msg.Error, fn -> RR.new(type: :A, rdmap: %{ip: "acdc::"}) |> RR.encode() end
+    assert_raise DNS.MsgError, fn -> RR.new() |> RR.encode() end
+    assert_raise DNS.MsgError, fn -> RR.new(rdmap: %{}) |> RR.encode() end
+    assert_raise DNS.MsgError, fn -> RR.new(type: :A, rdmap: %{ip: "acdc::"}) |> RR.encode() end
 
-    assert_raise DNS.Msg.Error, fn ->
+    assert_raise DNS.MsgError, fn ->
       RR.new(type: :AAAA, rdmap: %{ip: "1.1.1.1"}) |> RR.encode()
     end
   end
@@ -132,12 +132,12 @@ defmodule DNS.Msg.RRTest do
     assert <<0, 0, 41, 5, 130, 0, 0, 128, 0, 0, 0>> == rr.wdata
 
     # input validation on known options
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, xrcode: 256) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, version: 256) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, do: 2) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, z: 32768) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, bufsize: 65536) end
-    assert_raise DNS.Msg.Error, fn -> RR.put(rr, opts: %{}) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, xrcode: 256) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, version: 256) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, do: 2) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, z: 32768) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, bufsize: 65536) end
+    assert_raise DNS.MsgError, fn -> RR.put(rr, opts: %{}) end
   end
 
   test "EDNS0 - NSID" do
@@ -161,11 +161,11 @@ defmodule DNS.Msg.RRTest do
     assert offset == String.length(rr.wdata)
     assert rr == rr2
 
-    assert_raise DNS.Msg.Error, fn ->
+    assert_raise DNS.MsgError, fn ->
       RR.new(type: :OPT, opts: [{:EXPIRE, 2 ** 32}]) |> RR.encode()
     end
 
-    assert_raise DNS.Msg.Error, fn ->
+    assert_raise DNS.MsgError, fn ->
       RR.new(type: :OPT, opts: [{:EXPIRE, -1}]) |> RR.encode()
     end
   end
@@ -186,23 +186,23 @@ defmodule DNS.Msg.RRTest do
     assert rr == rr2
 
     # raises on invalid cookies
-    assert_raise DNS.Msg.Error, fn ->
+    assert_raise DNS.MsgError, fn ->
       RR.new(type: :OPT, opts: [{:COOKIE, {"1234567", "87654321"}}]) |> RR.encode()
     end
 
     cookie_too_short = "1234567"
 
-    assert_raise DNS.Msg.Error, fn ->
+    assert_raise DNS.MsgError, fn ->
       RR.new(type: :OPT, opts: [{:COOKIE, {cookie_too_short, "87654321"}}]) |> RR.encode()
     end
 
-    assert_raise DNS.Msg.Error, fn ->
+    assert_raise DNS.MsgError, fn ->
       RR.new(type: :OPT, opts: [{:COOKIE, {"12345678", cookie_too_short}}]) |> RR.encode()
     end
 
     cookie_too_long = String.duplicate("a", 33)
 
-    assert_raise DNS.Msg.Error, fn ->
+    assert_raise DNS.MsgError, fn ->
       RR.new(type: :OPT, opts: [{:COOKIE, {"12345678", cookie_too_long}}]) |> RR.encode()
     end
   end
