@@ -415,7 +415,7 @@ defmodule DNS.Msg.RR do
       ** (DNS.MsgError) [create] RR domain name invalid: 123
 
   """
-  @spec new(Keyword.t()) :: t
+  @spec new(Keyword.t()) :: t | no_return
   def new(opts \\ []),
     do: put(%__MODULE__{}, opts)
 
@@ -452,7 +452,7 @@ defmodule DNS.Msg.RR do
       ** (DNS.MsgError) [create] RR type valid range is 0..65535, got: 65536
 
   """
-  @spec put(t(), Keyword.t()) :: t
+  @spec put(t(), Keyword.t()) :: t | no_return
   def put(rr, opts)
 
   def put(%__MODULE__{} = rr, opts) do
@@ -480,19 +480,19 @@ defmodule DNS.Msg.RR do
   defp do_put({k, v}, rr) when k == :class do
     if is_u16(encode_dns_class(v)),
       do: Map.put(rr, k, decode_dns_class(v)),
-      else: error(:evalue, "#{k}, got: #{inspect(v)}")
+      else: error(:ecreate, "#{k}, got: #{inspect(v)}")
   end
 
   defp do_put({k, v}, rr) when k == :ttl do
     if is_u32(v),
       do: Map.put(rr, k, v),
-      else: error(:evalue, "#{k}, got #{inspect(v)}")
+      else: error(:ecreate, "#{k}, got #{inspect(v)}")
   end
 
   defp do_put({k, v}, rr) when k == :rdmap do
     if is_map(v),
       do: Map.put(rr, k, v),
-      else: error(:erdmap, "expected a map, got: #{inspect(v)}")
+      else: error(:ecreate, "expected a map, got: #{inspect(v)}")
   end
 
   defp do_put({k, v}, rr) when k == :rdata do
@@ -503,7 +503,7 @@ defmodule DNS.Msg.RR do
       |> Map.put(:rdlen, byte_size(v))
       |> Map.put(:raw, true)
     else
-      error(:erdata, "expected a binary, got: #{inspect(v)}")
+      error(:ecreate, "expected a binary, got: #{inspect(v)}")
     end
   end
 
@@ -539,13 +539,13 @@ defmodule DNS.Msg.RR do
   #
   # are implemented.
   # """
-  @spec do_edns(Keyword.t()) :: t
+  @spec do_edns(Keyword.t()) :: t | no_return
   defp do_edns(opts) do
     type = :OPT
     class = Keyword.get(opts, :bufsize, 1410)
 
     unless is_u16(class),
-      do: error(:erdmap, "bufsize range is 0..65535, got: #{inspect(class)}")
+      do: error(:ecreate, "bufsize range is 0..65535, got: #{inspect(class)}")
 
     # construct EDNS(0) TTL
     xrcode = Keyword.get(opts, :xrcode, 0) |> encode_dns_rcode()
@@ -561,14 +561,15 @@ defmodule DNS.Msg.RR do
         <<ttl::32>> = <<xrcode::8, version::8, do_bit::1, z::15>>
         ttl
       else
-        _ -> error(:erdmap, "invalid value(s) in #{inspect(opts)}")
+        _ -> error(:ecreate, "invalid value(s) in #{inspect(opts)}")
       end
 
     # get opts options
     edns_opts = Keyword.get(opts, :opts, [])
 
     unless Keyword.keyword?(edns_opts),
-      do: error(:erdmap, "ENDS0 opts should be list of {CODE, DATA}, got: %#{inspect(edns_opts)}")
+      do:
+        error(:ecreate, "ENDS0 opts should be list of {CODE, DATA}, got: %#{inspect(edns_opts)}")
 
     edns_opts = edns_opts |> Enum.map(fn {opt, dta} -> {decode_rropt_code(opt), dta} end)
 
@@ -625,7 +626,7 @@ defmodule DNS.Msg.RR do
       }
 
   """
-  @spec encode(t) :: t
+  @spec encode(t) :: t | no_return
   def encode(%__MODULE__{} = rr) do
     name = dname_encode(rr.name)
     class = encode_dns_class(rr.class)
@@ -648,7 +649,7 @@ defmodule DNS.Msg.RR do
 
   # [[ ENCODE RDATA ]]
 
-  @spec encode_rdata(type, map) :: binary
+  @spec encode_rdata(type, map) :: binary | no_return
   defp encode_rdata(type, rdmap)
 
   # IN A (1)
@@ -789,7 +790,7 @@ defmodule DNS.Msg.RR do
       |> Enum.map(fn txt -> <<String.length(txt)::8, txt::binary>> end)
       |> Enum.join()
     else
-      _ -> error(:erdmap, "TXT RR, got: #{inspect(m)}")
+      _ -> error(:eencode, "TXT RR, got: #{inspect(m)}")
     end
   end
 
@@ -918,7 +919,7 @@ defmodule DNS.Msg.RR do
         1 -> ip_encode(gwstr, :ip4)
         2 -> ip_encode(gwstr, :ip6)
         3 -> dname_encode(gwstr)
-        n -> error(:eformat, "IPSECKEY gateway type unknown: #{inspect(n)}")
+        n -> error(:eencode, "IPSECKEY gateway type unknown: #{inspect(n)}")
       end
 
     <<pref::8, gtype::8, algo::8, gateway::binary, pubkey::binary>>
@@ -1064,7 +1065,7 @@ defmodule DNS.Msg.RR do
         1 -> ip_encode(relay, :ip4)
         2 -> ip_encode(relay, :ip6)
         3 -> dname_encode(relay)
-        n -> error(:eformat, "AMTRELAY relay type unknown: #{inspect(n)}")
+        n -> error(:eencode, "AMTRELAY relay type unknown: #{inspect(n)}")
       end
 
     <<pref::8, d::bitstring-size(1), type::7, relay::binary>>
@@ -1073,7 +1074,7 @@ defmodule DNS.Msg.RR do
   ## [[ catch all ]]
   # we're here because rr.raw is false and hence we MUST be able to encode!
   defp encode_rdata(type, rdmap),
-    do: error(:errtype, "RR #{type}, cannot encode rdmap: #{inspect(rdmap)}")
+    do: error(:eencode, "#{type}, cannot encode rdmap: #{inspect(rdmap)}")
 
   # [[ ENCODE EDNS0 opts ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
@@ -1081,7 +1082,7 @@ defmodule DNS.Msg.RR do
   # Encodes an EDNS0 option to a binary.
   #
   # """
-  @spec encode_edns_opt(atom | non_neg_integer, any) :: binary
+  @spec encode_edns_opt(atom | non_neg_integer, any) :: binary | no_return
   defp encode_edns_opt(code, data)
 
   defp encode_edns_opt(:NSID, data) when is_binary(data) do
@@ -1091,7 +1092,7 @@ defmodule DNS.Msg.RR do
 
     if is_u16(len),
       do: <<3::16, len::16, data::binary>>,
-      else: error(:eedns, "EDNS NSID too long")
+      else: error(:eencode, "EDNS NSID too long")
   end
 
   defp encode_edns_opt(:EXPIRE, seconds) when is_u32(seconds) do
@@ -1109,14 +1110,14 @@ defmodule DNS.Msg.RR do
       <<10::16, len::16, client::binary-size(clen), server::binary-size(slen)>>
     else
       if clen != 8,
-        do: error(:eedns, "EDNS COOKIE: invalid client cookie #{inspect(client)}"),
-        else: error(:eedns, "EDNS COOKIE: invalid server cookie #{inspect(server)}")
+        do: error(:eencode, "EDNS COOKIE: invalid client cookie #{inspect(client)}"),
+        else: error(:eencode, "EDNS COOKIE: invalid server cookie #{inspect(server)}")
     end
   end
 
   # [[ catch all]]
   defp encode_edns_opt(code, data),
-    do: error(:eedns, "EDNS0 option #{inspect(code)} unknown or data illegal #{inspect(data)}")
+    do: error(:eencode, "EDNS0 option #{inspect(code)} unknown or data illegal #{inspect(data)}")
 
   # [[ DECODE RR ]]
 
@@ -1148,7 +1149,7 @@ defmodule DNS.Msg.RR do
                   0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 127, 0, 0, 1>>
        }}
   """
-  @spec decode(offset, binary) :: {offset, t}
+  @spec decode(offset, binary) :: {offset, t} | no_return
   def decode(offset, msg) do
     {offset2, name} = dname_decode(offset, msg)
 
@@ -1166,7 +1167,7 @@ defmodule DNS.Msg.RR do
 
     {offset, rr}
   rescue
-    _ -> error(:ewdata, "RR.decode error at offset #{offset}")
+    _ -> error(:edecode, "decode error at offset #{offset}")
   end
 
   # [[ DECODE RDATA ]]
@@ -1175,7 +1176,7 @@ defmodule DNS.Msg.RR do
   # - rdlen is needed since some RR's have rdlen of 0
   # - offset, msg is needed since rdata may contain compressed domain names
 
-  @spec decode_rdata(type, offset, length, binary) :: map
+  @spec decode_rdata(type, offset, length, binary) :: map | no_return
   defp decode_rdata(type, offset, rdlen, msg)
 
   # IN A (1)
@@ -1333,7 +1334,7 @@ defmodule DNS.Msg.RR do
       case dta do
         [addr] -> {addr, ""}
         [addr, sa] -> {addr, sa}
-        _ -> error(:eformat, "ISDN RR, unexpected data #{inspect(rdata)}")
+        _ -> error(:edecode, "ISDN, unexpected data #{inspect(rdata)}")
       end
 
     %{address: addr, sa: sa}
@@ -1470,7 +1471,7 @@ defmodule DNS.Msg.RR do
           {name, pkey}
 
         n ->
-          error(:eformat, "IPSECKEY gateway type unknown: #{inspect(n)}")
+          error(:edecode, "IPSECKEY gateway type unknown: #{inspect(n)}")
       end
 
     %{
@@ -1698,7 +1699,7 @@ defmodule DNS.Msg.RR do
         1 -> ip_decode(0, :ip4, rest) |> elem(1)
         2 -> ip_decode(0, :ip6, rest) |> elem(1)
         3 -> dname_decode(offset + 2, msg) |> elem(1)
-        n -> error(:eformat, "AMTRELAY relay type unknown: #{inspect(n)}")
+        n -> error(:edecode, "AMTRELAY relay type unknown: #{inspect(n)}")
       end
 
     %{pref: pref, d: d, type: type, relay: relay}
@@ -1716,7 +1717,8 @@ defmodule DNS.Msg.RR do
   # Decode an EDNS option if we can, keep raw otherwise.
   #
   # """
-  @spec decode_edns_opt(non_neg_integer, non_neg_integer, binary) :: {non_neg_integer, any}
+  @spec decode_edns_opt(non_neg_integer, non_neg_integer, binary) ::
+          {non_neg_integer, any} | no_return
   defp decode_edns_opt(code, len, data)
   # Note: not sure if decode_ends_opt should get an offset & org msg binary
   # since some options might refer to other parts of the msg (e.g. name
@@ -1749,7 +1751,7 @@ defmodule DNS.Msg.RR do
       <<client::binary-size(8), server::binary>> = data
       {:COOKIE, {client, server}}
     else
-      error(:eedns, "EDNS0 COOKIE, invalid DNS cookies in #{inspect(data)}")
+      error(:edecode, "EDNS0 COOKIE, invalid DNS cookies in #{inspect(data)}")
     end
   end
 
@@ -1826,7 +1828,7 @@ defmodule DNS.Msg.RR do
   defp bitmap_pad(bmap, b),
     do: bitmap_pad(<<bmap::bitstring, b::1>>)
 
-  @spec bool_encode(boolean | 0 | 1) :: bitstring
+  @spec bool_encode(boolean | 0 | 1) :: bitstring | no_return
   defp bool_encode(n) do
     # note the lack of bool_decode, since that's better done directly
     case n do
@@ -1834,11 +1836,11 @@ defmodule DNS.Msg.RR do
       false -> <<0::1>>
       0 -> <<0::1>>
       1 -> <<1::1>>
-      n -> error(:evalue, "expected true,false,0 or 1, got: #{inspect(n)}")
+      n -> error(:eencode, "expected true,false,0 or 1, got: #{inspect(n)}")
     end
   end
 
-  @spec ip_decode(offset, :ip4 | :ip6, binary) :: {offset, binary}
+  @spec ip_decode(offset, :ip4 | :ip6, binary) :: {offset, binary} | no_return
   defp ip_decode(offset, version, msg) do
     {bytes, bits} =
       case version do
@@ -1850,7 +1852,7 @@ defmodule DNS.Msg.RR do
     {offset + bytes, "#{Pfx.new(<<ip::size(bits)>>, bits)}"}
   end
 
-  @spec ip_encode(any, :ip4 | :ip6) :: binary
+  @spec ip_encode(any, :ip4 | :ip6) :: binary | no_return
   defp ip_encode(ip, version) do
     # uses padr to ensure `addr` is a full address, not just a prefix
     with {:ok, pfx} <- Pfx.parse(ip),
@@ -1859,18 +1861,18 @@ defmodule DNS.Msg.RR do
       addr.bits
     else
       _ ->
-        error(:erdmap, "invalid IP address, got: #{inspect(ip)}")
+        error(:eencode, "invalid IP address, got: #{inspect(ip)}")
     end
   end
 
   # used to check rdmap for mandatory fields when encoding an RR
   # a convencience func that also gives consistent, clear error messages
   defp required(type, map, field, check \\ fn _ -> true end) do
-    v = Map.get(map, field) || error(:erdmap, "#{type} RR missing #{field}, got: #{inspect(map)}")
+    v = Map.get(map, field) || error(:encode, "#{type} RR missing #{field}, got: #{inspect(map)}")
 
     if check.(v),
       do: v,
-      else: error(:erdmap, "#{type} RR, field #{inspect(field)} has invalid value: #{inspect(v)}")
+      else: error(:eencode, "#{type}, field #{inspect(field)} has invalid value: #{inspect(v)}")
   end
 end
 

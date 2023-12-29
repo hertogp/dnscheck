@@ -12,22 +12,9 @@ defmodule DNS.MsgError do
   # the errmsg should say what was wrong
 
   @reasons %{
-    eencode: "[encode]",
-    edecode: "[decode]",
     ecreate: "[create]",
-    eclass: "[invalid class]",
-    edname: "[invalid dname]",
-    eedns: "[invalid edns]",
-    efield: "[invalid field]",
-    elabel: "[invalid label]",
-    enotimp: "[not implemented]",
-    eopcode: "[invalid opcode]",
-    ercode: "[invalid (x)rcode]",
-    erdata: "[invalid rdata]",
-    erdmap: "[invalid rdmap]",
-    errtype: "[unknown RR type]",
-    evalue: "[invalid value]",
-    ewdata: "[invalid wire data]"
+    edecode: "[decode]",
+    eencode: "[encode]"
   }
 
   defexception [:reason, :data]
