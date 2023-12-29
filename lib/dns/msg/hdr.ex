@@ -190,12 +190,15 @@ defmodule DNS.Msg.Hdr do
 
       # in a header, an rcode value should fit in 4 bites
       iex> new() |> put(rcode: 16)
-      ** (DNS.MsgError) [create] rcode valid range is 0..15, got: 16
+      ** (DNS.MsgError) [create] Hdr rcode valid range is 0..15, got: 16
 
   """
   @spec put(t(), Keyword.t()) :: t() | no_return
-  def put(%__MODULE__{} = hdr, opts \\ []),
-    do: Enum.reduce(opts, %{hdr | wdata: <<>>}, &do_put/2)
+  def put(%__MODULE__{} = hdr, opts \\ []) do
+    Enum.reduce(opts, %{hdr | wdata: <<>>}, &do_put/2)
+  rescue
+    e in DNS.MsgError -> error(:ecreate, "Hdr " <> e.data)
+  end
 
   # skip setting protected/calculated fields
   defp do_put({k, _}, hdr) when k in [:__struct__, :wdata],
