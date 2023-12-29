@@ -90,7 +90,7 @@ defmodule DNS.Msg.Qtn do
       "more stuff"
 
   """
-  @spec decode(offset, binary) :: {offset, t()}
+  @spec decode(offset, binary) :: {offset, t()} | no_return
   def decode(offset, msg) do
     # offset2 - offset might not equal byte_size(name) due to name compression
     {offset2, name} = dname_decode(offset, msg)
@@ -102,6 +102,7 @@ defmodule DNS.Msg.Qtn do
     # new(..) will not set calculated wdata-field
     {offset2 + 4, %{qtn | wdata: wdata}}
   rescue
+    e in DNS.MsgError -> error(:edecode, "Qtn " <> e.data)
     _ -> error(:edecode, "Qtn decode error at offset #{offset}")
   end
 
@@ -128,7 +129,7 @@ defmodule DNS.Msg.Qtn do
        }
 
   """
-  @spec encode(t()) :: t()
+  @spec encode(t()) :: t() | no_return
   def encode(%__MODULE__{} = qtn) do
     dname = dname_encode(qtn.name)
     class = encode_dns_class(qtn.class)
@@ -176,7 +177,7 @@ defmodule DNS.Msg.Qtn do
   that would only result in `FORMERROR`'s.
 
       iex> new(name: "example.123")
-      ** (DNS.MsgError) [invalid dname] example.123
+      ** (DNS.MsgError) [create] Qtn domain name invalid: example.123
 
   But if you want to see how nameservers respond to illegal names, you can set
   the name manually before encoding, since `encode/1` uses `DNS.Msg.Fields.dname_encode/1` which
@@ -196,9 +197,12 @@ defmodule DNS.Msg.Qtn do
       "example.com.\tIN\tA"
 
   """
-  @spec new(Keyword.t()) :: t()
-  def new(opts \\ []),
-    do: Enum.reduce(opts, %__MODULE__{}, &do_put/2)
+  @spec new(Keyword.t()) :: t() | no_return
+  def new(opts \\ []) do
+    Enum.reduce(opts, %__MODULE__{}, &do_put/2)
+  rescue
+    e in DNS.MsgError -> error(:ecreate, "Qtn " <> e.data)
+  end
 
   # [[ PUT ]]
 
@@ -229,18 +233,21 @@ defmodule DNS.Msg.Qtn do
       }
 
       iex> new() |> put(name: "example.123")
-      ** (DNS.MsgError) [invalid dname] example.123
+      ** (DNS.MsgError) [create] Qtn domain name invalid: example.123
 
   """
   @spec put(t(), Keyword.t()) :: t()
-  def put(%__MODULE__{} = qtn, opts \\ []),
-    do: Enum.reduce(opts, %{qtn | wdata: <<>>}, &do_put/2)
+  def put(%__MODULE__{} = qtn, opts \\ []) do
+    Enum.reduce(opts, %{qtn | wdata: <<>>}, &do_put/2)
+  rescue
+    e in DNS.MsgError -> error(:ecreate, "Qtn " <> e.data)
+  end
 
   @spec do_put({atom, any}, t()) :: t()
   defp do_put({k, v}, qtn) when k == :name do
     if dname_valid?(v),
       do: Map.put(qtn, k, v),
-      else: error(:edname, "#{v}")
+      else: error(:ecreate, "domain name invalid: #{v}")
   end
 
   defp do_put({k, v}, qtn) when k == :type,

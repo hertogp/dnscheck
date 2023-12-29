@@ -44,8 +44,8 @@ defmodule DNS.Utils do
   defp do_labels(a, l, <<?.>>), do: add_label(a, l)
   defp do_labels(a, l, <<?., rest::binary>>), do: do_labels(add_label(a, l), <<>>, rest)
   defp do_labels(a, l, <<c::8, rest::binary>>), do: do_labels(a, <<l::binary, c::8>>, rest)
-  defp add_label(_a, l) when byte_size(l) > 63, do: error(:edname, "label > 63")
-  defp add_label(_a, l) when byte_size(l) < 1, do: error(:edname, "empty label")
+  defp add_label(_a, l) when byte_size(l) > 63, do: error(:eencode, "domain name label > 63")
+  defp add_label(_a, l) when byte_size(l) < 1, do: error(:eencode, "domain name has empty label")
   defp add_label(a, l), do: [l | a]
 
   # [[ DNAME ]]
@@ -90,13 +90,13 @@ defmodule DNS.Utils do
 
       <<3::2, ptr::14, _::binary>> ->
         if Map.has_key?(seen, ptr),
-          do: error(:edname, "domain name compression loop at offset #{offset}")
+          do: error(:edecode, "domain name compression loop at offset #{offset}")
 
         {_, name} = dname_decode(ptr, msg, name, Map.put(seen, ptr, []))
         {offset + 2, name}
 
       _ ->
-        error(:edname, "bad label after #{inspect(name)}")
+        error(:edecode, "domain name, bad label after #{inspect(name)}")
     end
   end
 
@@ -127,7 +127,7 @@ defmodule DNS.Utils do
       []
 
       iex> dname_to_labels(".example.com")
-      ** (DNS.MsgError) [invalid dname] empty label
+      ** (DNS.MsgError) [encode] domain name has empty label
 
   """
   def dname_to_labels(name) when is_binary(name) do
@@ -147,13 +147,13 @@ defmodule DNS.Utils do
     # miss out on an empty label at the end, e.g. in a.b.. since a.b. itself is valid.
 
     if Enum.join(labels, ".") |> String.length() > 253,
-      do: error(:edname, "name > 253 characters")
+      do: error(:eencode, "domain name > 253 characters")
 
     labels
   end
 
   def dname_to_labels(noname),
-    do: error(:edname, "#{inspect(noname)}")
+    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
 
   @doc """
   Checks whether a domain `name` is valid, or not.
@@ -272,7 +272,7 @@ defmodule DNS.Utils do
   end
 
   def dname_encode(noname),
-    do: error(:edname, "#{inspect(noname)}")
+    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
 
   @doc """
   Reverses the labels for given a domain `name`.
@@ -289,7 +289,7 @@ defmodule DNS.Utils do
       "com.example"
 
       iex> dname_reverse(".example.com")
-      ** (DNS.MsgError) [invalid dname] empty label
+      ** (DNS.MsgError) [encode] domain name has empty label
 
   """
   @spec dname_reverse(binary) :: binary
@@ -303,13 +303,13 @@ defmodule DNS.Utils do
       |> Enum.join(".")
 
     if String.length(name) > 253,
-      do: error(:edname, "name > 253 characters")
+      do: error(:eencode, "domain name > 253 characters")
 
     name
   end
 
   def dname_reverse(noname),
-    do: error(:edname, "#{inspect(noname)}")
+    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
 
   @doc ~S"""
   Returns true if given domain names are equal, false otherwise
