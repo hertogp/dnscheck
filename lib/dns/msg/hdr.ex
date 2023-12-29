@@ -145,7 +145,7 @@ defmodule DNS.Msg.Hdr do
 
 
   """
-  @spec new(Keyword.t()) :: t()
+  @spec new(Keyword.t()) :: t() | no_return
   def new(opts \\ []) do
     Enum.reduce(opts, %__MODULE__{}, &do_put/2)
   rescue
@@ -193,7 +193,7 @@ defmodule DNS.Msg.Hdr do
       ** (DNS.MsgError) [create] rcode valid range is 0..15, got: 16
 
   """
-  @spec put(t(), Keyword.t()) :: t()
+  @spec put(t(), Keyword.t()) :: t() | no_return
   def put(%__MODULE__{} = hdr, opts \\ []),
     do: Enum.reduce(opts, %{hdr | wdata: <<>>}, &do_put/2)
 
@@ -241,7 +241,7 @@ defmodule DNS.Msg.Hdr do
       <<0, 0, 129, 3, 0, 0, 0, 0, 0, 0, 0, 0>>
 
   """
-  @spec encode(t) :: t
+  @spec encode(t) :: t | no_return
   def encode(%__MODULE__{} = hdr) do
     opcode = encode_dns_opcode(hdr.opcode)
     rcode = encode_dns_rcode(hdr.rcode)
@@ -290,7 +290,7 @@ defmodule DNS.Msg.Hdr do
        }}
 
   """
-  @spec decode(offset, binary) :: {offset, t}
+  @spec decode(offset, binary) :: {offset, t} | no_return
   def decode(offset \\ 0, msg) do
     <<_::binary-size(offset), id::16, qr::1, opcode::4, aa::1, tc::1, rd::1, ra::1, z::1, ad::1,
       cd::1, rcode::4, qdc::16, anc::16, nsc::16, arc::16, _::binary>> = msg
