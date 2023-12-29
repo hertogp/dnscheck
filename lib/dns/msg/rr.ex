@@ -449,7 +449,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new() |> put(type: 65536)
-      ** (DNS.MsgError) [unknown RR type] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [decode] RR type valid range is 0..65535, got: 65536
 
   """
   @spec put(t(), Keyword.t()) :: t

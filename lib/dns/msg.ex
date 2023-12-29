@@ -103,7 +103,7 @@ defmodule DNS.Msg do
       }
 
       iex> DNS.Msg.new(hdr: [qr: 3])
-      {:error, %DNS.MsgError{reason: :evalue, data: "Hdr.qr valid range 0..1,  got: 3"}}
+      {:error, %DNS.MsgError{reason: :ecreate, data: "Hdr qr valid range 0..1,  got: 3"}}
   """
   @spec new(Keyword.t()) :: {:ok, t()} | {:error, DNS.MsgError.t()}
   def new(opts \\ []) do

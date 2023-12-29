@@ -1,21 +1,20 @@
 defmodule DNS.MsgError do
   @moduledoc """
   `t:DNS.MsgError.t/0` provides information on errors encountered when
-  encoding or decoding a `t:DNS.Msg.t/0`.
+  creating, encoding or decoding a `t:DNS.Msg.t/0`.
 
   """
 
   # Only 3 error types needed:
   # :eencode -> error during encoding
   # :edecode -> error during decoding
-  # :eoption -> error during creation
+  # :ecreate -> error during creation
   # the errmsg should say what was wrong
 
   @reasons %{
     eencode: "[encode]",
     edecode: "[decode]",
-    eoption: "[option]",
-    ebinary: "[binary]",
+    ecreate: "[create]",
     eclass: "[invalid class]",
     edname: "[invalid dname]",
     eedns: "[invalid edns]",

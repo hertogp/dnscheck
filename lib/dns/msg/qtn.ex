@@ -134,6 +134,8 @@ defmodule DNS.Msg.Qtn do
     class = encode_dns_class(qtn.class)
     type = encode_rr_type(qtn.type)
     %{qtn | wdata: <<dname::binary, type::16, class::16>>}
+  rescue
+    e in DNS.MsgError -> error(:eencode, "Qtn " <> e.data)
   end
 
   def encode(arg),

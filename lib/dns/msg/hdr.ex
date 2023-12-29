@@ -141,13 +141,16 @@ defmodule DNS.Msg.Hdr do
       }
 
       iex> new(opcode: 16)
-      ** (DNS.MsgError) [invalid opcode] valid range is 0..15, got: 16
+      ** (DNS.MsgError) [create] Hdr opcode valid range is 0..15, got: 16
 
 
   """
   @spec new(Keyword.t()) :: t()
-  def new(opts \\ []),
-    do: Enum.reduce(opts, %__MODULE__{}, &do_put/2)
+  def new(opts \\ []) do
+    Enum.reduce(opts, %__MODULE__{}, &do_put/2)
+  rescue
+    e in DNS.MsgError -> error(:ecreate, "Hdr " <> e.data)
+  end
 
   @doc """
   Sets `Hdr` `t:t/0` fields for given `opts`, if the key refers to a field.
@@ -187,7 +190,7 @@ defmodule DNS.Msg.Hdr do
 
       # in a header, an rcode value should fit in 4 bites
       iex> new() |> put(rcode: 16)
-      ** (DNS.MsgError) [invalid (x)rcode] valid range is 0..15, got: 16
+      ** (DNS.MsgError) [create] rcode valid range is 0..15, got: 16
 
   """
   @spec put(t(), Keyword.t()) :: t()
@@ -202,7 +205,7 @@ defmodule DNS.Msg.Hdr do
   defp do_put({k, v}, hdr) when k in [:qr, :aa, :tc, :rd, :ra, :z, :ad, :cd] do
     if v in 0..1,
       do: Map.put(hdr, k, v),
-      else: error(:evalue, "Hdr.#{k} valid range 0..1,  got: #{inspect(v)}")
+      else: error(:ecreate, "#{k} valid range 0..1,  got: #{inspect(v)}")
   end
 
   # opcode & rcode store atom's if possible, numbers otherwise
@@ -214,14 +217,14 @@ defmodule DNS.Msg.Hdr do
     # encode_dns_rcode accepts extended rcodes as well, so check for v in 0..15
     if encode_dns_rcode(v) in 0..15,
       do: Map.put(hdr, k, decode_dns_rcode(v)),
-      else: error(:ercode, "valid range is 0..15, got: #{inspect(v)}")
+      else: error(:ecreate, "rcode valid range is 0..15, got: #{inspect(v)}")
   end
 
   # check 16bit values
   defp do_put({k, v}, hdr) when k in [:id, :qdc, :anc, :nsc, :arc] do
     if v in 0..65535,
       do: Map.put(hdr, k, v),
-      else: error(:evalue, "Hdr #{k} valid range 0..65535, got #{inspect(v)}")
+      else: error(:ecreate, "#{k} valid range 0..65535, got #{inspect(v)}")
   end
 
   # silently ignore unknown options
@@ -249,6 +252,8 @@ defmodule DNS.Msg.Hdr do
       <<hdr.id::16, hdr.qr::1, opcode::4, hdr.aa::1, hdr.tc::1, hdr.rd::1, hdr.ra::1, hdr.z::1,
         hdr.ad::1, hdr.cd::1, rcode::4, hdr.qdc::16, hdr.anc::16, hdr.nsc::16, hdr.arc::16>>
     )
+  rescue
+    e in DNS.MsgError -> error(:eencode, "Hdr " <> e.data)
   end
 
   @doc """
@@ -311,7 +316,8 @@ defmodule DNS.Msg.Hdr do
 
     {12, %{hdr | wdata: :binary.part(msg, {0, 12})}}
   rescue
-    _ -> error(:ewdata, "Hdr.decode error at offset #{offset}")
+    e in DNS.MsgError -> error(:edecode, "Hdr " <> e.data)
+    _ -> error(:edecode, "Hdr decode error at offset #{offset}")
   end
 end
 

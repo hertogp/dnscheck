@@ -25,44 +25,46 @@ defmodule DNS.Msg.Terms do
 
   # [[ Helpers ]]
 
-  @spec do_encode(map, atom | non_neg_integer, atom, Range.t()) :: non_neg_integer
+  @spec do_encode(map, atom | non_neg_integer, binary, Range.t()) ::
+          non_neg_integer | DNS.MsgError.t()
   defp do_encode(_map, key, label, range) when is_integer(key) do
     if key in range,
       do: key,
-      else: error(label, "valid range is #{inspect(range)}, got: #{key}")
+      else: error(:eencode, "#{label} valid range is #{inspect(range)}, got: #{key}")
   end
 
   defp do_encode(map, key, label, _range) when is_atom(key) do
     # assumes values in map are always in range
     case Map.get(map, key) do
-      nil -> error(label, "#{key} is unknown")
+      nil -> error(:eencode, "#{label} #{key} is unknown")
       num -> num
     end
   end
 
   defp do_encode(_map, key, label, _range),
-    do: error(label, "Expected an atom or non neg number, got: #{inspect(key)}")
+    do: error(:eencode, "#{label} expected an atom or non neg number, got: #{inspect(key)}")
 
-  @spec do_decode(map, atom | non_neg_integer, atom, Range.t()) :: atom | non_neg_integer
+  @spec do_decode(map, atom | non_neg_integer, binary, Range.t()) ::
+          atom | non_neg_integer | DNS.MsgError.t()
   defp do_decode(map, key, label, _range) when is_atom(key) do
     if Map.has_key?(map, key),
       do: key,
-      else: error(label, "#{key} is unknown")
+      else: error(:edecode, "#{label} #{key} is unknown")
   end
 
   defp do_decode(map, key, label, range) when is_integer(key) do
-    if key in range do
-      case Map.get(map, key) do
-        nil -> key
-        name -> name
-      end
-    else
-      error(label, "valid range is #{inspect(range)}, got: #{key}")
+    unless key in range,
+      do: error(:edecode, "#{label} valid range is #{inspect(range)}, got: #{key}")
+
+    # return name if we can, otherwise just the (valid) number
+    case Map.get(map, key) do
+      nil -> key
+      name -> name
     end
   end
 
   defp do_decode(_map, key, label, _range),
-    do: error(label, "Expected an atom or non neg number, got: #{inspect(key)}")
+    do: error(:edecode, "#{label} expected an atom or non neg number, got: #{inspect(key)}")
 
   # [[ IP PROTOCOL ]]
   # https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml
@@ -119,17 +121,17 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_dns_class(:ABBA)
-      ** (DNS.MsgError) [invalid class] ABBA is unknown
+      ** (DNS.MsgError) [encode] class ABBA is unknown
 
       # raises on invalid values
       iex> encode_dns_class(65536)
-      ** (DNS.MsgError) [invalid class] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [encode] class valid range is 0..65535, got: 65536
 
 
   """
   @spec encode_dns_class(atom | non_neg_integer) :: non_neg_integer
   def encode_dns_class(class),
-    do: do_encode(@dns_classes, class, :eclass, 0..65535)
+    do: do_encode(@dns_classes, class, "class", 0..65535)
 
   @doc """
   Decode a DNS class to its name, if possible.
@@ -149,16 +151,16 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_dns_class(:ABBA)
-      ** (DNS.MsgError) [invalid class] ABBA is unknown
+      ** (DNS.MsgError) [decode] class ABBA is unknown
 
       # raises on invalid values
       iex> decode_dns_class(65536)
-      ** (DNS.MsgError) [invalid class] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [decode] class valid range is 0..65535, got: 65536
 
   """
   @spec decode_dns_class(atom | non_neg_integer) :: atom | non_neg_integer()
   def decode_dns_class(class),
-    do: do_decode(@dns_classes, class, :eclass, 0..65535)
+    do: do_decode(@dns_classes, class, "class", 0..65535)
 
   # [[ DNS OPCODES ]]
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5
@@ -197,16 +199,16 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_dns_opcode(:ABC)
-      ** (DNS.MsgError) [invalid opcode] ABC is unknown
+      ** (DNS.MsgError) [encode] opcode ABC is unknown
 
       # raises on invalid values
       iex> encode_dns_opcode(16)
-      ** (DNS.MsgError) [invalid opcode] valid range is 0..15, got: 16
+      ** (DNS.MsgError) [encode] opcode valid range is 0..15, got: 16
 
   """
   @spec encode_dns_opcode(atom | non_neg_integer) :: non_neg_integer
   def encode_dns_opcode(opcode),
-    do: do_encode(@dns_opcodes, opcode, :eopcode, 0..15)
+    do: do_encode(@dns_opcodes, opcode, "opcode", 0..15)
 
   @doc """
   Decode a DNS opcode to its name, if possible.
@@ -229,16 +231,16 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_dns_opcode(:FOO_BAR)
-      ** (DNS.MsgError) [invalid opcode] FOO_BAR is unknown
+      ** (DNS.MsgError) [decode] opcode FOO_BAR is unknown
 
       # raises on invalid values
       iex> decode_dns_opcode(16)
-      ** (DNS.MsgError) [invalid opcode] valid range is 0..15, got: 16
+      ** (DNS.MsgError) [decode] opcode valid range is 0..15, got: 16
 
   """
   @spec decode_dns_opcode(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_dns_opcode(opcode),
-    do: do_decode(@dns_opcodes, opcode, :eopcode, 0..15)
+    do: do_decode(@dns_opcodes, opcode, "opcode", 0..15)
 
   # [[ DNS RCODE ]]
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6
@@ -296,17 +298,17 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_dns_rcode(:ABC)
-      ** (DNS.MsgError) [invalid (x)rcode] ABC is unknown
+      ** (DNS.MsgError) [encode] rcode ABC is unknown
 
       # raises on invalid values
       iex> encode_dns_rcode(65536)
-      ** (DNS.MsgError) [invalid (x)rcode] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [encode] rcode valid range is 0..65535, got: 65536
 
 
   """
   @spec encode_dns_rcode(atom | non_neg_integer) :: non_neg_integer()
   def encode_dns_rcode(rcode),
-    do: do_encode(@dns_rcodes, rcode, :ercode, 0..65535)
+    do: do_encode(@dns_rcodes, rcode, "rcode", 0..65535)
 
   @doc """
   Decode an DNS RCODE to its name, if possible.
@@ -323,16 +325,16 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_dns_rcode(:OKIDOKI)
-      ** (DNS.MsgError) [invalid (x)rcode] OKIDOKI is unknown
+      ** (DNS.MsgError) [decode] rcode OKIDOKI is unknown
 
       # raises on invalid values
       iex> decode_dns_rcode(65536)
-      ** (DNS.MsgError) [invalid (x)rcode] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [decode] rcode valid range is 0..65535, got: 65536
 
   """
   @spec decode_dns_rcode(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_dns_rcode(rcode),
-    do: do_decode(@dns_rcodes, rcode, :ercode, 0..65535)
+    do: do_decode(@dns_rcodes, rcode, "rcode", 0..65535)
 
   # [[ DNS TYPE ]]
   # See:
@@ -422,16 +424,16 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_rr_type(:ABC)
-      ** (DNS.MsgError) [unknown RR type] ABC is unknown
+      ** (DNS.MsgError) [encode] RR type ABC is unknown
 
       # raises on invalid value
       iex> encode_rr_type(65536)
-      ** (DNS.MsgError) [unknown RR type] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [encode] RR type valid range is 0..65535, got: 65536
 
   """
   @spec encode_rr_type(atom | non_neg_integer) :: non_neg_integer()
   def encode_rr_type(type),
-    do: do_encode(@rr_types, type, :errtype, 0..65535)
+    do: do_encode(@rr_types, type, "RR type", 0..65535)
 
   @doc """
   Decode an RR type to its name, if possible.
@@ -455,11 +457,11 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_rr_type(:ABC)
-      ** (DNS.MsgError) [unknown RR type] ABC is unknown
+      ** (DNS.MsgError) [decode] RR type ABC is unknown
 
       # raises on invalid value
       iex> decode_rr_type(65536)
-      ** (DNS.MsgError) [unknown RR type] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [decode] RR type valid range is 0..65535, got: 65536
 
   See:
   - [IANA - DNS Params](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
@@ -468,7 +470,7 @@ defmodule DNS.Msg.Terms do
   """
   @spec decode_rr_type(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_rr_type(type),
-    do: do_decode(@rr_types, type, :errtype, 0..65535)
+    do: do_decode(@rr_types, type, "RR type", 0..65535)
 
   # [[ DNS OPT CODE ]]
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
@@ -516,16 +518,16 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> encode_rropt_code(:ABC)
-      ** (DNS.MsgError) [invalid edns] ABC is unknown
+      ** (DNS.MsgError) [encode] EDNS0 option code ABC is unknown
 
       # raises on invalid values
       iex> encode_rropt_code(65536)
-      ** (DNS.MsgError) [invalid edns] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [encode] EDNS0 option code valid range is 0..65535, got: 65536
 
   """
   @spec encode_rropt_code(atom | non_neg_integer) :: non_neg_integer()
   def encode_rropt_code(code),
-    do: do_encode(@dns_rropt_codes, code, :eedns, 0..65535)
+    do: do_encode(@dns_rropt_codes, code, "EDNS0 option code", 0..65535)
 
   @doc """
   Decode an [EDNS0
@@ -548,17 +550,17 @@ defmodule DNS.Msg.Terms do
 
       # raises on unknown names
       iex> decode_rropt_code(:ABC)
-      ** (DNS.MsgError) [invalid edns] ABC is unknown
+      ** (DNS.MsgError) [decode] EDNS0 option code ABC is unknown
 
       # raises on invalid values
       iex> decode_rropt_code(65536)
-      ** (DNS.MsgError) [invalid edns] valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [decode] EDNS0 option code valid range is 0..65535, got: 65536
 
 
   """
   @spec decode_rropt_code(atom | non_neg_integer) :: atom | non_neg_integer
   def decode_rropt_code(code),
-    do: do_decode(@dns_rropt_codes, code, :eedns, 0..65535)
+    do: do_decode(@dns_rropt_codes, code, "EDNS0 option code", 0..65535)
 
   # [[ DNSSEC ALGO TYPEs ]]
   @dnssec_algo_types %{
