@@ -141,10 +141,12 @@ defmodule DNS.Msg do
   # [[ ENCODE MSG ]]
 
   @doc """
-  Sets `wdata`-field of the `Msg` `t:t/0` struct and its sections.
+  Sets `wdata`-field of the given `msg` and its sections.
+
+
   """
   @spec encode(t) :: t | {:error, DNS.MsgError.t()}
-  def encode(msg) do
+  def encode(%__MODULE__{} = msg) do
     # donot assume qd/an/ns/ad counters are set properly!
     lengths = [
       qdc: length(msg.question),

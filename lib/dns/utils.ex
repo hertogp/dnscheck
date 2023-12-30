@@ -359,6 +359,43 @@ defmodule DNS.Utils do
   def dname_equal?(_, _),
     do: false
 
+  @doc """
+  Returns true is child is a subzone of parent, false otherwise.
+
+  Also returns false if either child or parent has:
+  - a label longer than 63 octets
+  - an empty label
+
+  ## Examples
+
+      iex> dname_subzone?("example.com", "com")
+      true
+
+      iex> dname_subzone?("host.example.com", "example.com")
+      true
+
+      iex> dname_subzone?("example.com.", "com")
+      true
+
+      iex> dname_subzone?("example.com.", "example.com")
+      false
+
+      iex> dname_subzone?("example.com.", "net")
+      false
+
+
+  """
+  @spec dname_subzone?(binary, binary) :: boolean
+  def dname_subzone?(child, parent) do
+    child = dname_to_labels(child)
+    parent = dname_to_labels(parent)
+    clast = List.last(child)
+    plast = List.last(parent)
+    dname_equal?(clast, plast) and length(child) > length(parent)
+  rescue
+    _ -> false
+  end
+
   # [[ MAPS ]]
 
   @doc """
@@ -398,16 +435,17 @@ defmodule DNS.Utils do
     do: System.monotonic_time(:millisecond)
 
   @doc false
-  # create T, a future, monotonic point in time
+  # create a (usually future), monotonic point in time
   def time(timeout),
     do: now() + timeout
 
   @doc false
-  # how many ms till `time` (a T)
+  # remaining time [ms] till we reach the monotonic `time`
   def timeout(time),
     do: timeout(now(), time)
 
-  # how many ms has time T left?
+  @doc false
+  # how many ms till monotonic `time` reaches monotonic `endtime`
   def timeout(time, endtime) do
     if time < endtime,
       do: endtime - time,

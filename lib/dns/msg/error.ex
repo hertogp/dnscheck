@@ -58,7 +58,7 @@ defmodule DNS.MsgError do
   only: [error: 2]`.
 
   """
-  @spec error(atom, any) :: Error.t()
+  @spec error(atom, any) :: no_return
   def error(reason, data) when is_binary(data),
     do: raise(exception(reason, data))
 
