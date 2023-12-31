@@ -16,7 +16,7 @@ defmodule DNS.CacheTest do
 
   test "init/0 clears the cache" do
     rr = RR.new(name: "example.com", ttl: 100)
-    :ok = Cache.put(rr)
+    assert Cache.put(rr)
     assert 1 == Cache.size()
     Cache.init()
     assert 0 == Cache.size()
@@ -24,7 +24,7 @@ defmodule DNS.CacheTest do
 
   test "get/3 won't serve stale entries" do
     rr = RR.new(name: "example.com", type: :A, ttl: 1)
-    :ok = Cache.put(rr)
+    assert Cache.put(rr)
     assert 1 == Cache.size()
 
     # stale entries are removed during retrieval
@@ -36,7 +36,7 @@ defmodule DNS.CacheTest do
 
   test "get/3 adjusts RR's TTL before serving" do
     rr = RR.new(name: "example.com", type: :A, ttl: 10)
-    :ok = Cache.put(rr)
+    assert Cache.put(rr)
     assert 1 == Cache.size()
 
     Utils.wait(1100)
@@ -54,7 +54,7 @@ defmodule DNS.CacheTest do
   test "get/put use keys with normalized domain names" do
     assert 0 == DNS.Cache.size()
     rr = RR.new(name: "eXamPlE.cOm", type: :A, ttl: 10)
-    assert :ok == Cache.put(rr)
+    assert Cache.put(rr)
     [rr] = Cache.get("example.com", :IN, :A)
     assert "eXamPlE.cOm" == rr.name
 
@@ -73,7 +73,7 @@ defmodule DNS.CacheTest do
     # trailing dot in cached name
     rr = RR.new(name: "eXamPlE.cOm.", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"})
     assert "eXamPlE.cOm." == rr.name
-    assert :ok == Cache.put(rr)
+    assert Cache.put(rr)
 
     # search with/without trailing dot
     [rr] = Cache.get("example.com", :IN, :A)
@@ -88,10 +88,10 @@ defmodule DNS.CacheTest do
     # trailing dot
     rr = RR.new(name: "eXamPlE.cOm.", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"})
     assert "eXamPlE.cOm." == rr.name
-    assert :ok == Cache.put(rr)
+    assert Cache.put(rr)
     # no trailing dot
     rr = RR.new(name: "example.com", type: :A, ttl: 20, rdmap: %{ip: "10.2.1.1"})
-    assert :ok == Cache.put(rr)
+    assert Cache.put(rr)
     assert 1 == Cache.size()
     rrs = Cache.get("ExAmPlE.com", :IN, :A)
     assert 2 == length(rrs)
@@ -100,7 +100,7 @@ defmodule DNS.CacheTest do
   test "put/1 wipes wiredata from non-raw RR's" do
     rr = RR.new(name: "example.com", ttl: 100)
     rr = %{rr | rdata: "non-sense", wdata: "more non-sense"}
-    :ok = Cache.put(rr)
+    assert Cache.put(rr)
     [rr2] = Cache.get("example.com", :IN, :A)
     assert 0 == byte_size(rr2.rdata)
     assert 0 == byte_size(rr2.wdata)
@@ -109,7 +109,7 @@ defmodule DNS.CacheTest do
   test "put/1 does NOT wipe wiredata from raw RR's" do
     rr = RR.new(name: "example.com", ttl: 100)
     rr = %{rr | rdata: "non-sense", wdata: "more non-sense", raw: true}
-    :ok = Cache.put(rr)
+    assert Cache.put(rr)
     [rr2] = Cache.get("example.com", :IN, :A)
     assert "non-sense" == rr2.rdata
     assert "more non-sense" == rr2.wdata
@@ -118,28 +118,28 @@ defmodule DNS.CacheTest do
   test "put/1 ignores QTYPEs and pseudo types" do
     for type <- [:OPT, :ANY, :IXFR, :AXFR, :*, :MAILA, :MAILB] do
       rr = RR.new(name: "example.com", ttl: 100, type: type)
-      assert :ignored == Cache.put(rr)
+      refute Cache.put(rr)
     end
   end
 
   test "put/1 reports :error for invalid input" do
     rr = RR.new(name: "example.com", ttl: 100)
-    assert :error == Cache.put(%{rr | type: 65536})
-    assert :error == Cache.put(%{rr | class: 65536})
+    refute Cache.put(%{rr | type: 65536})
+    refute Cache.put(%{rr | class: 65536})
   end
 
   test "put/1 ignores TTL's < 1" do
     rr = RR.new(name: "example.com", ttl: 0)
-    assert :ignored == Cache.put(rr)
-    assert :ignored == Cache.put(%{rr | ttl: -1111})
+    refute Cache.put(rr)
+    refute Cache.put(%{rr | ttl: -1111})
   end
 
   test "put/1 replaces existing RR's" do
     rr = RR.new(name: "example.com", ttl: 1000)
-    :ok = Cache.put(rr)
+    assert Cache.put(rr)
 
     for n <- 1..100,
-        do: :ok = Cache.put(%{rr | ttl: rr.ttl + n})
+        do: assert(Cache.put(%{rr | ttl: rr.ttl + n}))
 
     [rr] = Cache.get("example.com", :IN, :A)
     assert "example.com" == rr.name
@@ -167,7 +167,7 @@ defmodule DNS.CacheTest do
     ]
 
     {:ok, msg} = DNS.Msg.new(qtn: qtn, ans: ans, aut: aut, add: add)
-    assert :ok == Cache.put(msg)
+    assert Cache.put(msg)
     rrs = Cache.get("example.com", :IN, :A)
     assert 2 == length(rrs)
     assert 1 == Cache.size()
@@ -197,7 +197,7 @@ defmodule DNS.CacheTest do
 
     # since msg.answers is not empty, authority/additional get ignored
     {:ok, msg} = DNS.Msg.new(qtn: qtn, ans: ans, aut: aut, add: add)
-    assert :ok == Cache.put(msg)
+    assert Cache.put(msg)
     rrs = Cache.get("example.com", :IN, :A)
     assert 0 == length(rrs)
     assert 0 == Cache.size()
@@ -222,7 +222,7 @@ defmodule DNS.CacheTest do
 
     # since msg.answers is empty, cache only relevant RR's from authority/additional
     {:ok, msg} = DNS.Msg.new(qtn: qtn, aut: aut, add: add)
-    assert :ok == Cache.put(msg)
+    assert Cache.put(msg)
     assert [] == Cache.get("example.com", :IN, :A)
     [ns] = Cache.get("com", :IN, :NS)
     assert "com" == ns.name

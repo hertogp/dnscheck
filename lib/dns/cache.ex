@@ -44,7 +44,8 @@ defmodule DNS.Cache do
       iex> init()
       :dns_cache
       iex> rr = DNS.Msg.RR.new(ttl: 10)
-      iex> :ok = put(rr)
+      iex> put(rr)
+      true
       iex> size()
       1
       # (re)initializing means cache is cleared
@@ -97,7 +98,8 @@ defmodule DNS.Cache do
 
       iex> rr = DNS.Msg.RR.new(name: "example.org", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"})
       iex> init()
-      iex> :ok = put(rr)
+      iex> put(rr)
+      true
       iex> [{key, [{_t, crr}]}] = :ets.tab2list(:dns_cache)
       iex> key
       {"example.org", 1, 1}
@@ -107,15 +109,21 @@ defmodule DNS.Cache do
       # TTL < 1 is ignored
       iex> rr = DNS.Msg.RR.new(name: "example.org", type: :A, ttl: 0, rdmap: %{ip: "10.1.1.1"})
       iex> put(rr)
-      :ignored
+      false
 
-      # ignores unrelated RR's in answer section
+
+      # unrelated RR's in answer section are filtered out
       iex> init()
       iex> qtn = [[name: "example.com", type: :A]]
       iex> ans = [[name: "example.com", type: :A, ttl: 100, rdmap: %{ip: "10.2.1.1"}],
       ...>        [name: "example.net", type: :A, ttl: 100, rdmap: %{ip: "10.3.1.1"}]]
       iex> {:ok, msg} = DNS.Msg.new(qtn: qtn, ans: ans)
-      iex> :ok = put(msg)
+      iex> size()
+      0
+      iex> put(msg)
+      true
+      iex> size()
+      1
       iex> get("example.net", :IN, :A)
       []
       iex> [rr] = get("example.com", :IN, :A)
@@ -129,7 +137,8 @@ defmodule DNS.Cache do
       iex> add = [[name: "ns1.tld-servers.com", type: :A, ttl: 100, rdmap: %{ip: "10.4.1.1"}],
       ...>        [name: "ns1.tld-servers.net", type: :A, ttl: 100, rdmap: %{ip: "10.5.1.1"}]]
       iex> {:ok, msg} = DNS.Msg.new(qtn: qtn, aut: aut, add: add)
-      iex> :ok = put(msg)
+      iex> put(msg)
+      false
       iex> get("ns1.tld-servers.net", :IN, :A)
       []
       iex> [rr] = get("ns1.tld-servers.com", :IN, :A)
@@ -137,15 +146,15 @@ defmodule DNS.Cache do
       iex> {"ns1.tld-servers.com", "10.4.1.1"}
 
   """
-  @spec put(DNS.Msg.RR.t() | DNS.Msg.t()) :: :ok | :ignored | :error
+  @spec put(DNS.Msg.RR.t() | DNS.Msg.t()) :: boolean
   def put(rr_or_msg)
 
   def put(%DNS.Msg.RR{} = rr) do
     # make_key before check on cacheable? so we get error not ignored
     # if one of the key components is illegal.
-    with {:ttl, false} <- {:ttl, rr.ttl < 1},
+    with true <- rr.ttl > 0,
          {:ok, key} <- make_key(rr.name, rr.class, rr.type),
-         {:rr, true} <- {:rr, cacheable?(rr)},
+         true <- cacheable?(rr),
          {:ok, crrs} <- lookup(key),
          crrs <- Enum.filter(crrs, &alive?/1),
          crrs <- Enum.filter(crrs, fn {_ttd, crr} -> crr.rdmap != rr.rdmap end) do
@@ -155,11 +164,8 @@ defmodule DNS.Cache do
           else: %{rr | rdata: "", wdata: ""}
 
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
-      :ok
     else
-      {:rr, _} -> :ignored
-      {:ttl, _} -> :ignored
-      _ -> :error
+      _e -> false
     end
   end
 
@@ -178,13 +184,12 @@ defmodule DNS.Cache do
       answers
       |> Enum.filter(fn rr -> dname_equal?(rr.name, qname) end)
       |> Enum.map(&put/1)
-
-      :ok
+      |> Enum.all?(& &1)
     else
-      _ -> :error
+      _ -> false
     end
   rescue
-    _ -> :error
+    _ -> false
   end
 
   def put(%DNS.Msg{answer: []} = msg) do
@@ -204,8 +209,7 @@ defmodule DNS.Cache do
     |> Enum.filter(fn rr -> rr.name in nsnames end)
     |> Enum.concat(rrs)
     |> Enum.map(&put/1)
-
-    :ok
+    |> Enum.all?(& &1)
   end
 
   @doc """
@@ -222,7 +226,7 @@ defmodule DNS.Cache do
       iex> rr = DNS.Msg.RR.new(name: "example.com", type: :A, ttl: 1, rdmap: %{ip: "10.1.1.1"})
       iex> init()
       iex> put(rr)
-      :ok
+      true
       iex> get("example.com", :IN, :A)
       [%DNS.Msg.RR{
         name: "example.com",
