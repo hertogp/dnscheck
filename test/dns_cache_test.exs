@@ -151,6 +151,8 @@ defmodule DNS.CacheTest do
     # remember that TTL must be > 1, or it'll get :ignored
     qtn = [[name: "example.com", type: :A]]
 
+    hdr = [qr: 1, opcode: :QUERY]
+
     ans = [
       [name: "example.com", type: :A, ttl: 100, rdmap: %{ip: "10.1.1.1"}],
       [name: "example.com", type: :A, ttl: 100, rdmap: %{ip: "10.1.1.2"}]
@@ -166,7 +168,7 @@ defmodule DNS.CacheTest do
       [name: "ns2.example.com", type: :A, ttl: 100, rdmap: %{ip: "10.1.1.4"}]
     ]
 
-    {:ok, msg} = DNS.Msg.new(qtn: qtn, ans: ans, aut: aut, add: add)
+    {:ok, msg} = DNS.Msg.new(hdr: hdr, qtn: qtn, ans: ans, aut: aut, add: add)
     assert Cache.put(msg)
     rrs = Cache.get("example.com", :IN, :A)
     assert 2 == length(rrs)
@@ -179,6 +181,8 @@ defmodule DNS.CacheTest do
   test "put/1 ignores RR's in answer section if not relevant to the qname" do
     # remember that TTL must be > 1, or it'll get :ignored
     qtn = [[name: "example.com", type: :A]]
+
+    hdr = [qr: 1, opcode: :QUERY]
 
     ans = [
       [name: "example.net", type: :A, ttl: 100, rdmap: %{ip: "10.1.1.1"}],
@@ -196,7 +200,7 @@ defmodule DNS.CacheTest do
     ]
 
     # since msg.answers is not empty, authority/additional get ignored
-    {:ok, msg} = DNS.Msg.new(qtn: qtn, ans: ans, aut: aut, add: add)
+    {:ok, msg} = DNS.Msg.new(hdr: hdr, qtn: qtn, ans: ans, aut: aut, add: add)
     assert Cache.put(msg)
     rrs = Cache.get("example.com", :IN, :A)
     assert 0 == length(rrs)

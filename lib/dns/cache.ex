@@ -114,10 +114,11 @@ defmodule DNS.Cache do
 
       # unrelated RR's in answer section are filtered out
       iex> init()
+      iex> hdr = [opcode: :QUERY, qr: 1]
       iex> qtn = [[name: "example.com", type: :A]]
       iex> ans = [[name: "example.com", type: :A, ttl: 100, rdmap: %{ip: "10.2.1.1"}],
       ...>        [name: "example.net", type: :A, ttl: 100, rdmap: %{ip: "10.3.1.1"}]]
-      iex> {:ok, msg} = DNS.Msg.new(qtn: qtn, ans: ans)
+      iex> {:ok, msg} = DNS.Msg.new(hdr: hdr, qtn: qtn, ans: ans)
       iex> size()
       0
       iex> put(msg)
@@ -128,7 +129,7 @@ defmodule DNS.Cache do
       []
       iex> [rr] = get("example.com", :IN, :A)
       iex> {rr.name, rr.rdmap.ip}
-      iex> {"example.com", "10.2.1.1"}
+      {"example.com", "10.2.1.1"}
 
       # ignores unrelated RR's in additional section
       iex> init()
@@ -177,7 +178,9 @@ defmodule DNS.Cache do
     # - RR's of responses of dubious reliability (cache poisoning)
     # Sometimes cache data MUST be replaced
     # - cached data is not authoritative and the current msg is authoritative
-    with qtns <- msg.question,
+    with true <- msg.header.qr == 1,
+         true <- msg.header.opcode in [0, :QUERY],
+         qtns <- msg.question,
          qtn <- hd(qtns),
          qname <- qtn.name,
          answers <- msg.answer do
