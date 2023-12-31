@@ -145,7 +145,7 @@ defmodule DNS.Msg do
 
 
   """
-  @spec encode(t) :: t | {:error, DNS.MsgError.t()}
+  @spec encode(t) :: {:ok, t} | {:error, DNS.MsgError.t()}
   def encode(%__MODULE__{} = msg) do
     # donot assume qd/an/ns/ad counters are set properly!
     lengths = [
@@ -190,7 +190,7 @@ defmodule DNS.Msg do
 
   # [[ DECODE MSG ]]
 
-  @spec decode(binary) :: t | {:error, DNS.MsgError.t()}
+  @spec decode(binary) :: {:ok, t} | {:error, DNS.MsgError.t()}
   def decode(msg) do
     {offset, hdr} = Hdr.decode(0, msg)
     {offset, qtn} = do_decode_section(hdr.qdc, offset, msg, &Qtn.decode/2, [])

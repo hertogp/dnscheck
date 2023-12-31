@@ -52,6 +52,7 @@ defmodule DNS do
   is added to the additional section of the `Msg`.
 
   """
+  @spec resolve(binary, atom | non_neg_integer, Keyword.t()) :: {:ok, DNS.Msg.t()} | {:error, any}
   def resolve(name, type, opts \\ []) do
     with {:ok, opts} <- make_options(opts),
          {:ok, qry} <- make_query(name, type, opts) do
@@ -208,6 +209,7 @@ defmodule DNS do
 
   # [[ MAKE QRY MSG ]]
 
+  @spec make_query(binary, atom | non_neg_integer, map) :: {:ok, DNS.Msg.t()} | {:error, any}
   def make_query(name, type, opts) do
     # assumes opts is safe (made by make_options)
 
@@ -221,12 +223,13 @@ defmodule DNS do
 
     case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
       {:ok, qry} -> Msg.encode(qry)
-      {:error, e} -> {e.reason, e.data}
+      {:error, e} -> {:error, e.data}
     end
   end
 
   # [[ OPTIONS ]]
 
+  @spec make_options(Keyword.t()) :: {:ok, map} | {:error, binary}
   def make_options(opts \\ []) do
     edns = opts[:do] == 1 or opts[:cd] == 1 or opts[:bufsize] != nil
     recurse = opts[:nameservers] == nil
