@@ -46,7 +46,7 @@ defmodule DNS do
   - `bufsize`, defaults to 1410 if edns0 is used
   - `do`, defaults to 0 (dnssec ok, false)
   - `cd`, defaults to 0 (dnssec check disable, fals)
-  - `nameserver`, defaults to `{{8,8,8,8}, 53}`
+  - `nameservers`, defaults to root nameservers
 
   If any of the `bufsize, do or cd` options is used, a pseudo-RR
   is added to the additional section of the `Msg`.
@@ -55,7 +55,7 @@ defmodule DNS do
   def resolve(name, type, opts \\ []) do
     with {:ok, opts} <- make_options(opts),
          {:ok, qry} <- make_query(name, type, opts) do
-      tstop = time(opts.timemax)
+      tstop = time(opts.maxtime)
       nss = opts.nameservers
       query_nss(nss, qry, opts, tstop, 0, _failed = [])
     else
@@ -130,6 +130,7 @@ defmodule DNS do
       case Pfx.type(ip) do
         :ip4 -> :inet
         :ip6 -> :inet6
+        _ -> :einvalid
       end
 
     # gen_udp:
@@ -137,15 +138,16 @@ defmodule DNS do
     # - connect -> :ok, {:error, reason}
     # - send -> :ok | {:error, posix | not_owner}
     # - recv -> {:ok, dta} | {:error, posix | not_owner | timeout}
-    # Msg.decode -> {:ok, Msg.t} | {:error, DNS.Msg.Error.t}
+    # Msg.decode -> {:ok, Msg.t} | {:error, DNS.MsgError.t}
     # TODO
     # - query_udp_recv to poll, with limit, the socket for correct answer
     # - query_udp_connect -> only receive replies from 'connected' ns
 
     opts = [:binary, iptype, active: false, recbuf: bufsize]
 
-    with {:ok, sock} <- :gen_udp.open(0, opts),
-         :ok <- :gen_udp.connect(sock, ip, port),
+    {:ok, sock} = :gen_udp.open(0, opts)
+
+    with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
          tsent <- now(),
          {:ok, {addr, port, rsp}} <- :gen_udp.recv(sock, 0, timeout) do
@@ -153,7 +155,20 @@ defmodule DNS do
       duration = now() - tsent
       log(true, "#{inspect(addr)}, port #{port}/udp replied, took #{duration} ms")
       Msg.decode(rsp)
+    else
+      {:error, %DNS.MsgError{} = e} ->
+        :gen_udp.close(sock)
+        log(true, "error decoding response from #{inspect(ip)}")
+        {:error, e.data}
+
+      other ->
+        :gen_udp.close(sock)
+        log(true, "udp server error #{inspect(ip)}, #{inspect(other)}")
+        other
     end
+  rescue
+    # :gen_udp.open may return {:error, reason} instead of {:ok, sock}
+    e in MatchError -> e.term
   end
 
   def query_tcp(_ns, _qry, 0),
@@ -210,12 +225,11 @@ defmodule DNS do
     end
   end
 
-  # [[ SEND/RECV MSG ]]
-
   # [[ OPTIONS ]]
 
   def make_options(opts \\ []) do
     edns = opts[:do] == 1 or opts[:cd] == 1 or opts[:bufsize] != nil
+    recurse = opts[:nameservers] == nil
 
     opts2 = %{
       nameservers: Keyword.get(opts, :nameservers, @root_nss),
@@ -223,6 +237,7 @@ defmodule DNS do
       verbose: Keyword.get(opts, :verbose, false),
       bufsize: Keyword.get(opts, :bufsize, 1280),
       timeout: Keyword.get(opts, :timeout, 2000),
+      maxtime: Keyword.get(opts, :maxtime, 20_000),
       retry: Keyword.get(opts, :retry, 3),
       tcp: Keyword.get(opts, :tcp, false),
       do: Keyword.get(opts, :do, 0),
@@ -235,19 +250,20 @@ defmodule DNS do
          {:vrb, true} <- {:vrb, is_boolean(opts2.verbose)},
          {:bfs, true} <- {:bfs, is_u16(opts2.bufsize)},
          {:tmo, true} <- {:tmo, opts2.timeout in 0..5000},
+         {:mxt, true} <- {:mxt, is_integer(opts2.maxtime) and opts2.maxtime > 0},
          {:ret, true} <- {:ret, opts2.retry in 0..5},
          {:tcp, true} <- {:tcp, is_boolean(opts2.tcp)},
          {:do, true} <- {:do, opts2.do in 0..1},
          {:rd, true} <- {:rd, opts2.rd in 0..1},
          {:cd, true} <- {:cd, opts2.cd in 0..1} do
-      timemax = length(opts2.nameservers) * opts2.retry * opts2.srvfail_wait
-      {:ok, Map.put(opts2, :edns, edns) |> Map.put(:timemax, timemax)}
+      {:ok, Map.put(opts2, :edns, edns) |> Map.put(:recurse, recurse)}
     else
       {:nss, _} -> {:error, "bad nameserver(s) #{inspect(opts2.nameservers)}"}
       {:srv, _} -> {:error, "srvfail_wait not in range 0..5000"}
       {:vrb, _} -> {:error, "verbose should be true or false"}
       {:bfs, _} -> {:error, "bufsize out of u16 range"}
       {:tmo, _} -> {:error, "timeout not in range 0..5000"}
+      {:mxt, _} -> {:error, "max time not non_neg_integer"}
       {:ret, _} -> {:error, "retry not in range 0..5"}
       {:tcp, _} -> {:error, "tcp should be either true or false"}
       {:do, _} -> {:error, "do bit should be either 0 or 1"}
