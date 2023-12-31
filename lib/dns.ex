@@ -12,6 +12,11 @@ defmodule DNS do
   # import DNS.Msg.Terms
   import DNS.Utils
 
+  @typedoc "Type of RR, as atom or non negative integer"
+  @type type :: atom | non_neg_integer
+  @typedoc "Nameserver is tuple of IPv4/6 address and port number"
+  @type ns :: {:inet.ipaddress(), non_neg_integer}
+
   # [[ TODO ]]
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
   # https://www.rfc-editor.org/rfc/rfc1035#section-7
@@ -55,44 +60,62 @@ defmodule DNS do
   @spec resolve(binary, atom | non_neg_integer, Keyword.t()) :: {:ok, DNS.Msg.t()} | {:error, any}
   def resolve(name, type, opts \\ []) do
     with {:ok, opts} <- make_options(opts),
-         {:ok, qry} <- make_query(name, type, opts) do
-      tstop = time(opts.maxtime)
-      nss = opts.nameservers
-      query_nss(nss, qry, opts, tstop, 0, _failed = [])
+         {:ok, qry} <- make_query(name, type, opts),
+         tstop <- time(opts.maxtime),
+         nss <- opts.nameservers,
+         {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, _failed = []) do
+      xrcode = xrcode(msg)
+      log(true, "got a reply with #{length(msg.answer)} answers, (x)rcode: #{inspect(xrcode)}")
+
+      case msg.answer == [] and opts.recurse do
+        true -> resolve_recurse(qry, msg, opts, tstop)
+        _ -> {:ok, msg}
+      end
+
+      {:ok, msg}
     else
       e -> e
     end
   end
 
-  def query_nss([] = _nss, _qry, _opts, _tstop, _n, [] = _failed),
-    do: {:error, :noservers}
+  def resolve_recurse(qry, msg, opts, tstop) do
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7.3
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7.4
+    log(true, "recursing for #{inspect(qry)}")
+    {:ok, msg}
+  end
 
-  def query_nss([] = _nss, qry, opts, tstop, n, failed),
-    do: query_nss(Enum.reverse(failed), qry, opts, tstop, n + 1, [])
+  @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
+          {:ok, DNS.Msg.t()} | {:error, any}
+  def query_nss([] = _nss, _qry, _opts, _tstop, _nth, [] = _failed),
+    do: {:error, :nxdomain}
 
-  def query_nss([ns | nss], qry, opts, tstop, n, failed) do
+  def query_nss([] = _nss, qry, opts, tstop, nth, failed),
+    do: query_nss(Enum.reverse(failed), qry, opts, tstop, nth + 1, [])
+
+  def query_nss([ns | nss], qry, opts, tstop, nth, failed) do
     cond do
       timeout(tstop) == 0 ->
-        {:error, "no more time"}
+        {:error, :timeout}
 
-      opts.retry < n ->
-        {:error, "no more retries"}
+      opts.retry < nth ->
+        {:error, :timeout}
 
       true ->
         ns = unwrap(ns)
 
-        case query_ns(ns, qry, opts, tstop, n) do
+        case query_ns(ns, qry, opts, tstop, nth) do
           {:error, :servfail} ->
             log(opts.verbose, "pushing #{inspect(ns)} onto failed list (:servfail)")
-            query_nss(nss, qry, opts, tstop, n, [wrap(ns, opts.srvfail_wait) | failed])
+            query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, :timeout} ->
             log(opts.verbose, "pushing #{inspect(ns)} onto failed list (:timeout)")
-            query_nss(nss, qry, opts, tstop, n, [wrap(ns, opts.srvfail_wait) | failed])
+            query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, error} ->
             log(opts.verbose, "dropping #{inspect(ns)}, due to error: #{inspect(error)}")
-            query_nss(nss, qry, opts, tstop, n, failed)
+            query_nss(nss, qry, opts, tstop, nth, failed)
 
           {:ok, rsp} ->
             {:ok, rsp}
@@ -100,6 +123,8 @@ defmodule DNS do
     end
   end
 
+  @spec query_ns(ns, DNS.Msg.t(), map, integer, non_neg_integer) ::
+          {:ok, DNS.Msg.t()} | {:error, any}
   def query_ns(ns, qry, opts, tstop, n) do
     # queries a single nameserver, returns {:ok, msg} | {:error, reason}
     # - servfail or timeout -> ns will be tried later again
@@ -112,7 +137,6 @@ defmodule DNS do
       query_tcp(ns, qry, timeout, tstop)
     else
       udp_timeout = udp_timeout(timeout, opts.retry, n, tstop)
-      log(true, "udp: t0 is #{udp_timeout}, t1 is #{timeout(tstop)}")
 
       case query_udp(ns, qry, udp_timeout, bufsize) do
         {:ok, rsp} when rsp.header.tc == 1 -> query_tcp(ns, qry, timeout, tstop)
@@ -121,90 +145,140 @@ defmodule DNS do
     end
   end
 
+  @spec query_udp(ns, DNS.Msg.t(), non_neg_integer, non_neg_integer) ::
+          {:ok, DNS.Msg.t()} | {:error, any}
   def query_udp(_ns, _qry, 0, _bufsize),
     do: {:error, :timeout}
 
   def query_udp({ip, port}, qry, timeout, bufsize) do
-    log(true, "udp: t0 #{inspect(timeout)}")
+    # query_udp_open checks ip/port so we don't exit with :badarg
+    # query_udp_recv polls until timeout has passed
 
-    iptype =
-      case Pfx.type(ip) do
-        :ip4 -> :inet
-        :ip6 -> :inet6
-        _ -> :einvalid
-      end
-
-    # gen_udp:
-    # - open -> {:ok, socket} | {:error, posix | :system_limit}
-    # - connect -> :ok, {:error, reason}
-    # - send -> :ok | {:error, posix | not_owner}
-    # - recv -> {:ok, dta} | {:error, posix | not_owner | timeout}
-    # Msg.decode -> {:ok, Msg.t} | {:error, DNS.MsgError.t}
-    # TODO
-    # - query_udp_recv to poll, with limit, the socket for correct answer
-    # - query_udp_connect -> only receive replies from 'connected' ns
-
-    opts = [:binary, iptype, active: false, recbuf: bufsize]
-
-    {:ok, sock} = :gen_udp.open(0, opts)
+    {:ok, sock} = query_udp_open(ip, port, bufsize)
 
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
-         tsent <- now(),
-         {:ok, {addr, port, rsp}} <- :gen_udp.recv(sock, 0, timeout) do
-      :gen_udp.close(sock)
-      duration = now() - tsent
-      log(true, "#{inspect(addr)}, port #{port}/udp replied, took #{duration} ms")
-      Msg.decode(rsp)
-    else
-      {:error, %DNS.MsgError{} = e} ->
-        :gen_udp.close(sock)
-        log(true, "error decoding response from #{inspect(ip)}")
-        {:error, e.data}
+         {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
+      # :inet.getstat(sock, [:recv_cnt, :recv_oct])
+      # |> IO.inspect(label: :getstat)
 
-      other ->
+      :gen_udp.close(sock)
+      {:ok, msg}
+    else
+      error ->
         :gen_udp.close(sock)
-        log(true, "udp server error #{inspect(ip)}, #{inspect(other)}")
-        other
+        log(true, "udp socket error #{inspect(ip)}, #{inspect(error)}")
+        error
     end
   rescue
-    # :gen_udp.open may return {:error, reason} instead of {:ok, sock}
+    # when query_udp_open returns {:error, :socket}
     e in MatchError -> e.term
   end
 
-  def query_tcp(_ns, _qry, 0),
-    do: {:error, :timeout}
-
-  def query_tcp({ip, port}, qry, timeout, tstop) do
-    # port = port + 1
-    tcp_timeout = min(timeout, timeout(tstop))
-
+  @spec query_udp_open(:inet.ipaddress(), non_neg_integer, non_neg_integer) ::
+          {:ok, :gen_udp.socket()} | {:error, any}
+  def query_udp_open(ip, port, bufsize) do
+    # avoid exit :badarg from gen_udp.open
     iptype =
       case Pfx.type(ip) do
         :ip4 -> :inet
         :ip6 -> :inet6
       end
 
-    opts = [:binary, iptype, active: false, packet: 2]
+    with true <- is_u16(port),
+         true <- iptype in [:inet, :inet6] do
+      opts = [:binary, iptype, active: false, recbuf: bufsize]
+      :gen_udp.open(0, opts)
+    else
+      false -> {:error, :badarg}
+    end
+  end
 
+  @spec query_udp_recv(:inet.socket(), DNS.Msg.t(), non_neg_integer) ::
+          {:ok, DNS.Msg.t()} | {:error, any}
+  def query_udp_recv(_sock, _qry, 0),
+    do: {:error, :timeout}
+
+  def query_udp_recv(sock, qry, timeout) do
+    # gen_udp.recv -> {:ok, dta} | {:error, posix | not_owner | timeout}
+    # - checks that header qry/rsp id's match and it's actually a reply msg
+    # - keeps trying until timeout has passed
+    # - sock is connected, so addr,port *should* be ok
+    {:ok, {ip, p}} = :inet.peername(sock)
+    log(true, "trying #{Pfx.new(ip)}:#{p}/udp, timeout #{timeout} ms")
+    tstart = now()
+    tstop = time(timeout)
+
+    with {:ok, {addr, port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
+         {:ok, msg} <- Msg.decode(rsp),
+         true <- msg.header.id == qry.header.id,
+         true <- msg.header.qr == 1 do
+      t = now() - tstart
+      b = byte_size(msg.wdata)
+      log(true, "recv'd #{b} bytes in #{t} ms, from #{Pfx.new(addr)}:#{port}/udp")
+
+      {:ok, msg}
+    else
+      false -> query_udp_recv(sock, qry, timeout(tstop))
+      other -> other
+    end
+  end
+
+  @spec query_tcp(ns, DNS.Msg.t(), non_neg_integer, non_neg_integer) ::
+          {:ok, DNS.Msg.t()} | {:error, any}
+  def query_tcp(_ns, _qry, 0, _tstop),
+    do: {:error, :timeout}
+
+  def query_tcp({ip, port}, qry, timeout, tstop) do
     # :gen_tcp.connect -> {:ok, sock} | {:error, :timeout | posix}
     # connect outside with block, so we can always close the socket
-    {:ok, sock} = :gen_tcp.connect(ip, port, opts, tcp_timeout)
+    {:ok, sock} = query_tcp_connect(ip, port, timeout, tstop)
+    t0 = now()
 
     with :ok <- :gen_tcp.send(sock, qry.wdata),
-         {:ok, rsp} <- :gen_tcp.recv(sock, 0, timeout) do
+         {:ok, rsp} <- :gen_tcp.recv(sock, 0, timeout),
+         {:ok, msg} <- Msg.decode(rsp),
+         true <- msg.header.id == qry.header.id,
+         true <- msg.header.qr == 1 do
       :gen_tcp.close(sock)
-      log(true, "query_tcp received #{byte_size(rsp)} bytes")
-      Msg.decode(rsp)
+      t = now() - t0
+      log(true, "recv'd #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
+      {:ok, msg}
     else
+      false ->
+        {:error, :noreply}
+
       {:error, e} ->
         log(true, "query_tcp error #{inspect(e)}")
         :gen_tcp.close(sock)
         {:error, e}
     end
   rescue
-    # when gen_tcp.connect fails, {:ok, sock} won't match {:error, reason}
+    # when query_tcp_connect returns {:error, any}
     e in MatchError -> e.term
+  end
+
+  @spec query_tcp_connect(:inet.ip_address(), non_neg_integer, non_neg_integer, integer) ::
+          {:ok, :inet.socket()} | {:error, any}
+  def query_tcp_connect(ip, port, timeout, tstop) do
+    # avoid exit badarg by checking ip/port's validity
+    log(true, "query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
+
+    iptype =
+      case Pfx.type(ip) do
+        :ip4 -> :inet
+        :ip6 -> :inet6
+      end
+
+    tcp_timeout = min(timeout, timeout(tstop))
+
+    with true <- is_u16(port),
+         true <- iptype in [:inet, :inet6] do
+      opts = [:binary, iptype, active: false, packet: 2]
+      :gen_tcp.connect(ip, port, opts, tcp_timeout)
+    else
+      false -> {:error, :badarg}
+    end
   end
 
   # [[ MAKE QRY MSG ]]
@@ -286,25 +360,20 @@ defmodule DNS do
 
   # [[ HELPERS ]]
 
-  defp decode_response(wdata) do
-    # decode wdata, calculate rcode (no TSIG's yet)
-    rsp = Msg.decode(wdata)
+  defp xrcode(msg) do
+    # calculate rcode (no TSIG's yet)
 
-    # TODO: move this to DNS.Msg en/decode ..
-    # if rcode > 16, then update the EDNS RR (or add one if missing)
-    # update docu to reflect that the rcode is the extended rcode
-    # when encoding: <<132::4>> still only encodes lowest 4 bits
     xrcode =
-      Enum.find(rsp.additional, %{}, fn rr -> rr.type == :OPT end)
+      Enum.find(msg.additional, %{}, fn rr -> rr.type == :OPT end)
       |> Map.get(:rdmap, %{})
       |> Map.get(:xrcode, :NOERROR)
       |> Msg.Terms.encode_dns_rcode()
 
     rcode =
-      (16 * xrcode + DNS.Msg.Terms.encode_dns_rcode(rsp.header.rcode))
+      (16 * xrcode + DNS.Msg.Terms.encode_dns_rcode(msg.header.rcode))
       |> Msg.Terms.decode_dns_rcode()
 
-    {rcode, rsp}
+    rcode
   end
 
   defp log(false, _),
@@ -336,7 +405,7 @@ defmodule DNS do
     # - when rr.type is ANY what do we accept then?
     dname_equal?(rr.name, rq.name) and
       rr.class == rq.class and
-      (rr.type == rq.type or rr.type in [:RRSIG])
+      (rr.type == rq.type or rr.type in [:DS, :RRSIG])
   end
 
   # wrap a nameserver with an absolute point in time,

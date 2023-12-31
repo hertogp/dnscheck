@@ -145,7 +145,7 @@ defmodule DNS.Cache do
     # if one of the key components is illegal.
     with {:ttl, false} <- {:ttl, rr.ttl < 1},
          {:ok, key} <- make_key(rr.name, rr.class, rr.type),
-         {:type, true} <- {:type, cacheable?(rr.type)},
+         {:rr, true} <- {:rr, cacheable?(rr)},
          {:ok, crrs} <- lookup(key),
          crrs <- Enum.filter(crrs, &alive?/1),
          crrs <- Enum.filter(crrs, fn {_ttd, crr} -> crr.rdmap != rr.rdmap end) do
@@ -157,20 +157,32 @@ defmodule DNS.Cache do
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
       :ok
     else
-      {:type, _} -> :ignored
+      {:rr, _} -> :ignored
       {:ttl, _} -> :ignored
       _ -> :error
     end
   end
 
   def put(%DNS.Msg{answer: [_ | _]} = msg) do
-    qname = (msg.question |> hd).name
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
+    # - do not cache RR's from a truncated response
+    # - result of *inverse query* (QTYPE) should not be cached
+    # - do not cache results for wild card QNAME's (*.xyz.tld)
+    # - RR's of responses of dubious reliability (cache poisoning)
+    # Sometimes cache data MUST be replaced
+    # - cached data is not authoritative and the current msg is authoritative
+    with qtns <- msg.question,
+         qtn <- hd(qtns),
+         qname <- qtn.name,
+         answers <- msg.answer do
+      answers
+      |> Enum.filter(fn rr -> dname_equal?(rr.name, qname) end)
+      |> Enum.map(&put/1)
 
-    msg.answer
-    |> Enum.filter(fn rr -> dname_equal?(rr.name, qname) end)
-    |> Enum.map(&put/1)
-
-    :ok
+      :ok
+    else
+      _ -> :error
+    end
   rescue
     _ -> :error
   end
@@ -256,12 +268,21 @@ defmodule DNS.Cache do
   defp alive?({ttd, _rr}),
     do: timeout(ttd) > 0
 
-  defp cacheable?(type) do
-    type = DNS.Msg.Terms.decode_rr_type(type)
+  defp cacheable?(%DNS.Msg.RR{} = rr) do
+    type = DNS.Msg.Terms.decode_rr_type(rr.type)
     type not in @uncacheable
   rescue
     _ -> false
   end
+
+  defp cacheable?(%DNS.Msg{} = msg) do
+    msg.header.qr == 1 and msg.header.opcode == :QUERY
+  rescue
+    _ -> false
+  end
+
+  defp cacheable?(_),
+    do: false
 
   defp lookup(key) do
     # an empty result list is :ok too (for put)
