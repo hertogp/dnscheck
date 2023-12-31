@@ -264,6 +264,7 @@ defmodule DNS.Utils do
   # https://www.rfc-editor.org/rfc/rfc1035, sec 2.3.1, 3.1
   @spec dname_encode(binary) :: binary
   def dname_encode(name) when is_binary(name) do
+    # FIXME: use byte_size, not String.length (utf8)
     name
     |> dname_to_labels()
     |> Enum.map(fn label -> <<String.length(label)::8, label::binary>> end)

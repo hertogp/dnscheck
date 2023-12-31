@@ -281,8 +281,13 @@ defmodule DNS.Cache do
   end
 
   defp normalize(name) do
-    # TODO: properly parse and normalize the name
-    {:ok, String.downcase(name)}
+    name =
+      name
+      |> dname_to_labels()
+      |> Enum.join(".")
+      |> String.downcase()
+
+    {:ok, name}
   end
 
   # (un)wrap time to die

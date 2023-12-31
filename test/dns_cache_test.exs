@@ -34,27 +34,67 @@ defmodule DNS.CacheTest do
     assert 0 == Cache.size()
   end
 
+  test "get/3 adjusts RR's TTL before serving" do
+    rr = RR.new(name: "example.com", type: :A, ttl: 10)
+    :ok = Cache.put(rr)
+    assert 1 == Cache.size()
+
+    Utils.wait(1100)
+    assert 1 == Cache.size()
+    [rr2] = Cache.get("example.com", :IN, :A)
+    assert rr.ttl > rr2.ttl
+  end
+
   test "get/3 returns [] if input is invalid" do
     # this won't even touch the cache
     assert [] == Cache.get("example.com", :IN, 65536)
     assert [] == Cache.get("example.com", 65536, :A)
   end
 
-  test "get/put use normalized domain names" do
+  test "get/put use keys with normalized domain names" do
+    assert 0 == DNS.Cache.size()
     rr = RR.new(name: "eXamPlE.cOm", type: :A, ttl: 10)
     assert :ok == Cache.put(rr)
     [rr] = Cache.get("example.com", :IN, :A)
     assert "eXamPlE.cOm" == rr.name
 
-    # search casee
+    # search case
     [rr] = Cache.get("EXAMPLE.COM", :IN, :A)
     assert "eXamPlE.cOm" == rr.name
 
-    # trailing dot
-    rr = RR.new(name: "eXamPlE.cOm.", type: :A, ttl: 10)
+    # search name with trailing dot
+    [rr] = Cache.get("example.com.", :IN, :A)
+    assert "eXamPlE.cOm" == rr.name
+  end
+
+  test "get/put preserve RR's name" do
+    assert 0 == DNS.Cache.size()
+
+    # trailing dot in cached name
+    rr = RR.new(name: "eXamPlE.cOm.", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"})
+    assert "eXamPlE.cOm." == rr.name
     assert :ok == Cache.put(rr)
-    [rr2] = Cache.get("example.com", :IN, :A)
-    assert "eXamPlE.cOm" == rr2.name
+
+    # search with/without trailing dot
+    [rr] = Cache.get("example.com", :IN, :A)
+    assert "eXamPlE.cOm." == rr.name
+
+    [rr] = Cache.get("example.com.", :IN, :A)
+    assert "eXamPlE.cOm." == rr.name
+  end
+
+  test "get/put store RR's with/without trailing dot under the same key" do
+    assert 0 == Cache.size()
+    # trailing dot
+    rr = RR.new(name: "eXamPlE.cOm.", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"})
+    assert "eXamPlE.cOm." == rr.name
+    assert :ok == Cache.put(rr)
+    # no trailing dot
+    rr = RR.new(name: "example.com", type: :A, ttl: 20, rdmap: %{ip: "10.2.1.1"})
+    assert :ok == Cache.put(rr)
+    assert 1 == Cache.size()
+    rrs = Cache.get("ExAmPlE.com", :IN, :A)
+    assert 2 == length(rrs)
   end
 
   test "put/1 wipes wiredata from non-raw RR's" do
@@ -71,8 +111,8 @@ defmodule DNS.CacheTest do
     rr = %{rr | rdata: "non-sense", wdata: "more non-sense", raw: true}
     :ok = Cache.put(rr)
     [rr2] = Cache.get("example.com", :IN, :A)
-    assert rr.rdata == rr2.rdata
-    assert rr.wdata == rr2.wdata
+    assert "non-sense" == rr2.rdata
+    assert "more non-sense" == rr2.wdata
   end
 
   test "put/1 ignores QTYPEs and pseudo types" do
@@ -103,7 +143,7 @@ defmodule DNS.CacheTest do
 
     [rr] = Cache.get("example.com", :IN, :A)
     assert "example.com" == rr.name
-    assert 1100 == rr.ttl
+    assert rr.ttl > 1000
     assert 1 == Cache.size()
   end
 
