@@ -66,7 +66,7 @@ defmodule DNS.Cache do
   end
 
   @doc """
-  Returns the number of entries in the DNS cache.
+  Returns the number of entries in the DNS cache
 
   If the cache hasn't been created yet, it returns :undefined
   """
@@ -203,8 +203,7 @@ defmodule DNS.Cache do
   RR's are removed from the results and deleted from the
   cache.
 
-  Returns either a list of RR's or `:error` if any one
-  of the arguments are invalid
+  Returns an empty list if any one of the arguments are invalid.
 
   ## Examples
 
@@ -233,7 +232,7 @@ defmodule DNS.Cache do
       []
 
   """
-  @spec get(String.t(), atom, atom) :: [DNS.Msg.RR.t()]
+  @spec get(binary, atom | non_neg_integer, atom | non_neg_integer) :: [DNS.Msg.RR.t()]
   def get(name, class, type) do
     with {:ok, key} <- make_key(name, class, type),
          {:ok, crrs} <- lookup(key),
@@ -268,7 +267,7 @@ defmodule DNS.Cache do
     # an empty result list is :ok too (for put)
     case :ets.lookup(@cache, key) do
       [] -> {:ok, []}
-      [{^key, cached_rrs}] -> {:ok, cached_rrs}
+      [{^key, rrs}] -> {:ok, rrs}
     end
   end
 

@@ -26,8 +26,9 @@ defmodule DNS.CacheTest do
     rr = RR.new(name: "example.com", type: :A, ttl: 1)
     :ok = Cache.put(rr)
     assert 1 == Cache.size()
-    Utils.wait(1100)
+
     # stale entries are removed during retrieval
+    Utils.wait(1100)
     assert 1 == Cache.size()
     assert [] == Cache.get("example.com", :IN, :A)
     assert 0 == Cache.size()
@@ -39,18 +40,21 @@ defmodule DNS.CacheTest do
     assert [] == Cache.get("example.com", 65536, :A)
   end
 
-  test "get/put use normalize domain names" do
+  test "get/put use normalized domain names" do
     rr = RR.new(name: "eXamPlE.cOm", type: :A, ttl: 10)
     assert :ok == Cache.put(rr)
     [rr] = Cache.get("example.com", :IN, :A)
+    assert "eXamPlE.cOm" == rr.name
+
+    # search casee
+    [rr] = Cache.get("EXAMPLE.COM", :IN, :A)
     assert "eXamPlE.cOm" == rr.name
 
     # trailing dot
     rr = RR.new(name: "eXamPlE.cOm.", type: :A, ttl: 10)
     assert :ok == Cache.put(rr)
     [rr2] = Cache.get("example.com", :IN, :A)
-    IO.inspect(rr, label: :rr)
-    assert rr.name == rr2.name
+    assert "eXamPlE.cOm" == rr2.name
   end
 
   test "put/1 wipes wiredata from non-raw RR's" do
