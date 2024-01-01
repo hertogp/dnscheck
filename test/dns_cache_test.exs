@@ -217,12 +217,12 @@ defmodule DNS.CacheTest do
 
     aut = [
       [name: "com", type: :NS, ttl: 100, rdmap: %{name: "ns1.example.com"}],
-      [name: "net", type: :NS, ttl: 100, rdmap: %{name: "ns2.example.net"}]
+      [name: "net", type: :NS, ttl: 100, rdmap: %{name: "ns2.bogus.com"}]
     ]
 
     add = [
       [name: "ns1.example.com", type: :A, ttl: 100, rdmap: %{ip: "10.1.1.3"}],
-      [name: "ns2.example.net", type: :A, ttl: 100, rdmap: %{ip: "10.1.1.4"}]
+      [name: "ns2.bogus.com", type: :A, ttl: 100, rdmap: %{ip: "10.1.1.4"}]
     ]
 
     # since msg.answers is empty, cache only relevant RR's from authority/additional
