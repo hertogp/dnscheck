@@ -18,6 +18,8 @@ defmodule DNS do
   @type type :: atom | non_neg_integer
   @typedoc "Nameserver is tuple of IPv4/6 address and port number"
   @type ns :: {:inet.ip_address(), non_neg_integer}
+  @typedoc "A struct representing a nameserver message"
+  @type msg :: DNS.Msg.t()
 
   # [[ NOTES ]]
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
@@ -59,34 +61,32 @@ defmodule DNS do
   is added to the additional section of the `Msg`.
 
   """
-  @spec resolve(binary, atom | non_neg_integer, Keyword.t()) :: {:ok, DNS.Msg.t()} | {:error, any}
+  @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, any}
   def resolve(name, type, opts \\ []) do
     # TODO:
     # [ ] move this elsewhere, so we can consult cache before query_nss
-    Cache.init()
+    Cache.init(clear: false)
 
     with {:ok, opts} <- make_options(opts),
          {:ok, qry} <- make_query(name, type, opts),
          tstop <- time(opts.maxtime),
          nss <- opts.nameservers,
-         {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, _failed = []) do
-      xrcode = "#{inspect(xrcode(msg))}"
-      nans = length(msg.answer)
-      naut = length(msg.authority)
-      nadd = length(msg.additional)
+         {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, _failed = []),
+         xrcode <- xrcode(msg),
+         anc = msg.header.anc,
+         nsc = msg.header.nsc,
+         arc = msg.header.arc do
+      log(true, "got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional")
 
-      log(true, "got a reply: #{xrcode}, #{nans} answers, #{naut} authority, #{nadd} additional")
-
-      case nans == 0 and opts.recurse do
-        true -> res_recurse(qry, msg, opts, tstop)
-        _ -> {:ok, msg}
-      end
+      if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
+        do: res_recurse(qry, msg, opts, tstop, %{}),
+        else: {:ok, msg}
     else
       e -> e
     end
   end
 
-  def res_recurse(qry, msg, opts, tstop) do
+  def res_recurse(qry, msg, opts, tstop, seen) do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7     - resolver implementation
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
@@ -98,29 +98,70 @@ defmodule DNS do
     # [ ] detect CNAME loops
 
     log(true, "recursing for #{hd(msg.question)}")
-
+    log(true, "recursing cache size is #{Cache.size()}")
     Cache.put(msg)
 
-    nsnames =
-      Enum.filter(msg.authority, fn rr -> rr.type == :NS end)
-      |> Enum.map(fn rr -> rr.rdmap.name end)
-
-    log(true, "recurse nss names: #{Enum.join(nsnames, ", ")}")
-    nsip4 = Enum.map(nsnames, fn name -> Cache.get(name, :IN, :A) end)
-    nsip6 = Enum.map(nsnames, fn name -> Cache.get(name, :IN, :AAAA) end)
-
+    # always move forward, never cirle back hence filtering seen
     nss =
-      nsip4
-      |> Enum.concat(nsip6)
-      |> List.flatten()
-      |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+      msg.authority
+      |> Enum.filter(fn rr -> rr.type == :NS end)
+      |> Enum.map(fn rr -> rr.rdmap.name end)
+      |> res_recurse_nss()
+      |> Enum.filter(fn ns -> not Map.has_key?(seen, ns) end)
 
-    log(true, "recurse nss ip's: #{inspect(nss)}")
+    # keep track of where we've been
+    seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
 
-    case query_nss(nss, qry, opts, tstop, 0, []) do
-      {:ok, msg} when msg.answer == [] -> res_recurse(qry, msg, opts, tstop)
-      {:error, result} -> {:error, {result, msg}}
+    log(true, "recursing with nss: #{inspect(nss)}")
+
+    with {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, []),
+         xrcode <- xrcode(msg),
+         anc <- msg.header.anc,
+         nsc <- msg.header.nsc do
+      case xrcode do
+        :NOERROR when anc == 0 and nsc > 0 -> res_recurse(qry, msg, opts, tstop, seen)
+        :NOERROR when anc > 0 -> {:ok, msg}
+        other -> {:error, {other, msg}}
+      end
+    else
+      {:error, reason} -> {:error, {reason, msg}}
+      other -> {:error, other}
     end
+  end
+
+  @spec res_recurse_nss([binary]) :: [{:inet.ip_address(), integer}]
+  def res_recurse_nss(nsnames) do
+    # first consult the cache, otherwise we'll loop ourselves
+    nss =
+      for ns <- nsnames, type <- [:A, :AAAA] do
+        Cache.get(ns, :IN, type)
+      end
+      |> List.flatten()
+
+    old =
+      nss
+      |> Enum.map(fn rr -> rr.name end)
+      |> Enum.map(fn name -> dname_normalize(name) |> elem(1) end)
+      |> Enum.filter(fn n -> not is_atom(n) end)
+
+    new =
+      nsnames
+      |> Enum.map(fn name -> dname_normalize(name) |> elem(1) end)
+      |> Enum.filter(fn name -> name not in old end)
+      |> Enum.filter(fn n -> not is_atom(n) end)
+
+    for ns <- new, type <- [:A, :AAAA] do
+      case resolve(ns, type) do
+        {:ok, msg} -> msg.answer
+        _ -> []
+      end
+    end
+    |> List.flatten()
+    |> Enum.concat(nss)
+    |> Enum.map(fn rr -> rr.rdmap.ip end)
+    |> Enum.map(fn ip -> {Pfx.to_tuple(ip, mask: false), 53} end)
+
+    # Process.exit(self(), :abort)
   end
 
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
@@ -156,7 +197,6 @@ defmodule DNS do
             query_nss(nss, qry, opts, tstop, nth, failed)
 
           {:ok, rsp} ->
-            IO.inspect(rsp, label: :query_nss)
             {:ok, rsp}
         end
     end
@@ -344,7 +384,8 @@ defmodule DNS do
 
   @spec make_options(Keyword.t()) :: {:ok, map} | {:error, binary}
   def make_options(opts \\ []) do
-    edns = opts[:do] == 1 or opts[:cd] == 1 or opts[:bufsize] != nil
+    # cd is hdr option, not edns option
+    edns = opts[:do] == 1 or opts[:bufsize] != nil
     recurse = opts[:nameservers] == nil
 
     opts2 = %{

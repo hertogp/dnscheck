@@ -200,7 +200,7 @@ defmodule DNS.Cache do
       rrs =
         msg.authority
         |> Enum.filter(fn rr -> rr.type in [:NS, :DS, :RRSIG] end)
-        |> Enum.filter(fn rr -> dname_subzone?(qname, rr.name) end)
+        |> Enum.filter(fn rr -> dname_subzone?(qname, rr.name) or dname_equal?(qname, rr.name) end)
 
       nsnames =
         rrs
