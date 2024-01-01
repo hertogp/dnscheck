@@ -211,7 +211,8 @@ defmodule DNS.CacheTest do
   end
 
   test "put/1 ignores RR's in authority/additional section if not relevant to qname" do
-    # remember that TTL must be > 1, or it'll get :ignored
+    # remember that qr: 1, opcode: QURY  and TTL > 1 are required in order to be cacheabled
+    hdr = [qr: 1, opcode: :QUERY]
     qtn = [[name: "example.com", type: :A]]
 
     aut = [
@@ -225,7 +226,7 @@ defmodule DNS.CacheTest do
     ]
 
     # since msg.answers is empty, cache only relevant RR's from authority/additional
-    {:ok, msg} = DNS.Msg.new(qtn: qtn, aut: aut, add: add)
+    {:ok, msg} = DNS.Msg.new(hdr: hdr, qtn: qtn, aut: aut, add: add)
     assert Cache.put(msg)
     assert [] == Cache.get("example.com", :IN, :A)
     [ns] = Cache.get("com", :IN, :NS)

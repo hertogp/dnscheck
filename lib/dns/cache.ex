@@ -28,7 +28,6 @@ defmodule DNS.Cache do
 
   # TODO:
   # [ ] initialize cache with root name servers (query via priv/named.root.rrs)
-  # [ ] normalize dname properly
   # [ ] maybe add get_ns(domain name) -> searches the cache?
   # [ ] handle put_msg better!
   # [ ] clear rdata/wdata before caching if not raw
@@ -133,11 +132,12 @@ defmodule DNS.Cache do
 
       # ignores unrelated RR's in additional section
       iex> init()
+      iex> hdr = [qr: 1]
       iex> qtn = [[name: "example.com", type: :A]]
       iex> aut = [[name: "com", type: :NS, rdmap: %{name: "ns1.tld-servers.com"}]]
       iex> add = [[name: "ns1.tld-servers.com", type: :A, ttl: 100, rdmap: %{ip: "10.4.1.1"}],
       ...>        [name: "ns1.tld-servers.net", type: :A, ttl: 100, rdmap: %{ip: "10.5.1.1"}]]
-      iex> {:ok, msg} = DNS.Msg.new(qtn: qtn, aut: aut, add: add)
+      iex> {:ok, msg} = DNS.Msg.new(hdr: hdr, qtn: qtn, aut: aut, add: add)
       iex> put(msg)
       false
       iex> get("ns1.tld-servers.net", :IN, :A)
@@ -164,6 +164,7 @@ defmodule DNS.Cache do
           do: rr,
           else: %{rr | rdata: "", wdata: ""}
 
+      # TODO: use Logger
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
       _e -> false
@@ -178,13 +179,10 @@ defmodule DNS.Cache do
     # - RR's of responses of dubious reliability (cache poisoning)
     # Sometimes cache data MUST be replaced
     # - cached data is not authoritative and the current msg is authoritative
-    with true <- msg.header.qr == 1,
-         true <- msg.header.opcode in [0, :QUERY],
-         qtns <- msg.question,
-         qtn <- hd(qtns),
-         qname <- qtn.name,
-         answers <- msg.answer do
-      answers
+    with true <- cacheable?(msg),
+         qtn <- hd(msg.question),
+         qname <- qtn.name do
+      msg.answer
       |> Enum.filter(fn rr -> dname_equal?(rr.name, qname) end)
       |> Enum.map(&put/1)
       |> Enum.all?(& &1)
@@ -196,23 +194,28 @@ defmodule DNS.Cache do
   end
 
   def put(%DNS.Msg{answer: []} = msg) do
-    qname = (msg.question |> hd).name
+    if cacheable?(msg) do
+      qname = hd(msg.question).name
 
-    rrs =
-      msg.authority
-      |> Enum.filter(fn rr -> rr.type in [:NS, :DS, :RRSIG] end)
-      |> Enum.filter(fn rr -> dname_subzone?(qname, rr.name) end)
+      rrs =
+        msg.authority
+        |> Enum.filter(fn rr -> rr.type in [:NS, :DS, :RRSIG] end)
+        |> Enum.filter(fn rr -> dname_subzone?(qname, rr.name) end)
 
-    nsnames =
-      rrs
-      |> Enum.filter(fn rr -> rr.type == :NS end)
-      |> Enum.map(fn rr -> rr.rdmap.name end)
+      nsnames =
+        rrs
+        |> Enum.filter(fn rr -> rr.type == :NS end)
+        |> Enum.map(fn rr -> rr.rdmap.name end)
+        |> Enum.map(fn name -> dname_normalize(name) end)
 
-    msg.additional
-    |> Enum.filter(fn rr -> rr.name in nsnames end)
-    |> Enum.concat(rrs)
-    |> Enum.map(&put/1)
-    |> Enum.all?(& &1)
+      msg.additional
+      |> Enum.filter(fn rr -> dname_normalize(rr.name) in nsnames end)
+      |> Enum.concat(rrs)
+      |> Enum.map(&put/1)
+      |> Enum.all?(& &1)
+    else
+      false
+    end
   end
 
   @doc """
@@ -283,13 +286,17 @@ defmodule DNS.Cache do
   end
 
   defp cacheable?(%DNS.Msg{} = msg) do
-    msg.header.qr == 1 and msg.header.opcode == :QUERY
+    cond do
+      msg.header.tc == 1 -> false
+      msg.header.qr == 0 -> false
+      msg.header.opcode not in [0, :QUERY] -> false
+      true -> true
+    end
+
+    # msg.header.qr == 1 and msg.header.opcode in [0, :QUERY]
   rescue
     _ -> false
   end
-
-  defp cacheable?(_),
-    do: false
 
   defp lookup(key) do
     # an empty result list is :ok too (for put)
@@ -302,20 +309,10 @@ defmodule DNS.Cache do
   defp make_key(name, class, type) do
     ntype = DNS.Msg.Terms.encode_rr_type(type)
     nclass = DNS.Msg.Terms.encode_dns_class(class)
-    {:ok, name} = normalize(name)
+    {:ok, name} = dname_normalize(name)
     {:ok, {name, nclass, ntype}}
   rescue
     _ -> :error
-  end
-
-  defp normalize(name) do
-    name =
-      name
-      |> dname_to_labels()
-      |> Enum.join(".")
-      |> String.downcase()
-
-    {:ok, name}
   end
 
   # (un)wrap time to die

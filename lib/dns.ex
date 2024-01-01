@@ -11,6 +11,8 @@ defmodule DNS do
   alias DNS.Msg
   # import DNS.Msg.Terms
   import DNS.Utils
+  # import DNS.Msg.Terms
+  alias DNS.Cache
 
   @typedoc "Type of RR, as atom or non negative integer"
   @type type :: atom | non_neg_integer
@@ -59,6 +61,9 @@ defmodule DNS do
   """
   @spec resolve(binary, atom | non_neg_integer, Keyword.t()) :: {:ok, DNS.Msg.t()} | {:error, any}
   def resolve(name, type, opts \\ []) do
+    # TODO: move this into dnscheck itself
+    Cache.init()
+
     with {:ok, opts} <- make_options(opts),
          {:ok, qry} <- make_query(name, type, opts),
          tstop <- time(opts.maxtime),
@@ -71,8 +76,6 @@ defmodule DNS do
         true -> resolve_recurse(qry, msg, opts, tstop)
         _ -> {:ok, msg}
       end
-
-      {:ok, msg}
     else
       e -> e
     end
@@ -81,8 +84,38 @@ defmodule DNS do
   def resolve_recurse(qry, msg, opts, tstop) do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.3
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4
-    log(true, "recursing for #{inspect(qry)}")
-    {:ok, msg}
+    # TODO
+    # [ ] if qname is ip address, convert it to reverse ptr name
+    # [ ] consult cache before query_nss
+    # [ ] handle case when additional has no/partial info on nss in authority section
+    #     eg. tourdewadden.nl
+    # [ ] detect NS loops
+    # [ ] detect CNAME loops
+
+    log(true, "recursing for #{hd(msg.question)}")
+
+    Cache.put(msg)
+
+    nsnames =
+      Enum.filter(msg.authority, fn rr -> rr.type == :NS end)
+      |> Enum.map(fn rr -> rr.rdmap.name end)
+
+    log(true, "recurse found new nss: #{Enum.join(nsnames, ", ")}")
+    nsip4 = Enum.map(nsnames, fn name -> Cache.get(name, :IN, :A) end)
+    nsip6 = Enum.map(nsnames, fn name -> Cache.get(name, :IN, :AAAA) end)
+
+    nss =
+      nsip4
+      |> Enum.concat(nsip6)
+      |> List.flatten()
+      |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+
+    Enum.each(nss, fn ns -> log(true, "recurse new nss: #{inspect(ns)}") end)
+
+    case query_nss(nss, qry, opts, tstop, 0, []) do
+      {:ok, msg} when msg.answer == [] -> resolve_recurse(qry, msg, opts, tstop)
+      other -> other
+    end
   end
 
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::

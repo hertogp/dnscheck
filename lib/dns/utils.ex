@@ -101,6 +101,191 @@ defmodule DNS.Utils do
   end
 
   @doc """
+  Encodes a domain `name` as a length-encoded binary string.
+
+  An argument error will be raised when:
+  - the name length exceeds 255 characters (ignoring any trailing '.')
+  - a label's length is not in 1..63 characters
+
+  ## Examples
+
+      iex> dname_encode(".")
+      <<0::8>>
+
+      iex> dname_encode("")
+      <<0::8>>
+
+      iex> dname_encode("acdc.au")
+      <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
+
+      iex> dname_encode("acdc.au.")
+      <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
+
+      # happily encode an otherwise illegal name
+      iex> dname_encode("acdc.-au-.")
+      <<4, 97, 99, 100, 99, 4, 45, 97, 117, 45, 0>>
+
+  """
+  # https://www.rfc-editor.org/rfc/rfc1035, sec 2.3.1, 3.1
+  @spec dname_encode(binary) :: binary
+  def dname_encode(name) when is_binary(name) do
+    # FIXME: use byte_size, not String.length (utf8)
+    name
+    |> dname_to_labels()
+    |> Enum.map(fn label -> <<String.length(label)::8, label::binary>> end)
+    |> Enum.join()
+    |> Kernel.<>(<<0>>)
+  end
+
+  def dname_encode(noname),
+    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
+
+  @doc ~S"""
+  Returns true if given domain names are equal, false otherwise
+
+  Basically a case-insensitive comparison.  Note that this does not
+  check whether given domain names are actually valid.
+
+  ## Examples
+
+      iex> dname_equal?("example.com", "EXAMPLE.COM")
+      true
+
+      iex> dname_equal?("example.com.", "EXAMPLE.com")
+      true
+
+      iex> dname_equal?("EXAmple.com", "exaMPLE.COM.")
+      true
+
+      iex> dname_equal?("9xample.com", "YXAMPLE.COM.")
+      false
+
+      iex> dname_equal?(42, 42)
+      false
+
+
+  """
+  def dname_equal?(aname, bbame)
+
+  def dname_equal?(<<>>, <<>>),
+    do: true
+
+  def dname_equal?(<<?.>>, <<>>),
+    do: true
+
+  def dname_equal?(<<>>, <<?.>>),
+    do: true
+
+  def dname_equal?(<<a::8, arest::binary>>, <<b::8, brest::binary>>) do
+    cond do
+      a == b -> dname_equal?(arest, brest)
+      a == b + 32 and a in ?a..?z -> dname_equal?(arest, brest)
+      a + 32 == b and a in ?A..?Z -> dname_equal?(arest, brest)
+      true -> false
+    end
+  end
+
+  def dname_equal?(_, _),
+    do: false
+
+  @doc """
+  Returns an `{:ok, normalized}` or `{:error, :edname} for given `name`.
+
+  Normalization means that:
+  - the trailing dot is stripped
+  - all uppercase letters are converted to lowercase
+
+  If the `name` is illegal (longer than 253 octets in string form, or
+  has a label longer than 63 octets), the error tuple is returned.
+
+  """
+  def dname_normalize(name) do
+    name =
+      name
+      |> dname_to_labels()
+      |> Enum.join(".")
+      |> String.downcase()
+
+    {:ok, name}
+  rescue
+    _ -> {:error, :edname}
+  end
+
+  @doc """
+  Reverses the labels for given a domain `name`.
+
+  Raises an error if the name is too long or has empty labels.
+
+  ## Examples
+
+      iex> dname_reverse("example.com")
+      "com.example"
+
+      # trailing dot is ignored
+      iex> dname_reverse("example.com.")
+      "com.example"
+
+      iex> dname_reverse(".example.com")
+      ** (DNS.MsgError) [encode] domain name has empty label
+
+  """
+  @spec dname_reverse(binary) :: binary
+  def dname_reverse(name) when is_binary(name) do
+    name =
+      case name do
+        <<>> -> [name]
+        <<?.>> -> [name]
+        name -> do_labels([], <<>>, name)
+      end
+      |> Enum.join(".")
+
+    if String.length(name) > 253,
+      do: error(:eencode, "domain name > 253 characters")
+
+    name
+  end
+
+  def dname_reverse(noname),
+    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
+
+  @doc """
+  Returns true is child is a subzone of parent, false otherwise.
+
+  Also returns false if either child or parent has:
+  - a label longer than 63 octets
+  - an empty label
+
+  ## Examples
+
+      iex> dname_subzone?("example.COM", "com")
+      true
+
+      iex> dname_subzone?("host.example.com", "example.com")
+      true
+
+      iex> dname_subzone?("example.com.", "com")
+      true
+
+      iex> dname_subzone?("example.com.", "example.com")
+      false
+
+      iex> dname_subzone?("example.com.", "net")
+      false
+
+
+  """
+  @spec dname_subzone?(binary, binary) :: boolean
+  def dname_subzone?(child, parent) do
+    child = dname_to_labels(child)
+    parent = dname_to_labels(parent)
+    clast = List.last(child)
+    plast = List.last(parent)
+    dname_equal?(clast, plast) and length(child) > length(parent)
+  rescue
+    _ -> false
+  end
+
+  @doc """
   Creates a list of labels for Given a domain `name`.
 
   An error is raised when:
@@ -234,168 +419,6 @@ defmodule DNS.Utils do
 
   def dname_valid?(_),
     do: false
-
-  @doc """
-  Encodes a domain `name` as a length-encoded binary string.
-
-  An argument error will be raised when:
-  - the name length exceeds 255 characters (ignoring any trailing '.')
-  - a label's length is not in 1..63 characters
-
-  ## Examples
-
-      iex> dname_encode(".")
-      <<0::8>>
-
-      iex> dname_encode("")
-      <<0::8>>
-
-      iex> dname_encode("acdc.au")
-      <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
-
-      iex> dname_encode("acdc.au.")
-      <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
-
-      # happily encode an otherwise illegal name
-      iex> dname_encode("acdc.-au-.")
-      <<4, 97, 99, 100, 99, 4, 45, 97, 117, 45, 0>>
-
-  """
-  # https://www.rfc-editor.org/rfc/rfc1035, sec 2.3.1, 3.1
-  @spec dname_encode(binary) :: binary
-  def dname_encode(name) when is_binary(name) do
-    # FIXME: use byte_size, not String.length (utf8)
-    name
-    |> dname_to_labels()
-    |> Enum.map(fn label -> <<String.length(label)::8, label::binary>> end)
-    |> Enum.join()
-    |> Kernel.<>(<<0>>)
-  end
-
-  def dname_encode(noname),
-    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
-
-  @doc """
-  Reverses the labels for given a domain `name`.
-
-  Raises an error if the name is too long or has empty labels.
-
-  ## Examples
-
-      iex> dname_reverse("example.com")
-      "com.example"
-
-      # trailing dot is ignored
-      iex> dname_reverse("example.com.")
-      "com.example"
-
-      iex> dname_reverse(".example.com")
-      ** (DNS.MsgError) [encode] domain name has empty label
-
-  """
-  @spec dname_reverse(binary) :: binary
-  def dname_reverse(name) when is_binary(name) do
-    name =
-      case name do
-        <<>> -> [name]
-        <<?.>> -> [name]
-        name -> do_labels([], <<>>, name)
-      end
-      |> Enum.join(".")
-
-    if String.length(name) > 253,
-      do: error(:eencode, "domain name > 253 characters")
-
-    name
-  end
-
-  def dname_reverse(noname),
-    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
-
-  @doc ~S"""
-  Returns true if given domain names are equal, false otherwise
-
-  Basically a case-insensitive comparison.  Note that this does not
-  check whether given domain names are actually valid.
-
-  ## Examples
-
-      iex> dname_equal?("example.com", "EXAMPLE.COM")
-      true
-
-      iex> dname_equal?("example.com.", "EXAMPLE.com")
-      true
-
-      iex> dname_equal?("EXAmple.com", "exaMPLE.COM.")
-      true
-
-      iex> dname_equal?("9xample.com", "YXAMPLE.COM.")
-      false
-
-      iex> dname_equal?(42, 42)
-      false
-
-
-  """
-  def dname_equal?(aname, bbame)
-
-  def dname_equal?(<<>>, <<>>),
-    do: true
-
-  def dname_equal?(<<?.>>, <<>>),
-    do: true
-
-  def dname_equal?(<<>>, <<?.>>),
-    do: true
-
-  def dname_equal?(<<a::8, arest::binary>>, <<b::8, brest::binary>>) do
-    cond do
-      a == b -> dname_equal?(arest, brest)
-      a == b + 32 and a in ?a..?z -> dname_equal?(arest, brest)
-      a + 32 == b and a in ?A..?Z -> dname_equal?(arest, brest)
-      true -> false
-    end
-  end
-
-  def dname_equal?(_, _),
-    do: false
-
-  @doc """
-  Returns true is child is a subzone of parent, false otherwise.
-
-  Also returns false if either child or parent has:
-  - a label longer than 63 octets
-  - an empty label
-
-  ## Examples
-
-      iex> dname_subzone?("example.com", "com")
-      true
-
-      iex> dname_subzone?("host.example.com", "example.com")
-      true
-
-      iex> dname_subzone?("example.com.", "com")
-      true
-
-      iex> dname_subzone?("example.com.", "example.com")
-      false
-
-      iex> dname_subzone?("example.com.", "net")
-      false
-
-
-  """
-  @spec dname_subzone?(binary, binary) :: boolean
-  def dname_subzone?(child, parent) do
-    child = dname_to_labels(child)
-    parent = dname_to_labels(parent)
-    clast = List.last(child)
-    plast = List.last(parent)
-    dname_equal?(clast, plast) and length(child) > length(parent)
-  rescue
-    _ -> false
-  end
 
   # [[ MAPS ]]
 
