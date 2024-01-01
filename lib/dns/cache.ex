@@ -1,6 +1,6 @@
 defmodule DNS.Cache do
   @cache :dns_cache
-  @uncacheable [:OPT, :MAILA, :MAILB, :AXFR, :IXFR, :ANY, :*]
+  @uncacheable [:OPT, :ANY, :*, :MAILA, :MAILB, :AXFR, :IXFR]
 
   @moduledoc """
   A simple DNS cache for RR's, honouring their TTL's.
@@ -172,16 +172,8 @@ defmodule DNS.Cache do
   end
 
   def put(%DNS.Msg{answer: [_ | _]} = msg) do
-    # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
-    # - do not cache RR's from a truncated response
-    # - result of *inverse query* (QTYPE) should not be cached
-    # - do not cache results for wild card QNAME's (*.xyz.tld)
-    # - RR's of responses of dubious reliability (cache poisoning)
-    # Sometimes cache data MUST be replaced
-    # - cached data is not authoritative and the current msg is authoritative
     with true <- cacheable?(msg),
-         qtn <- hd(msg.question),
-         qname <- qtn.name do
+         qname <- hd(msg.question).name do
       msg.answer
       |> Enum.filter(fn rr -> dname_equal?(rr.name, qname) end)
       |> Enum.map(&put/1)
@@ -194,6 +186,12 @@ defmodule DNS.Cache do
   end
 
   def put(%DNS.Msg{answer: []} = msg) do
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - using the cache
+    # - ignores message if truncated, etc
+    # - ignores aut-RR's unless it's a parent for qname
+    # - checks add-RR's are listed in remaining aut-NSs
+    # TODO
+    # [ ] use max for TTL if exceptionally large
     if cacheable?(msg) do
       qname = hd(msg.question).name
 
@@ -279,21 +277,43 @@ defmodule DNS.Cache do
     do: timeout(ttd) > 0
 
   defp cacheable?(%DNS.Msg.RR{} = rr) do
+    # https://datatracker.ietf.org/doc/html/rfc1123#section-6
+    # [ ] never cache NS from root hints
     type = DNS.Msg.Terms.decode_rr_type(rr.type)
-    type not in @uncacheable
+
+    cond do
+      type in @uncacheable -> false
+      rr.ttl < 1 -> false
+      true -> true
+    end
   rescue
     _ -> false
   end
 
   defp cacheable?(%DNS.Msg{} = msg) do
+    # https://datatracker.ietf.org/doc/html/rfc1123#section-6
+    # [m] SHOULD cache temporary failures (TTL order of minutes)
+    # [o] MUST never cache NS from root hints
+    # [ ] SHOULD cache negative responses
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
+    # - do not cache RR's from a truncated response
+    # - result of *inverse query* (QTYPE) should not be cached
+    # - do not cache results that have QNAM with a wildcard label  (*.xyz.tld, or xyz.*.tld)
+    # - RR's of responses of dubious reliability, but how to determine that?
+    # - unsollicited responses or RR DATA that was not requested (resolver MUST check this)
+    # Sometimes cache data MUST be replaced
+    # - cached data is not authoritative and the current msg is authoritative
+    qname = hd(msg.question).name
+    labels = dname_to_labels(qname)
+    wildcard = Enum.any?(labels, fn l -> l == "*" end)
+
     cond do
+      wildcard -> false
       msg.header.tc == 1 -> false
       msg.header.qr == 0 -> false
       msg.header.opcode not in [0, :QUERY] -> false
       true -> true
     end
-
-    # msg.header.qr == 1 and msg.header.opcode in [0, :QUERY]
   rescue
     _ -> false
   end

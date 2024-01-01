@@ -19,11 +19,11 @@ defmodule DNS do
   @typedoc "Nameserver is tuple of IPv4/6 address and port number"
   @type ns :: {:inet.ipaddress(), non_neg_integer}
 
-  # [[ TODO ]]
+  # [[ NOTES ]]
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
   # https://www.rfc-editor.org/rfc/rfc1035#section-7
   # - udp & fallback to tcp
-  # - do iterative queries, unless required to do rd=0 to specific nameserver
+  # - do iterative queries, unless user specifies its own nameserver
   # - handle timeout and multiple nameservers
   # Notes
   # - public-dns.info has lists of public nameservers
@@ -61,7 +61,8 @@ defmodule DNS do
   """
   @spec resolve(binary, atom | non_neg_integer, Keyword.t()) :: {:ok, DNS.Msg.t()} | {:error, any}
   def resolve(name, type, opts \\ []) do
-    # TODO: move this into dnscheck itself
+    # TODO:
+    # [ ] move this elsewhere, so we can consult cache before query_nss
     Cache.init()
 
     with {:ok, opts} <- make_options(opts),
@@ -69,11 +70,15 @@ defmodule DNS do
          tstop <- time(opts.maxtime),
          nss <- opts.nameservers,
          {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, _failed = []) do
-      xrcode = xrcode(msg)
-      log(true, "got a reply with #{length(msg.answer)} answers, (x)rcode: #{inspect(xrcode)}")
+      xrcode = "#{inspect(xrcode(msg))}"
+      nans = length(msg.answer)
+      naut = length(msg.authority)
+      nadd = length(msg.additional)
 
-      case msg.answer == [] and opts.recurse do
-        true -> resolve_recurse(qry, msg, opts, tstop)
+      log(true, "got a reply: #{xrcode}, #{nans} answers, #{naut} authority, #{nadd} additional")
+
+      case nans == 0 and opts.recurse do
+        true -> res_recurse(qry, msg, opts, tstop)
         _ -> {:ok, msg}
       end
     else
@@ -81,14 +86,14 @@ defmodule DNS do
     end
   end
 
-  def resolve_recurse(qry, msg, opts, tstop) do
-    # https://www.rfc-editor.org/rfc/rfc1035#section-7.3
-    # https://www.rfc-editor.org/rfc/rfc1035#section-7.4
+  def res_recurse(qry, msg, opts, tstop) do
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7     - resolver implementation
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
+    # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
+    # https://datatracker.ietf.org/doc/html/rfc1123#section-6
     # TODO
     # [ ] if qname is ip address, convert it to reverse ptr name
-    # [ ] consult cache before query_nss
-    # [ ] handle case when additional has no/partial info on nss in authority section
-    #     eg. tourdewadden.nl
+    # [ ] query for NS names in aut section (ex. tourdewadden.nl)
     # [ ] detect NS loops
     # [ ] detect CNAME loops
 
@@ -100,7 +105,7 @@ defmodule DNS do
       Enum.filter(msg.authority, fn rr -> rr.type == :NS end)
       |> Enum.map(fn rr -> rr.rdmap.name end)
 
-    log(true, "recurse found new nss: #{Enum.join(nsnames, ", ")}")
+    log(true, "recurse nss names: #{Enum.join(nsnames, ", ")}")
     nsip4 = Enum.map(nsnames, fn name -> Cache.get(name, :IN, :A) end)
     nsip6 = Enum.map(nsnames, fn name -> Cache.get(name, :IN, :AAAA) end)
 
@@ -110,11 +115,11 @@ defmodule DNS do
       |> List.flatten()
       |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
 
-    Enum.each(nss, fn ns -> log(true, "recurse new nss: #{inspect(ns)}") end)
+    log(true, "recurse nss ip's: #{inspect(nss)}")
 
     case query_nss(nss, qry, opts, tstop, 0, []) do
-      {:ok, msg} when msg.answer == [] -> resolve_recurse(qry, msg, opts, tstop)
-      other -> other
+      {:ok, msg} when msg.answer == [] -> res_recurse(qry, msg, opts, tstop)
+      {:error, result} -> {:error, {result, msg}}
     end
   end
 
@@ -151,6 +156,7 @@ defmodule DNS do
             query_nss(nss, qry, opts, tstop, nth, failed)
 
           {:ok, rsp} ->
+            IO.inspect(rsp, label: :query_nss)
             {:ok, rsp}
         end
     end
