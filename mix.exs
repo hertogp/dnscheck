@@ -11,7 +11,8 @@ defmodule Dnscheck.MixProject do
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      docs: docs()
+      docs: docs(),
+      dialyzer: [plt_add_apps: [:mix, :xmerl]]
     ]
   end
 

@@ -40,27 +40,29 @@ defmodule DNS.Cache do
 
   ## Examples
 
-      iex> init()
+      iex> init(clear: true)
       :dns_cache
       iex> rr = DNS.Msg.RR.new(ttl: 10)
       iex> put(rr)
       true
       iex> size()
       1
-      # (re)initializing means cache is cleared
-      iex> init()
+      # (re)initializing and clear cache
+      iex> init(clear: true)
       iex> size()
       0
 
   """
-  @spec init() :: atom
-  def init() do
+  @spec init(Keyword.t()) :: atom
+  def init(opts \\ []) do
     case :ets.whereis(@cache) do
       :undefined ->
         :ets.new(@cache, [:set, :public, :named_table, {:keypos, 1}, {:read_concurrency, true}])
 
       _ ->
-        :ets.delete_all_objects(@cache)
+        if Keyword.get(opts, :clear, false),
+          do: :ets.delete_all_objects(@cache)
+
         @cache
     end
   end

@@ -12,6 +12,7 @@ defmodule Mix.Tasks.Iana.Update do
   @shortdoc "updates local copy of IANA's root hints and/or trust anchors"
 
   use Mix.Task
+  alias Mix
 
   # for xml parsing
   import Record, only: [defrecord: 2, extract: 2]

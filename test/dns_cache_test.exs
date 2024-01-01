@@ -9,16 +9,16 @@ defmodule DNS.CacheTest do
   @cache :dns_cache
 
   setup do
-    assert @cache == Cache.init()
+    assert @cache == Cache.init(clear: true)
     assert 0 == :ets.tab2list(@cache) |> length
     :ok
   end
 
-  test "init/0 clears the cache" do
+  test "init can clear the cache" do
     rr = RR.new(name: "example.com", ttl: 100)
     assert Cache.put(rr)
     assert 1 == Cache.size()
-    Cache.init()
+    Cache.init(clear: true)
     assert 0 == Cache.size()
   end
 

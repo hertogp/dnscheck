@@ -17,7 +17,7 @@ defmodule DNS do
   @typedoc "Type of RR, as atom or non negative integer"
   @type type :: atom | non_neg_integer
   @typedoc "Nameserver is tuple of IPv4/6 address and port number"
-  @type ns :: {:inet.ipaddress(), non_neg_integer}
+  @type ns :: {:inet.ip_address(), non_neg_integer}
 
   # [[ NOTES ]]
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
@@ -214,7 +214,7 @@ defmodule DNS do
     e in MatchError -> e.term
   end
 
-  @spec query_udp_open(:inet.ipaddress(), non_neg_integer, non_neg_integer) ::
+  @spec query_udp_open(:inet.ip_address(), non_neg_integer, non_neg_integer) ::
           {:ok, :gen_udp.socket()} | {:error, any}
   def query_udp_open(ip, port, bufsize) do
     # avoid exit :badarg from gen_udp.open
