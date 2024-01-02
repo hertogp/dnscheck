@@ -230,7 +230,7 @@ defmodule DNS.Msg do
   """
   @spec encode(t) :: {:ok, t} | {:error, DNS.MsgError.t()}
   def encode(%__MODULE__{} = msg) do
-    # donot assume qd/an/ns/ad counters are set properly!
+    # do not assume qd/an/ns/ad counters are set properly!
     lengths = [
       qdc: length(msg.question),
       anc: length(msg.answer),
