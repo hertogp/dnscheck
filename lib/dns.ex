@@ -4,6 +4,10 @@ defmodule DNS do
 
   """
 
+  # TODO:
+  # - change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
+  # - use Code.eval_file("priv/root.nss") here
+  # that way, the priv/root.nss file is actually readable
   @root_nss File.read!("priv/named.root.rrs")
             |> :erlang.binary_to_term()
             |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
@@ -27,7 +31,6 @@ defmodule DNS do
   # - udp & fallback to tcp
   # - do iterative queries, unless user specifies its own nameserver
   # - handle timeout and multiple nameservers
-  # Notes
   # - public-dns.info has lists of public nameservers
   # - question section SHOULD contain only 1 question
   # - A resolver MUST:
@@ -64,10 +67,9 @@ defmodule DNS do
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, any}
   def resolve(name, type, opts \\ []) do
     # TODO:
-    # [ ] move this elsewhere, so we can consult cache before query_nss
     # [ ] consult the cache and if possible, synthesize the answer
     # [ ] optimize by replacing root nss with ones closer to the QNAME
-    #     e.g. if we already know the NSS for tld, we shouln't ask root (again)
+    #     e.g. so we don't have to recurse all the way from root again
     Cache.init(clear: false)
 
     with {:ok, opts} <- make_options(opts),
@@ -81,6 +83,9 @@ defmodule DNS do
          arc = msg.header.arc do
       log(true, "got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional")
 
+      # TODO:
+      # - since res_recurse may call resolve, we need to add seen to resolve
+      # func signature in order to always be able to detect loops?
       if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
         do: res_recurse(qry, msg, opts, tstop, %{}),
         else: {:ok, msg}
@@ -363,7 +368,7 @@ defmodule DNS do
     end
   end
 
-  # [[ MAKE QRY MSG ]]
+  # [[ MAKE QRY/RSP MSG ]]
 
   @spec make_query(binary, atom | non_neg_integer, map) :: {:ok, DNS.Msg.t()} | {:error, any}
   def make_query(name, type, opts) do
