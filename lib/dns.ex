@@ -102,7 +102,7 @@ defmodule DNS do
 
               log(
                 true,
-                "got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+                "- got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
               )
 
               if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
@@ -193,6 +193,8 @@ defmodule DNS do
       |> Enum.filter(fn name -> name not in old end)
       |> Enum.filter(fn n -> not is_atom(n) end)
 
+    log(true, "- resolving new ns: #{Enum.join(new, ",")}")
+
     for ns <- new, type <- [:A, :AAAA] do
       case resolve(ns, type) do
         {:ok, msg} -> msg.answer
@@ -228,15 +230,15 @@ defmodule DNS do
 
         case query_ns(ns, qry, opts, tstop, nth) do
           {:error, :servfail} ->
-            log(opts.verbose, "pushing #{inspect(ns)} onto failed list (:servfail)")
+            log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:servfail)")
             query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, :timeout} ->
-            log(opts.verbose, "pushing #{inspect(ns)} onto failed list (:timeout)")
+            log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:timeout)")
             query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, error} ->
-            log(opts.verbose, "dropping #{inspect(ns)}, due to error: #{inspect(error)}")
+            log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(error)}")
             query_nss(nss, qry, opts, tstop, nth, failed)
 
           {:ok, rsp} ->
@@ -289,7 +291,7 @@ defmodule DNS do
     else
       error ->
         :gen_udp.close(sock)
-        log(true, "udp socket error #{inspect(ip)}, #{inspect(error)}")
+        log(true, "- udp socket error #{inspect(ip)}, #{inspect(error)}")
         error
     end
   rescue
@@ -327,7 +329,7 @@ defmodule DNS do
     # - keeps trying until timeout has passed
     # - sock is connected, so addr,port *should* be ok
     {:ok, {ip, p}} = :inet.peername(sock)
-    log(true, "trying #{Pfx.new(ip)}:#{p}/udp, timeout #{timeout} ms")
+    log(true, "- trying #{Pfx.new(ip)}:#{p}/udp, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
 
@@ -337,7 +339,7 @@ defmodule DNS do
          true <- msg.header.qr == 1 do
       t = now() - tstart
       b = byte_size(msg.wdata)
-      log(true, "recv'd #{b} bytes in #{t} ms, from #{Pfx.new(addr)}:#{port}/udp")
+      log(true, "- recv'd #{b} bytes in #{t} ms, from #{Pfx.new(addr)}:#{port}/udp")
 
       {:ok, msg}
     else
@@ -364,14 +366,14 @@ defmodule DNS do
          true <- msg.header.qr == 1 do
       :gen_tcp.close(sock)
       t = now() - t0
-      log(true, "recv'd #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
+      log(true, "- recv'd #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
       {:ok, msg}
     else
       false ->
         {:error, :noreply}
 
       {:error, e} ->
-        log(true, "query_tcp error #{inspect(e)}")
+        log(true, "- query_tcp error #{inspect(e)}")
         :gen_tcp.close(sock)
         {:error, e}
     end
@@ -384,7 +386,7 @@ defmodule DNS do
           {:ok, :inet.socket()} | {:error, any}
   def query_tcp_connect(ip, port, timeout, tstop) do
     # avoid exit badarg by checking ip/port's validity
-    log(true, "query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
+    log(true, "- query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
 
     iptype =
       case Pfx.type(ip) do
