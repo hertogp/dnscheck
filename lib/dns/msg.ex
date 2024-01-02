@@ -28,6 +28,19 @@ defmodule DNS.Msg do
 
   defstruct header: nil, question: [], answer: [], authority: [], additional: [], wdata: <<>>
 
+  @typedoc """
+  A struct that represents a DNS message.
+
+  It consists of:
+  - a `t:DNS.Msg.Hdr.t/0` for the header section
+  - a list of `t:DNS.Msg.Qtn.t/0` for the question section
+  - a list of `t:DNS.Msg.RR.t/0` for the answer, authority and/or additional sections
+  - `wdata`, a binary that can hold the wire formatted data of the DNS message.
+
+  Nowadays, the question section only holds one question.  Nameservers tend to ignore
+  all but the first question.
+
+  """
   @type t :: %__MODULE__{
           header: Hdr.t(),
           question: [Qtn.t()],
@@ -143,6 +156,62 @@ defmodule DNS.Msg do
   @doc """
   Sets `wdata`-field of the given `msg` and its sections.
 
+  The binary in the `wdata` field can then be sent via udp or
+  tcp, either as a query or as a response to a question.
+
+  The message's `wdata` is the concatenation of all the `wdata`
+  fields of its sections.
+
+  For RR's in the answer/authority and/or additional sections,
+  the RR's field `rdata` is also set to the binary encoding of
+  their `rdmap`, which is used in the encoding of its `wdata`
+  field.
+
+  Note that RR's can be `raw`, which means their `rdata` fields
+  are used as-is when assembling the `wdata` field for the RR.
+  This allows for experimentation with RR's not supported by
+  this library.
+
+  ## Example
+
+      iex> {:ok, msg} = DNS.Msg.new(qtn: [[name: "example.com", type: :A]])
+      iex> byte_size(msg.wdata)
+      0
+      iex> {:ok, msg} = encode(msg)
+      iex> msg
+      %DNS.Msg{
+        header: %DNS.Msg.Hdr{
+          id: 0,
+          qr: 0,
+          opcode: :QUERY,
+          aa: 0,
+          tc: 0,
+          rd: 1,
+          ra: 0,
+          z: 0,
+          ad: 0,
+          cd: 0,
+          rcode: :NOERROR,
+          qdc: 1,
+          anc: 0,
+          nsc: 0,
+          arc: 0,
+          wdata: <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0>>
+        },
+        question: [
+          %DNS.Msg.Qtn{
+            name: "example.com",
+            type: :A,
+            class: :IN,
+            wdata: <<7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1 >>
+          }
+        ],
+        answer: [],
+        authority: [],
+        additional: [],
+        wdata: <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108,
+          101, 3, 99, 111, 109, 0, 0, 1, 0, 1>>
+      }
 
   """
   @spec encode(t) :: {:ok, t} | {:error, DNS.MsgError.t()}
