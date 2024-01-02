@@ -240,6 +240,7 @@ defmodule DNS do
         ns = unwrap(ns)
 
         case query_ns(ns, qry, opts, tstop, nth) do
+          # TODO: servfail is never seen here as reason in an error tuple
           {:error, :servfail} ->
             log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:servfail)")
             query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
@@ -249,10 +250,12 @@ defmodule DNS do
             query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, error} ->
+            # need to look at error: if e.g. posix enetunreachable, retrying is pointless
             log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(error)}")
             query_nss(nss, qry, opts, tstop, nth, failed)
 
           {:ok, rsp} ->
+            # todo: inspect xrcode and act appropiately here (e.g. SERVFAIL...)
             {:ok, rsp}
         end
     end
