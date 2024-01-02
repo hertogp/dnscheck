@@ -11,8 +11,12 @@ defmodule DNS do
   #     of needless conversions between binary & tuples.
   # [ ] add spec to resolve, detailing all possible error reasons
   # [ ] responses must be better evaluated in query_nss
-  # [ ] resolve must try to answer from cache first and make_response
-  # [ ] need to "follow" CNAMEs
+  # [x] resolve must try to answer from cache first and make_response
+  # [ ] if qname is ip address, convert it to reverse ptr name
+  # [x] query for NS names in aut section (ex. tourdewadden.nl)
+  # [x] detect NS loops
+  # [ ] detect CNAME loops
+
   @root_nss File.read!("priv/named.root.rrs")
             |> :erlang.binary_to_term()
             |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
@@ -81,6 +85,8 @@ defmodule DNS do
          {:ok, qry} <- make_query(name, type, opts),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, :IN, type) do
+      log(true, "resolving #{qname}, #{type}")
+
       case cached do
         [] ->
           nss = (opts.recurse && Cache.nss(qname)) || opts.nameservers
@@ -105,6 +111,7 @@ defmodule DNS do
           end
 
         rrs ->
+          log(true, "- cached answer with #{length(rrs)} answers")
           make_response(qry, rrs)
       end
     else
@@ -117,14 +124,11 @@ defmodule DNS do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
-    # TODO
-    # [ ] if qname is ip address, convert it to reverse ptr name
-    # [ ] query for NS names in aut section (ex. tourdewadden.nl)
-    # [x] detect NS loops
-    # [ ] detect CNAME loops
+    # NOTES
+    # - same qry, different nameservers due to redirection
 
-    log(true, "recursing for #{hd(msg.question)}")
-    log(true, "recursing cache size is #{Cache.size()}")
+    qtn = hd(qry.question)
+    log(true, "- recursing for #{qtn.name} #{qtn.type}")
     Cache.put(msg)
 
     # always move forward, never cirle back hence filtering seen
@@ -139,7 +143,7 @@ defmodule DNS do
     seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
 
     # TODO: report an error when all ns were seen before
-    log(true, "recursing with nss: #{inspect(nss)}")
+    log(true, "- new nss: #{inspect(nss)}")
 
     with {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, []),
          xrcode <- xrcode(msg),
@@ -165,6 +169,12 @@ defmodule DNS do
 
   @spec res_recurse_nss([binary]) :: [{:inet.ip_address(), integer}]
   def res_recurse_nss(nsnames) do
+    # given a list of names of :NS namerservers taken from authority,
+    # get their IP addresses.  Consult the cache first, then resolve
+    # any that are not yet in the cache.  Note that the msg on whose
+    # authority we're recursing on will have been cached already, so
+    # any glue records for nameservers that were in the additional
+    # section, can be retrieved from the cache.
     nss =
       for ns <- nsnames, type <- [:A, :AAAA] do
         Cache.get(ns, :IN, type)
@@ -193,8 +203,8 @@ defmodule DNS do
     |> Enum.concat(nss)
     |> Enum.map(fn rr -> rr.rdmap.ip end)
     |> Enum.map(fn ip -> {Pfx.to_tuple(ip, mask: false), 53} end)
-
-    # Process.exit(self(), :abort)
+  rescue
+    _ -> []
   end
 
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
