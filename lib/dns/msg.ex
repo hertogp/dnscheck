@@ -29,8 +29,14 @@ defmodule DNS.Msg do
 
   The answer, authority and additional sections contain zero or more resource
   records, aka RR's.  Each [RR](`DNS.Msg.RR`) consists of a name, class, type,
-  ttl, a resource data length and its rdata.
+  ttl, a resource data length and the resource data itself.
 
+  If the resource data cannot be decoded into a `rdmap` of key,value-pairs, the
+  `rdmap` is set to an empty map and the RR's `raw` field is set to true and the
+  RR in question is retained in the DNS message struct.
+
+  Note that when decoding, domain name compression is supported.  However, when
+  encoding no domain name compression is applied.
 
   """
 
