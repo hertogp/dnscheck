@@ -9,7 +9,7 @@ defmodule DNS.Msg do
       +---------------------+
       |        Header       |
       +---------------------+
-      |       Question      | the question for the name server
+      |       Question      | the question(s) for the name server
       +---------------------+
       |        Answer       | RRs answering the question
       +---------------------+
