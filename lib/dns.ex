@@ -142,7 +142,7 @@ defmodule DNS do
     log(true, "- recursing for #{qtn.name} #{qtn.type}")
     Cache.put(msg)
 
-    # always move forward, never cirle back hence filtering seen
+    # always move forward, never circle back hence filtering seen
     nss =
       msg.authority
       |> Enum.filter(fn rr -> rr.type == :NS end)
@@ -414,7 +414,7 @@ defmodule DNS do
     # a synthesized answer:
     # - is created by copying & updating the vanilla qry msg
     # - has no wdata and id of 0
-    # - aa=0, since we're not an authoratative source
+    # - aa=0, since we're not an authoritative source
     # - ra=1, since we're answering and recursion is available
     # Note: individual RR's *will* have wdata if they are raw RR's
     hdr = %{qry.header | anc: length(rrs), aa: 0, ra: 1, qr: 1, id: 0, wdata: ""}
