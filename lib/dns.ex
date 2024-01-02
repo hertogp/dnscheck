@@ -65,6 +65,9 @@ defmodule DNS do
   def resolve(name, type, opts \\ []) do
     # TODO:
     # [ ] move this elsewhere, so we can consult cache before query_nss
+    # [ ] consult the cache and if possible, synthesize the answer
+    # [ ] optimize by replacing root nss with ones closer to the QNAME
+    #     e.g. if we already know the NSS for tld, we shouln't ask root (again)
     Cache.init(clear: false)
 
     with {:ok, opts} <- make_options(opts),
@@ -94,7 +97,7 @@ defmodule DNS do
     # TODO
     # [ ] if qname is ip address, convert it to reverse ptr name
     # [ ] query for NS names in aut section (ex. tourdewadden.nl)
-    # [ ] detect NS loops
+    # [x] detect NS loops
     # [ ] detect CNAME loops
 
     log(true, "recursing for #{hd(msg.question)}")
@@ -112,6 +115,7 @@ defmodule DNS do
     # keep track of where we've been
     seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
 
+    # TODO: report an error when all ns were seen before
     log(true, "recursing with nss: #{inspect(nss)}")
 
     with {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, []),
@@ -131,7 +135,6 @@ defmodule DNS do
 
   @spec res_recurse_nss([binary]) :: [{:inet.ip_address(), integer}]
   def res_recurse_nss(nsnames) do
-    # first consult the cache, otherwise we'll loop ourselves
     nss =
       for ns <- nsnames, type <- [:A, :AAAA] do
         Cache.get(ns, :IN, type)
@@ -365,6 +368,17 @@ defmodule DNS do
   @spec make_query(binary, atom | non_neg_integer, map) :: {:ok, DNS.Msg.t()} | {:error, any}
   def make_query(name, type, opts) do
     # assumes opts is safe (made by make_options)
+
+    name =
+      if Pfx.valid?(name) do
+        Pfx.dns_ptr(name)
+      else
+        with {:ok, name} <- dname_normalize(name) do
+          name
+        else
+          _ -> name
+        end
+      end
 
     edns_opts =
       if opts.edns,

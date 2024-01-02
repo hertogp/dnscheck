@@ -272,6 +272,70 @@ defmodule DNS.Cache do
     end
   end
 
+  @doc """
+  Returns either a list of nameservers or false for given `zone`
+
+  The cache is searched, dropping front labels until either a list of
+  nameservers is found or the labels have been exhausted.  In the first case,
+  the list represents the 'closest' set of nameservers for given `zone`.  In
+  the latter case, `false` is returned.
+
+  A nameserver in the list is represented as `{:inet.ip_address, 53}`.
+
+  ## Example
+
+      iex> init()
+      iex> put(DNS.Msg.RR.new(name: "example.com", type: :NS, ttl: 10, rdmap: %{name: "ns1.example.com"}))
+      iex> put(DNS.Msg.RR.new(name: "example.com", type: :NS, ttl: 10, rdmap: %{name: "ns2.example.net"}))
+      iex> put(DNS.Msg.RR.new(name: "ns1.example.com", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"}))
+      iex> put(DNS.Msg.RR.new(name: "ns2.example.net", type: :A, ttl: 10, rdmap: %{ip: "10.2.1.1"}))
+      iex> size()
+      3
+      iex> nss = nss("host.example.com")
+      iex> {{10, 1, 1, 1}, 53} in nss
+      true
+      iex> {{10, 2, 1, 1}, 53} in nss
+      true
+      iex> length(nss)
+      2
+      iex> nss("example.net")
+      false
+
+  """
+  @spec nss(binary) :: [{:inet.ip_address(), integer}] | false
+  def nss(zone) when is_binary(zone) do
+    with {:ok, labels} <- dname_normalize(zone, join: false) do
+      case do_nss(labels) do
+        [] ->
+          false
+
+        nss ->
+          nss
+          |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
+          |> List.flatten()
+          |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+      end
+    else
+      _ -> false
+    end
+  end
+
+  # return a list of :NS names or empty list
+  defp do_nss([]),
+    do: []
+
+  defp do_nss([_ | rest] = labels) do
+    zone = Enum.join(labels, ".")
+
+    case get(zone, :IN, :NS) do
+      [] ->
+        do_nss(rest)
+
+      nss ->
+        Enum.map(nss, fn rr -> rr.rdmap.name end)
+    end
+  end
+
   # [[ HELPERS ]]
 
   # ttd is absolute, monotonic time_to_die

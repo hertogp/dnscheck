@@ -189,7 +189,7 @@ defmodule DNS.Utils do
     do: false
 
   @doc """
-  Returns an `{:ok, normalized}` or `{:error, :edname} for given `name`.
+  Returns an `{:ok, normalized}` or `{:error, :edname}` for given `name`.
 
   Normalization means that:
   - the trailing dot is stripped
@@ -199,14 +199,17 @@ defmodule DNS.Utils do
   has a label longer than 63 octets), the error tuple is returned.
 
   """
-  def dname_normalize(name) do
-    name =
-      name
-      |> dname_to_labels()
-      |> Enum.join(".")
-      |> String.downcase()
+  def dname_normalize(name, opts \\ []) do
+    join = Keyword.get(opts, :join, true)
 
-    {:ok, name}
+    labels =
+      name
+      |> String.downcase()
+      |> dname_to_labels()
+
+    result = if join, do: Enum.join(labels, "."), else: labels
+
+    {:ok, result}
   rescue
     _ -> {:error, :edname}
   end
