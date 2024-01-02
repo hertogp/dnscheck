@@ -9,13 +9,15 @@ defmodule DNS do
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
   # [ ] store IP addresses as tuples in Msg components, right now there is lot
   #     of needless conversions between binary & tuples.
-  # [ ] add spec to resolve, detailing all possible error reasons
-  # [ ] responses must be better evaluated in query_nss
+  # [x] add spec to resolve, detailing all possible error reasons
   # [x] resolve must try to answer from cache first and make_response
   # [ ] if qname is ip address, convert it to reverse ptr name
   # [x] query for NS names in aut section (ex. tourdewadden.nl)
   # [x] detect NS loops
   # [ ] detect CNAME loops
+  # [ ] responses must be better evaluated in query_nss
+  #     - including extra validation rules for msg's (e.g. max 1 :OPT in additional, TSIG
+  #       at the end, etc...)
 
   @root_nss File.read!("priv/named.root.rrs")
             |> :erlang.binary_to_term()
@@ -29,10 +31,17 @@ defmodule DNS do
 
   @typedoc "Type of RR, as atom or non negative integer"
   @type type :: atom | non_neg_integer
-  @typedoc "Nameserver is tuple of IPv4/6 address and port number"
+  @typedoc "Nameserver is tuple of IPv4/6 address-tuple and port number"
   @type ns :: {:inet.ip_address(), non_neg_integer}
   @typedoc "A struct representing a nameserver message"
   @type msg :: DNS.Msg.t()
+  @typedoc "Reasons why resolving may fail"
+  @type reason ::
+          :timeout | :badarg | :system_limit | :not_owner | DNS.MsgError.t() | :inet.posix()
+  @typedoc "A counter is shorthand for non negative integer"
+  @type counter :: non_neg_integer
+  @typedoc "timeT is a, possibly future, absolute point in monolithic time"
+  @type timeT :: integer
 
   # [[ NOTES ]]
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
@@ -73,12 +82,9 @@ defmodule DNS do
   is added to the additional section of the `Msg`.
 
   """
-  @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, any}
+  @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
   def resolve(name, type, opts \\ []) do
-    # TODO:
-    # [ ] consult the cache and if possible, synthesize the answer
-    # NOTES:
-    # - opts.recurse is false -> caller explicitly provided opts.nameservers
+    # TODO: probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
 
     with {:ok, opts} <- make_options(opts),
@@ -89,6 +95,7 @@ defmodule DNS do
 
       case cached do
         [] ->
+          # if opts.recurse is false -> use caller's explicitly provided opts.nameservers
           nss = (opts.recurse && Cache.nss(qname)) || opts.nameservers
           tstop = time(opts.maxtime)
 
@@ -105,13 +112,17 @@ defmodule DNS do
                 "- got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
               )
 
+              # TODO: is this always sound?
               if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
                 do: res_recurse(qry, msg, opts, tstop, %{}),
                 else: {:ok, msg}
+
+            {:error, reason} ->
+              {:error, reason}
           end
 
         rrs ->
-          log(true, "- cached answer with #{length(rrs)} answers")
+          log(true, "- using cached answer with #{length(rrs)} answer(s)")
           make_response(qry, rrs)
       end
     else
@@ -247,8 +258,7 @@ defmodule DNS do
     end
   end
 
-  @spec query_ns(ns, DNS.Msg.t(), map, integer, non_neg_integer) ::
-          {:ok, DNS.Msg.t()} | {:error, any}
+  @spec query_ns(ns, msg, map, timeT, counter) :: {:ok, msg} | {:error, reason}
   def query_ns(ns, qry, opts, tstop, n) do
     # queries a single nameserver, returns {:ok, msg} | {:error, reason}
     # - servfail or timeout -> ns will be tried later again
@@ -269,23 +279,18 @@ defmodule DNS do
     end
   end
 
-  @spec query_udp(ns, DNS.Msg.t(), non_neg_integer, non_neg_integer) ::
-          {:ok, DNS.Msg.t()} | {:error, any}
+  @spec query_udp(ns, msg, timeout, non_neg_integer) :: {:ok, msg} | {:error, reason}
   def query_udp(_ns, _qry, 0, _bufsize),
     do: {:error, :timeout}
 
   def query_udp({ip, port}, qry, timeout, bufsize) do
-    # query_udp_open checks ip/port so we don't exit with :badarg
-    # query_udp_recv polls until timeout has passed
-
+    # query_udp_open checks ip/port so we don't *exit* with :badarg, which
+    # is not mentioned in the docs so it seems
     {:ok, sock} = query_udp_open(ip, port, bufsize)
 
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
          {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
-      # :inet.getstat(sock, [:recv_cnt, :recv_oct])
-      # |> IO.inspect(label: :getstat)
-
       :gen_udp.close(sock)
       {:ok, msg}
     else
@@ -295,14 +300,16 @@ defmodule DNS do
         error
     end
   rescue
-    # when query_udp_open returns {:error, :socket}
+    # when query_udp_open returns {:error, :badarg} (i.e. the term in e)
     e in MatchError -> e.term
   end
 
   @spec query_udp_open(:inet.ip_address(), non_neg_integer, non_neg_integer) ::
-          {:ok, :gen_udp.socket()} | {:error, any}
+          {:ok, :gen_udp.socket()} | {:error, :system_limit | :badarg | :inet.posix()}
   def query_udp_open(ip, port, bufsize) do
     # avoid exit :badarg from gen_udp.open
+    # gen_udp.open -> {ok, socket} | {:error, system_limit | :inet.posix()}
+    # or {:error, :badarg}
     iptype =
       case Pfx.type(ip) do
         :ip4 -> :inet
@@ -318,28 +325,26 @@ defmodule DNS do
     end
   end
 
-  @spec query_udp_recv(:inet.socket(), DNS.Msg.t(), non_neg_integer) ::
-          {:ok, DNS.Msg.t()} | {:error, any}
+  @spec query_udp_recv(:inet.socket(), msg, timeout) :: {:ok, msg} | {:error, reason}
   def query_udp_recv(_sock, _qry, 0),
     do: {:error, :timeout}
 
   def query_udp_recv(sock, qry, timeout) do
-    # gen_udp.recv -> {:ok, dta} | {:error, posix | not_owner | timeout}
-    # - checks that header qry/rsp id's match and it's actually a reply msg
-    # - keeps trying until timeout has passed
+    # - if it's no answer to the question, try again until timeout has passed
     # - sock is connected, so addr,port *should* be ok
     {:ok, {ip, p}} = :inet.peername(sock)
-    log(true, "- trying #{Pfx.new(ip)}:#{p}/udp, timeout #{timeout} ms")
+    ns = "#{Pfx.new(ip)}:#{p}/udp"
+    log(true, "- recv from #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
 
-    with {:ok, {addr, port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
+    with {:ok, {_addr, _p, rsp}} <- :gen_udp.recv(sock, 0, timeout),
          {:ok, msg} <- Msg.decode(rsp),
          true <- msg.header.id == qry.header.id,
          true <- msg.header.qr == 1 do
       t = now() - tstart
       b = byte_size(msg.wdata)
-      log(true, "- recv'd #{b} bytes in #{t} ms, from #{Pfx.new(addr)}:#{port}/udp")
+      log(true, "- recv'd #{b} bytes in #{t} ms, from #{ns}")
 
       {:ok, msg}
     else
@@ -348,15 +353,13 @@ defmodule DNS do
     end
   end
 
-  @spec query_tcp(ns, DNS.Msg.t(), non_neg_integer, non_neg_integer) ::
-          {:ok, DNS.Msg.t()} | {:error, any}
+  @spec query_tcp(ns, msg, timeout, timeT) :: {:ok, msg} | {:error, reason}
   def query_tcp(_ns, _qry, 0, _tstop),
     do: {:error, :timeout}
 
   def query_tcp({ip, port}, qry, timeout, tstop) do
-    # :gen_tcp.connect -> {:ok, sock} | {:error, :timeout | posix}
     # connect outside with block, so we can always close the socket
-    {:ok, sock} = query_tcp_connect(ip, port, timeout, tstop)
+    {:ok, sock} = query_tcp_connect({ip, port}, timeout, tstop)
     t0 = now()
 
     with :ok <- :gen_tcp.send(sock, qry.wdata),
@@ -382,10 +385,9 @@ defmodule DNS do
     e in MatchError -> e.term
   end
 
-  @spec query_tcp_connect(:inet.ip_address(), non_neg_integer, non_neg_integer, integer) ::
-          {:ok, :inet.socket()} | {:error, any}
-  def query_tcp_connect(ip, port, timeout, tstop) do
-    # avoid exit badarg by checking ip/port's validity
+  @spec query_tcp_connect(ns, timeout, timeT) :: {:ok, :inet.socket()} | {:error, reason}
+  def query_tcp_connect({ip, port}, timeout, tstop) do
+    # avoid *exit* badarg by checking ip/port's validity
     log(true, "- query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
 
     iptype =
@@ -407,12 +409,14 @@ defmodule DNS do
 
   # [[ MAKE QRY/RSP MSG ]]
 
+  @spec make_response(msg, [DNS.Msg.RR.t()]) :: {:ok, msg}
   def make_response(qry, rrs) do
     # a synthesized answer:
     # - is created by copying & updating the vanilla qry msg
     # - has no wdata and id of 0
     # - aa=0, since we're not an authoratative source
     # - ra=1, since we're answering and recursion is available
+    # Note: individual RR's *will* have wdata if they are raw RR's
     hdr = %{qry.header | anc: length(rrs), aa: 0, ra: 1, qr: 1, id: 0, wdata: ""}
     qtn = %{hd(qry.question) | wdata: ""}
 
@@ -420,7 +424,7 @@ defmodule DNS do
     {:ok, rsp}
   end
 
-  @spec make_query(binary, atom | non_neg_integer, map) :: {:ok, DNS.Msg.t()} | {:error, any}
+  @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
   def make_query(name, type, opts) do
     # assumes opts is safe (made by make_options)
 
@@ -509,6 +513,7 @@ defmodule DNS do
 
   # [[ HELPERS ]]
 
+  @spec xrcode(msg) :: atom | non_neg_integer
   defp xrcode(msg) do
     # calculate rcode (no TSIG's yet)
 

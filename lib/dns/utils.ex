@@ -189,7 +189,7 @@ defmodule DNS.Utils do
     do: false
 
   @doc """
-  Returns an `{:ok, normalized}` or `{:error, :edname}` for given `name`.
+  Returns an `{:ok, normalized}` or `{:error, :eencode}` for given `name`.
 
   Normalization means that:
   - the trailing dot is stripped
@@ -211,7 +211,7 @@ defmodule DNS.Utils do
 
     {:ok, result}
   rescue
-    _ -> {:error, :edname}
+    _ -> {:error, :eencode}
   end
 
   @doc """
