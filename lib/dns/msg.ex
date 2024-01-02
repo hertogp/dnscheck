@@ -162,15 +162,13 @@ defmodule DNS.Msg do
   The message's `wdata` is the concatenation of all the `wdata`
   fields of its sections.
 
-  For RR's in the answer/authority and/or additional sections,
-  the RR's field `rdata` is also set to the binary encoding of
-  their `rdmap`, which is used in the encoding of its `wdata`
-  field.
+  For RR's in the answer, authority and/or additional sections,
+  their `rdata` is first set to the binary encoding of their `rdmap`,
+  which is then used in the encoding of its `wdata` field.
 
-  Note that RR's can be `raw`, which means their `rdata` fields
-  are used as-is when assembling the `wdata` field for the RR.
-  This allows for experimentation with RR's not supported by
-  this library.
+  Note that RR's can be `raw`, which means their `rdmap`'s are ignored and
+  their `rdata` fields are used *as-is* when assembling the `wdata` field for the
+  RR. This allows for experimentation with RR's not supported by this library.
 
   ## Example
 
@@ -259,6 +257,49 @@ defmodule DNS.Msg do
 
   # [[ DECODE MSG ]]
 
+  @doc """
+  Decodes a wire formatted binary into a `t:DNS.Msg.t/0` struct.
+
+  When decoding an RR, its `rdmap` is populated with fields and values
+  that represent its `rdata` as found in the binary.  If no decoder is
+  available for that particular RR type, its `rdmap` map is simply set
+  to an empty map and its `raw` set to true.
+
+  Other types of decoding issues are usually fatal, in which case an
+  '{:error, `t:DNS.MsgError.t/0`}' is returned.
+
+  ## Examples
+
+      # suppose this came out of a udp/tcp socket
+      iex> wdata = <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108,
+      ...>           101, 3, 99, 111, 109, 0, 0, 1, 0, 1>>
+      iex> decode(wdata)
+      {:ok,
+        %DNS.Msg{
+          header: %DNS.Msg.Hdr{
+            id: 0, qr: 0, opcode: :QUERY,
+            aa: 0, tc: 0, rd: 1, ra: 0, z: 0,
+            ad: 0, cd: 0, rcode: :NOERROR, qdc: 1, anc: 0, nsc: 0, arc: 0,
+            wdata: <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0>>},
+          question: [
+            %DNS.Msg.Qtn{
+            name: "example.com",
+            type: :A,
+            class: :IN,
+            wdata: <<7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1>>}
+          ],
+          answer: [],
+          authority: [],
+          additional: [],
+          wdata: <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1>>
+        }
+      }
+
+      # illegal binaries don't do well
+      iex> decode(<<"oops">>)
+      {:error, %DNS.MsgError{reason: :edecode, data: "Hdr decode error at offset 0"}}
+
+  """
   @spec decode(binary) :: {:ok, t} | {:error, DNS.MsgError.t()}
   def decode(msg) do
     {offset, hdr} = Hdr.decode(0, msg)
