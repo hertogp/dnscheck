@@ -9,15 +9,27 @@ defmodule DNS.Msg do
       +---------------------+
       |        Header       |
       +---------------------+
-      |       Question      | the question(s) for the name server
+      /       Question      / the question(s) for the name server
       +---------------------+
-      |        Answer       | RRs answering the question
+      /        Answer       / RRs answering the question
       +---------------------+
-      |      Authority      | RRs pointing toward an authority
+      /      Authority      / RRs pointing toward an authority
       +---------------------+
-      |      Additional     | RRs holding additional information
+      /      Additional     / RRs holding additional information
       +---------------------+
   ```
+
+  The [header](`DNS.Msg.Hdr`) consists of 12 bytes, the other portions are variable
+  in length.
+
+  Nowadays, the question section only holds one question. Nameservers tend to
+  ignore all but the first question.  Each [question](`DNS.Msg.Qtn`) contains
+  a name, type and class (which is usually `:IN`, since the other protocols
+  didn't really take off)
+
+  The answer, authority and additional sections contain zero or more resource
+  records, aka RR's.  Each [RR](`DNS.Msg.RR`) consists of a name, class, type,
+  ttl, a resource data length and its rdata.
 
 
   """
@@ -37,8 +49,6 @@ defmodule DNS.Msg do
   - a list of `t:DNS.Msg.RR.t/0` for the answer, authority and/or additional sections
   - `wdata`, a binary that can hold the wire formatted data of the DNS message.
 
-  Nowadays, the question section only holds one question.  Nameservers tend to ignore
-  all but the first question.
 
   """
   @type t :: %__MODULE__{
