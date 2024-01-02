@@ -5,9 +5,14 @@ defmodule DNS do
   """
 
   # TODO:
-  # - change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
-  # - use Code.eval_file("priv/root.nss") here
-  # that way, the priv/root.nss file is actually readable
+  # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
+  #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
+  # [ ] store IP addresses as tuples in Msg components, right now there is lot
+  #     of needless conversions between binary & tuples.
+  # [ ] add spec to resolve, detailing all possible error reasons
+  # [ ] responses must be better evaluated in query_nss
+  # [ ] resolve must try to answer from cache first and make_response
+  # [ ] need to "follow" CNAMEs
   @root_nss File.read!("priv/named.root.rrs")
             |> :erlang.binary_to_term()
             |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
@@ -68,27 +73,40 @@ defmodule DNS do
   def resolve(name, type, opts \\ []) do
     # TODO:
     # [ ] consult the cache and if possible, synthesize the answer
-    # [ ] optimize by replacing root nss with ones closer to the QNAME
-    #     e.g. so we don't have to recurse all the way from root again
+    # NOTES:
+    # - opts.recurse is false -> caller explicitly provided opts.nameservers
     Cache.init(clear: false)
 
     with {:ok, opts} <- make_options(opts),
          {:ok, qry} <- make_query(name, type, opts),
-         tstop <- time(opts.maxtime),
-         nss <- opts.nameservers,
-         {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, _failed = []),
-         xrcode <- xrcode(msg),
-         anc = msg.header.anc,
-         nsc = msg.header.nsc,
-         arc = msg.header.arc do
-      log(true, "got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional")
+         qname <- hd(qry.question).name,
+         cached <- Cache.get(qname, :IN, type) do
+      case cached do
+        [] ->
+          nss = (opts.recurse && Cache.nss(qname)) || opts.nameservers
+          tstop = time(opts.maxtime)
 
-      # TODO:
-      # - since res_recurse may call resolve, we need to add seen to resolve
-      # func signature in order to always be able to detect loops?
-      if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
-        do: res_recurse(qry, msg, opts, tstop, %{}),
-        else: {:ok, msg}
+          case query_nss(nss, qry, opts, tstop, 0, _failed = []) do
+            {:ok, msg} ->
+              Cache.put(msg)
+              xrcode = xrcode(msg)
+              anc = msg.header.anc
+              nsc = msg.header.nsc
+              arc = msg.header.arc
+
+              log(
+                true,
+                "got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+              )
+
+              if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
+                do: res_recurse(qry, msg, opts, tstop, %{}),
+                else: {:ok, msg}
+          end
+
+        rrs ->
+          make_response(qry, rrs)
+      end
     else
       e -> e
     end
@@ -128,9 +146,16 @@ defmodule DNS do
          anc <- msg.header.anc,
          nsc <- msg.header.nsc do
       case xrcode do
-        :NOERROR when anc == 0 and nsc > 0 -> res_recurse(qry, msg, opts, tstop, seen)
-        :NOERROR when anc > 0 -> {:ok, msg}
-        other -> {:error, {other, msg}}
+        :NOERROR when anc == 0 and nsc > 0 ->
+          Cache.put(msg)
+          res_recurse(qry, msg, opts, tstop, seen)
+
+        :NOERROR when anc > 0 ->
+          Cache.put(msg)
+          {:ok, msg}
+
+        other ->
+          {:error, {other, msg}}
       end
     else
       {:error, reason} -> {:error, {reason, msg}}
@@ -369,6 +394,19 @@ defmodule DNS do
   end
 
   # [[ MAKE QRY/RSP MSG ]]
+
+  def make_response(qry, rrs) do
+    # a synthesized answer:
+    # - is created by copying & updating the vanilla qry msg
+    # - has no wdata and id of 0
+    # - aa=0, since we're not an authoratative source
+    # - ra=1, since we're answering and recursion is available
+    hdr = %{qry.header | anc: length(rrs), aa: 0, ra: 1, qr: 1, id: 0, wdata: ""}
+    qtn = %{hd(qry.question) | wdata: ""}
+
+    rsp = %{qry | header: hdr, question: [qtn], answer: rrs, wdata: ""}
+    {:ok, rsp}
+  end
 
   @spec make_query(binary, atom | non_neg_integer, map) :: {:ok, DNS.Msg.t()} | {:error, any}
   def make_query(name, type, opts) do
