@@ -7,6 +7,10 @@ defmodule DNS do
   # TODO:
   # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
+  # [ ] sort the root hints fastest to slowest RTT
+  # [ ] add time spent to result of resolve (plus last NS seen?)
+  # [ ] add check when recursing to see if delegated NSs are closer to QNAME
+  #     if not, ignore them as bogus
   # [ ] store IP addresses as tuples in Msg components, right now there is lot
   #     of needless conversions between binary & tuples.
   # [x] add spec to resolve, detailing all possible error reasons
@@ -229,6 +233,8 @@ defmodule DNS do
     do: query_nss(Enum.reverse(failed), qry, opts, tstop, nth + 1, [])
 
   def query_nss([ns | nss], qry, opts, tstop, nth, failed) do
+    # query_nss only queries the list of NSS for an acceptable response
+    # resolve decides to continue with a new NSS list or not
     cond do
       timeout(tstop) == 0 ->
         {:error, :timeout}
@@ -240,22 +246,28 @@ defmodule DNS do
         ns = unwrap(ns)
 
         case query_ns(ns, qry, opts, tstop, nth) do
-          # TODO: servfail is never seen here as reason in an error tuple
-          {:error, :servfail} ->
-            log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:servfail)")
-            query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
+          # {:error, :servfail} ->
+          #   # TODO: servfail is never seen here as reason in an error tuple
+          #   log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:servfail)")
+          #   query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, :timeout} ->
             log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:timeout)")
             query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
-          {:error, error} ->
-            # need to look at error: if e.g. posix enetunreachable, retrying is pointless
-            log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(error)}")
+          {:error, reason} ->
+            # basically any :inet.posix error makes continuing pursuit a doubtful endeavor
+            # only when something like ehostunreach is given, would it make
+            # sense to move on to the next ns
+            log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
             query_nss(nss, qry, opts, tstop, nth, failed)
 
           {:ok, rsp} ->
-            # todo: inspect xrcode and act appropiately here (e.g. SERVFAIL...)
+            # TODO: handle rcodes
+            # https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1
+            # retry later: SERVFAIL
+            # rcodes for valid response: :NOERROR, NXDOMAIN
+            # moving on: REFUSED, NOTIMP, FORMERR, XYDOMAIN, BADVERS, basically all else!
             {:ok, rsp}
         end
     end
@@ -266,6 +278,7 @@ defmodule DNS do
     # queries a single nameserver, returns {:ok, msg} | {:error, reason}
     # - servfail or timeout -> ns will be tried later again
     # - any other error -> ns is dropped and not visited again
+    # [ ] should we fallback to plain dns in case EDNS leads to BADVERS ?
     bufsize = opts.bufsize
     timeout = opts.timeout
     payload = byte_size(qry.wdata)

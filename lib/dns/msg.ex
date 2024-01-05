@@ -74,11 +74,11 @@ defmodule DNS.Msg do
   - `{:error, DNS.MsgError.t}`
 
   `new/1` takes options for each of its constituents:
-  - hdr: `[opts]`, options for `t:DNS.Msg.Hdr.t/0` header
-  - qtn: `[[opts]]`, options for `t:DNS.Msg.Qtn.t/0` questions, 1 at a time
-  - ans: `[[opts]]`, options for `t:DNS.Msg.RR.t/0` answer RRs, 1 at a time
-  - aut: `[[opts]]`, options for `t:DNS.Msg.RR.t/0` authority RRs, 1 at a time
-  - add: `[[opts]]`, options for `t:DNS.Msg.RR.t/0` additional RRs, 1 at a time
+  - `:hdr` `[opts]` for the [header](`DNS.Msg.Hdr`)
+  - `:qtn` `[[opts]]` for the [questions](`DNS.Msg.Qtn`) in the question section, 1 at a time
+  - `:ans` `[[opts]]` for the [RR's](`DNS.Msg.RR`) in the answer section, 1 at a time
+  - `:aut` `[[opts]]` for the [RR's](`DNS.Msg.RR`) in the authority section, 1 at a time
+  - `:add` `[[opts]]` for the [RR's](`DNS.Msg.RR`) in the additional section, 1 at a time
 
   ## Examples
 

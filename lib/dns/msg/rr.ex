@@ -1660,7 +1660,7 @@ defmodule DNS.Msg.RR do
   # IN HTTPS (65), https://www.rfc-editor.org/rfc/rfc9460.html#name-rdata-wire-format
 
   # IN ANY/* (255)
-  # pseudo QTYPE, never an RRtype, see also RFC882 and RFC8482
+  # QTYPEi-only, never an RRtype, see also RFC882 and RFC8482
 
   # IN URI (256)
   # - https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
