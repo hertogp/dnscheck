@@ -133,7 +133,7 @@ defmodule Mix.Tasks.Iana.Update do
     {:ok, body} = fetch(@root_hints)
     new_nss = hints_to_nss(body)
 
-    Mix.shell().info(" - readin local copy (if any)")
+    Mix.shell().info(" - reading local copy (if any)")
 
     old_nss =
       if File.exists?(@fname_nss),
@@ -152,6 +152,7 @@ defmodule Mix.Tasks.Iana.Update do
     end
 
     File.write!("priv/root.nss", inspect(new_nss, pretty: true))
+    Mix.shell().info(" - wrote #{length(new_nss)} hints to #{@fname_nss}")
   end
 
   # [[ HELPERS ]]
