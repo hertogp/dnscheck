@@ -358,17 +358,18 @@ defmodule DNS.Cache do
 
   defp cacheable?(%DNS.Msg{} = msg) do
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
-    # [m] SHOULD cache temporary failures (TTL order of minutes)
-    # [o] MUST never cache NS from root hints
+    # [ ] SHOULD cache temporary failures (TTL order of minutes)
+    # [ ] MUST never cache NS from root hints
     # [ ] SHOULD cache negative responses
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
-    # - do not cache RR's from a truncated response
-    # - result of *inverse query* (QTYPE) should not be cached
-    # - do not cache results that have QNAM with a wildcard label  (*.xyz.tld, or xyz.*.tld)
-    # - RR's of responses of dubious reliability, but how to determine that?
-    # - unsollicited responses or RR DATA that was not requested (resolver MUST check this)
+    # [x] do not cache RR's from a truncated response
+    # [x] result of *inverse query* (QTYPE) should not be cached
+    # [x] do not cache results that have QNAME with a wildcard label  (*.xyz.tld, or xyz.*.tld)
+    # [?] RR's of responses of dubious reliability, but how to determine that?
+    # [x] unsollicited responses or RR DATA that was not requested (resolver MUST check this)
+    #  `-> done by put(msg)
     # Sometimes cache data MUST be replaced
-    # - cached data is not authoritative and the current msg is authoritative
+    # [ ] cached data is not authoritative and the current msg is authoritative
     qname = hd(msg.question).name
     labels = dname_to_labels(qname)
     wildcard = Enum.any?(labels, fn l -> l == "*" end)

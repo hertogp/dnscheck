@@ -22,14 +22,15 @@ defmodule DNS.Msg do
   The [header](`DNS.Msg.Hdr`) consists of 12 bytes, the other portions are variable
   in length.
 
-  Nowadays, the question section only holds one question. Nameservers tend to
-  ignore all but the first question.  Each [question](`DNS.Msg.Qtn`) contains
+  Nowadays, the [question](`DNS.Msg.Qtn`) section only holds one question. Nameservers tend to
+  ignore all but the first question.  Each question contains
   a name, type and class (which is usually `:IN`, since the other protocols
   didn't really take off)
 
-  The answer, authority and additional sections contain zero or more resource
-  records, aka RR's.  Each [RR](`DNS.Msg.RR`) consists of a name, class, type,
-  ttl, a resource data length and the resource data itself.
+  The resource records ([RRs](`DNS.Msg.RR`) found in the answer, authority and
+  additional sections each consists of a name, class, type, ttl, a resource
+  data length and the resource data itself.  Note that each section may contain
+  zero or more of these records.
 
   If the resource data cannot be decoded into a `rdmap` of key,value-pairs, the
   `rdmap` is set to an empty map and the RR's `raw` field is set to true and the
