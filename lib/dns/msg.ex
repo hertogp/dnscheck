@@ -27,12 +27,12 @@ defmodule DNS.Msg do
   a name, type and class (which is usually `:IN`, since the other protocols
   didn't really take off)
 
-  The resource records ([RRs](`DNS.Msg.RR`) found in the answer, authority and
+  The resource records (or [RRs](`DNS.Msg.RR`)) found in the answer, authority and
   additional sections each consists of a name, class, type, ttl, a resource
   data length and the resource data itself.  Note that each section may contain
   zero or more of these records.
 
-  If the resource data cannot be decoded into a `rdmap` of key,value-pairs, the
+  If the resource data cannot be decoded into an `rdmap` of key,value-pairs, the
   `rdmap` is set to an empty map and the RR's `raw` field is set to true and the
   RR in question is retained in the DNS message struct.
 
@@ -54,7 +54,7 @@ defmodule DNS.Msg do
   - a `t:DNS.Msg.Hdr.t/0` for the header section
   - a list of `t:DNS.Msg.Qtn.t/0` for the question section
   - a list of `t:DNS.Msg.RR.t/0` for the answer, authority and/or additional sections
-  - `wdata`, a binary that can hold the wire formatted data of the DNS message.
+  - `wdata`, a binary that holds the wire formatted data of the DNS message.
 
 
   """
@@ -280,7 +280,7 @@ defmodule DNS.Msg do
   When decoding an RR, its `rdmap` is populated with fields and values
   that represent its `rdata` as found in the binary.  If no decoder is
   available for that particular RR type, its `rdmap` map is simply set
-  to an empty map and its `raw` set to true.
+  to an empty map and its `raw` field is set to true.
 
   Other types of decoding issues are usually fatal, in which case an
   '{:error, `t:DNS.MsgError.t/0`}' is returned.
@@ -288,16 +288,16 @@ defmodule DNS.Msg do
   ## Examples
 
       # suppose this came out of a udp/tcp socket
-      iex> wdata = <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108,
-      ...>           101, 3, 99, 111, 109, 0, 0, 1, 0, 1>>
-      iex> decode(wdata)
+      iex> wdata = <<0, 0, 129, 128, 0, 1, 0, 1, 0, 0, 0, 0, 7, 101, 120, 97, 109,
+      ...> 112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 7, 101, 120, 97, 109, 112,
+      ...> 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 10, 1, 1, 1>>
+      iex> DNS.Msg.decode(wdata)
       {:ok,
         %DNS.Msg{
           header: %DNS.Msg.Hdr{
-            id: 0, qr: 0, opcode: :QUERY,
-            aa: 0, tc: 0, rd: 1, ra: 0, z: 0,
-            ad: 0, cd: 0, rcode: :NOERROR, qdc: 1, anc: 0, nsc: 0, arc: 0,
-            wdata: <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0>>},
+            id: 0, qr: 1, opcode: :QUERY, aa: 0, tc: 0, rd: 1, ra: 1, z: 0,
+            ad: 0, cd: 0, rcode: :NOERROR, qdc: 1, anc: 1, nsc: 0, arc: 0,
+            wdata: <<0, 0, 129, 128, 0, 1, 0, 1, 0, 0, 0, 0>>},
           question: [
             %DNS.Msg.Qtn{
             name: "example.com",
@@ -305,10 +305,25 @@ defmodule DNS.Msg do
             class: :IN,
             wdata: <<7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1>>}
           ],
-          answer: [],
+          answer: [
+            %DNS.Msg.RR{
+              name: "example.com",
+              type: :A,
+              class: :IN,
+              ttl: 0,
+              raw: false,
+              rdlen: 4,
+              rdmap: %{ip: "10.1.1.1"},
+              rdata: <<10, 1, 1, 1>>,
+              wdata: <<7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 0,
+                       0, 0, 0, 0, 4, 10, 1, 1, 1>>
+            }
+          ],
           authority: [],
           additional: [],
-          wdata: <<0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1>>
+          wdata: <<0, 0, 129, 128, 0, 1, 0, 1, 0, 0, 0, 0, 7, 101, 120, 97, 109,
+                   112, 108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 7, 101, 120, 97, 109, 112,
+                   108, 101, 3, 99, 111, 109, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 4, 10, 1, 1, 1>>
         }
       }
 

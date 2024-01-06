@@ -32,8 +32,7 @@ defmodule Mix.Tasks.Iana.Update do
 
   # root hints
   @root_hints "https://www.internic.net/domain/named.root"
-  @fname_root Path.join([@priv, "named.root"])
-  @fname_rrs Path.join([@priv, "named.root.rrs"])
+  @fname_nss Path.join([@priv, "root.nss"])
 
   # trust anchors
   @dnskey_url "https://dns.google.com/resolve?name=.&type=dnskey"
@@ -126,53 +125,33 @@ defmodule Mix.Tasks.Iana.Update do
 
   # [[ ROOT HINTS ]]
 
-  defp hints(forced) do
+  defp hints(_forced) do
+    # fetch root hints and save to file that can be Code.eval_file'd
     Mix.shell().info("Checking root hints")
-    {:ok, new_body} = fetch(@root_hints)
-    Mix.shell().info(" - fetched remote named.root")
-    new_serial = get_serial(new_body)
-    # TODO make nameservers a list of [{ip-tuple, name}, ..]
-    # save result of inspect(nss) so its readable, root.nss
-    new_rrs = hints_to_rrs(new_body)
 
-    old_body = read_file(@fname_root)
-    old_serial = get_serial(old_body)
-    old_rrs = hints_to_rrs(old_body)
-    Mix.shell().info(" - read local copy (if any)")
+    Mix.shell().info(" - fetching remote named.root")
+    {:ok, body} = fetch(@root_hints)
+    new_nss = hints_to_nss(body)
 
-    Mix.shell().info(" - remote serial #{inspect(new_serial)}")
-    Mix.shell().info(" - local  serial #{inspect(old_serial)}")
+    Mix.shell().info(" - readin local copy (if any)")
 
-    if not forced and old_serial == new_serial do
-      Mix.shell().info(" - root hints up to date")
+    old_nss =
+      if File.exists?(@fname_nss),
+        do: Code.eval_file(@fname_nss) |> elem(0),
+        else: []
 
-      # just to be sure
-      unless File.exists?(@fname_rrs),
-        do: File.write!(@fname_rrs, :erlang.term_to_binary(new_rrs))
-    else
-      File.write!(@fname_root, new_body)
-      Mix.shell().info(" - saved named.root")
-      File.write!(@fname_rrs, :erlang.term_to_binary(new_rrs))
-      Mix.shell().info(" - saved named.root.rrs")
+    if old_nss != new_nss do
+      # should be very rare, after first time running iana.update hints
+      for ns <- old_nss,
+          ns not in new_nss,
+          do: Mix.shell().info(" - #{inspect(ns)} removed from hints")
 
-      new_hints =
-        new_rrs
-        |> Enum.filter(fn rr -> rr not in old_rrs end)
-        |> Enum.map(fn rr -> " + #{rr.name}\t#{rr.ttl}\t#{rr.type}\t#{rr.rdmap.ip}" end)
-        |> Enum.join("\n")
-
-      old_hints =
-        old_rrs
-        |> Enum.filter(fn rr -> rr not in new_rrs end)
-        |> Enum.map(fn rr -> " - #{rr.name}\t#{rr.ttl}\t#{rr.type}\t#{rr.rdmap.ip}" end)
-        |> Enum.join("\n")
-
-      if new_hints != old_hints do
-        Mix.shell().info(" - updates include:")
-        Mix.shell().info(new_hints)
-        Mix.shell().info(old_hints)
-      end
+      for ns <- new_nss,
+          ns not in old_nss,
+          do: Mix.shell().info(" + #{inspect(ns)} added to hints")
     end
+
+    File.write!("priv/root.nss", inspect(new_nss, pretty: true))
   end
 
   # [[ HELPERS ]]
@@ -237,29 +216,21 @@ defmodule Mix.Tasks.Iana.Update do
     end
   end
 
-  @spec get_serial(String.t()) :: String.t()
-  defp get_serial(body) do
-    case Regex.run(~r/version\s+of\s+root\s+zone:\s*(\d+)/, body) do
-      nil -> ""
-      list -> List.last(list)
-    end
-  end
-
   defp have_locals?() do
     @froot
     |> Enum.map(fn {_, fname} -> Path.join(@priv, fname) end)
     |> Enum.all?(&File.exists?/1)
   end
 
-  @spec hints_to_rrs(String.t()) :: [DNS.Msg.RR.t()]
-  defp hints_to_rrs(body) do
+  @spec hints_to_nss(String.t()) :: [{:inet.ip_adress(), 53}]
+  defp hints_to_nss(body) do
     # body might be "" so filter that out
     body
     |> String.split("\n")
     |> Enum.filter(fn s -> s != "" end)
     |> Enum.filter(fn s -> not String.starts_with?(s, [";", "."]) end)
     |> Enum.map(fn s -> String.split(s) end)
-    |> Enum.map(fn entry -> ns_to_RR(entry) end)
+    |> Enum.map(fn [_name, _ttl, _type, ip] -> {Pfx.to_tuple(ip, mask: false), 53} end)
   end
 
   defp ksk_digest(ksk, dtype) do
@@ -304,23 +275,6 @@ defmodule Mix.Tasks.Iana.Update do
       )
 
     [dnskey, ds]
-  end
-
-  defp ns_to_RR([]),
-    do: []
-
-  @spec ns_to_RR([String.t()]) :: DNS.Msg.RR.t()
-  defp ns_to_RR([name, ttl, type, ip]) do
-    {ttl, ""} = Integer.parse(ttl)
-
-    type =
-      case type do
-        "A" -> :A
-        "AAAA" -> :AAAA
-        _ -> raise "error reading type from entry: #{inspect({name, ttl, type, ip})}"
-      end
-
-    DNS.Msg.RR.new(name: name, type: type, ttl: ttl, rdmap: %{ip: ip})
   end
 
   @spec read_file(String.t()) :: String.t()

@@ -23,9 +23,9 @@ defmodule DNS do
   #     - including extra validation rules for msg's (e.g. max 1 :OPT in additional, TSIG
   #       at the end, etc...)
 
-  @root_nss File.read!("priv/named.root.rrs")
-            |> :erlang.binary_to_term()
-            |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+  @priv :code.priv_dir(:dnscheck)
+  @fname_nss Path.join([@priv, "root.nss"])
+  @root_nss Code.eval_file(@fname_nss) |> elem(0)
 
   alias DNS.Msg
   # import DNS.Msg.Terms
