@@ -279,13 +279,23 @@ defmodule DNS.Utils do
   """
   @spec dname_subzone?(binary, binary) :: boolean
   def dname_subzone?(child, parent) do
-    child = dname_to_labels(child)
-    parent = dname_to_labels(parent)
-    clast = List.last(child)
-    plast = List.last(parent)
-    dname_equal?(clast, plast) and length(child) > length(parent)
+    {:ok, child} = dname_normalize(child, join: false)
+    {:ok, parent} = dname_normalize(parent, join: false)
+    do_dname_subzone(Enum.reverse(child), Enum.reverse(parent))
   rescue
     _ -> false
+  end
+
+  def do_dname_subzone([], []),
+    do: false
+
+  def do_dname_subzone([_ | _], []),
+    do: true
+
+  def do_dname_subzone([c | crest], [p | prest]) do
+    if c == p,
+      do: do_dname_subzone(crest, prest),
+      else: false
   end
 
   @doc """

@@ -32,6 +32,7 @@ defmodule DNS.Cache do
   # [ ] handle put_msg better!
   # [ ] clear rdata/wdata before caching if not raw
   # [ ] should we cache RR's with wildcard domain names?
+  # [ ] cache negative responses, but NXDOMAIN has only a SOA in aut
 
   @doc """
   Creates and initializes to an empty cache.
@@ -167,6 +168,7 @@ defmodule DNS.Cache do
           else: %{rr | rdata: "", wdata: ""}
 
       # TODO: use Logger
+      # IO.puts("- cached #{inspect(rr)}")
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
       _e -> false

@@ -22,6 +22,11 @@ defmodule DNS do
   # [ ] responses must be better evaluated in query_nss
   #     - including extra validation rules for msg's (e.g. max 1 :OPT in additional, TSIG
   #       at the end, etc...)
+  # BEHAVIOUR:
+  # - NODATA -> msg w/ aa=1, anc=0, rcode NOERROR (name exists without data: empty non-terminal)
+  # - NXDOMAIN -> name does exist, nor anything below it.
+  # - CACHEing negative answers (NXDOMAIN) is done by qname, qclass (i.e. for any type apparently)
+  # - cdn.cloudflare.net :NS -> respons has only a SOA
 
   @priv :code.priv_dir(:dnscheck)
   @fname_nss Path.join([@priv, "root.nss"])
@@ -88,7 +93,8 @@ defmodule DNS do
   """
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
   def resolve(name, type, opts \\ []) do
-    # TODO: probably move this to dnscheck.ex at some point
+    # TODO:
+    # [ ] probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
 
     with {:ok, opts} <- make_options(opts),
@@ -113,10 +119,16 @@ defmodule DNS do
 
               log(
                 true,
-                "- got a reply: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+                "- server replied: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
               )
 
-              # TODO: is this always sound?
+              # RECURSE when:
+              # [ ] anc is 0, nsc > 0
+              # [ ] answer is :CNAME and qtype != :CNAME -> recurse with new name
+              #     retain CNAME and include that in the answer
+
+              res_response_type(msg) |> IO.inspect(label: :rsp_type)
+              # is this always sound?
               if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
                 do: res_recurse(qry, msg, opts, tstop, %{}),
                 else: {:ok, msg}
@@ -154,11 +166,18 @@ defmodule DNS do
       |> res_recurse_nss()
       |> Enum.filter(fn ns -> not Map.has_key?(seen, ns) end)
 
+    zone =
+      if length(msg.authority) > 0,
+        do: hd(msg.authority).name,
+        else: "no ns found"
+
+    log(true, "- referral to #{zone}, found #{length(nss)} nss")
+
     # keep track of where we've been
     seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
 
     # TODO: report an error when all ns were seen before
-    log(true, "- new nss: #{inspect(nss)}")
+    log(opts.verbose, "- new nss: #{inspect(nss)}")
 
     with {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, []),
          xrcode <- xrcode(msg),
@@ -246,39 +265,36 @@ defmodule DNS do
         ns = unwrap(ns)
 
         case query_ns(ns, qry, opts, tstop, nth) do
-          # {:error, :servfail} ->
-          #   # TODO: servfail is never seen here as reason in an error tuple
-          #   log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:servfail)")
-          #   query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
-
           {:error, :timeout} ->
             log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:timeout)")
             query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
 
           {:error, reason} ->
-            # basically any :inet.posix error makes continuing pursuit a doubtful endeavor
-            # only when something like ehostunreach is given, would it make
-            # sense to move on to the next ns
+            # :system_limit | :not_owner | :inet.posix() do not bode well for this ns
             log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
             query_nss(nss, qry, opts, tstop, nth, failed)
 
-          {:ok, rsp} ->
-            # TODO: handle rcodes
+          {:ok, msg} ->
             # https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1
-            # retry later: SERVFAIL
-            # rcodes for valid response: :NOERROR, NXDOMAIN
-            # moving on: REFUSED, NOTIMP, FORMERR, XYDOMAIN, BADVERS, basically all else!
-            {:ok, rsp}
+            # https://github.com/erlang/otp/blob/c55dc0d0a4a72fc59642aff186adde4621891cde/lib/kernel/src/inet_res.erl#L921
+            case xrcode(msg) do
+              rcode
+              when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
+                # ns either spoke in tongues or gave a somewhat hostile response, f^hskip it
+                log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{rcode}")
+                query_nss(nss, qry, opts, tstop, nth, failed)
+
+              _ ->
+                {:ok, msg}
+            end
         end
     end
   end
 
   @spec query_ns(ns, msg, map, timeT, counter) :: {:ok, msg} | {:error, reason}
   def query_ns(ns, qry, opts, tstop, n) do
-    # queries a single nameserver, returns {:ok, msg} | {:error, reason}
-    # - servfail or timeout -> ns will be tried later again
-    # - any other error -> ns is dropped and not visited again
-    # [ ] should we fallback to plain dns in case EDNS leads to BADVERS ?
+    # queries a single nameserver
+    # [?] should we fallback to plain dns in case EDNS leads to BADVERS?
     bufsize = opts.bufsize
     timeout = opts.timeout
     payload = byte_size(qry.wdata)
@@ -289,8 +305,12 @@ defmodule DNS do
       udp_timeout = udp_timeout(timeout, opts.retry, n, tstop)
 
       case query_udp(ns, qry, udp_timeout, bufsize) do
-        {:ok, rsp} when rsp.header.tc == 1 -> query_tcp(ns, qry, timeout, tstop)
-        result -> result
+        {:ok, rsp} when rsp.header.tc == 1 ->
+          log(true, "- response truncated, switching to tcp")
+          query_tcp(ns, qry, timeout, tstop)
+
+        result ->
+          result
       end
     end
   end
@@ -300,13 +320,17 @@ defmodule DNS do
     do: {:error, :timeout}
 
   def query_udp({ip, port}, qry, timeout, bufsize) do
-    # query_udp_open checks ip/port so we don't *exit* with :badarg, which
-    # is not mentioned in the docs so it seems
+    # query_udp_open protects against a process *exit* with :badarg
     {:ok, sock} = query_udp_open(ip, port, bufsize)
 
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
          {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
+      # note that:
+      # - query_udp_open uses random src port for each query
+      # - :gen_udp.connect ensure incoming data arrived at our src IP & port
+      # - query_udp_recv ensures qry/msg ID's are equal and msg's qr=1
+      # the higher ups will need to deal with how to handle the response
       :gen_udp.close(sock)
       {:ok, msg}
     else
@@ -350,7 +374,7 @@ defmodule DNS do
     # - sock is connected, so addr,port *should* be ok
     {:ok, {ip, p}} = :inet.peername(sock)
     ns = "#{Pfx.new(ip)}:#{p}/udp"
-    log(true, "- recv from #{ns}, timeout #{timeout} ms")
+    log(true, "- resolving against #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
 
@@ -360,8 +384,9 @@ defmodule DNS do
          true <- msg.header.qr == 1 do
       t = now() - tstart
       b = byte_size(msg.wdata)
-      log(true, "- recv'd #{b} bytes in #{t} ms, from #{ns}")
+      log(true, "- received #{b} bytes in #{t} ms, from #{ns}")
 
+      IO.inspect(valid?(qry, msg), label: :valid)
       {:ok, msg}
     else
       false -> query_udp_recv(sock, qry, timeout(tstop))
@@ -385,7 +410,7 @@ defmodule DNS do
          true <- msg.header.qr == 1 do
       :gen_tcp.close(sock)
       t = now() - t0
-      log(true, "- recv'd #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
+      log(true, "- received #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
       {:ok, msg}
     else
       false ->
@@ -443,7 +468,8 @@ defmodule DNS do
   @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
   def make_query(name, type, opts) do
     # assumes opts is safe (made by make_options)
-
+    # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
+    # [ ] support class is CHAOS
     name =
       if Pfx.valid?(name) do
         Pfx.dns_ptr(name)
@@ -528,6 +554,103 @@ defmodule DNS do
   end
 
   # [[ HELPERS ]]
+
+  @spec valid?(msg, msg) :: boolean
+  def valid?(qry, rsp) do
+    # See also https://datatracker.ietf.org/doc/html/rfc5452.html, section 9.1
+    # - query_udp_open lets OS pick a random port
+    # - query_udp connect ensures incoming data is from "connected" name server
+    # - so here, check: ID, QR and compare question section
+    # note: this says nothing about the contents of ans/aut/add sections
+    cond do
+      qry.header.id != rsp.header.id ->
+        false
+
+      rsp.header.qr != 1 ->
+        false
+
+      length(qry.question) != length(rsp.question) ->
+        false
+
+      true ->
+        # can't compare wiredata directly.  Question section *could* contain
+        # more than one question, in which case possible name compression would
+        # make the wdata fields different.  Names in qry question already
+        # normalized.  rsp's names MUST be normalized so sorting should equal
+        # that of qry.
+        ql =
+          Enum.map(qry.question, fn q -> {q.name, q.type, q.class} end)
+          |> Enum.sort()
+
+        rl =
+          Enum.map(rsp.question, fn r -> {elem(dname_normalize(r.name), 1), r.type, r.class} end)
+          |> Enum.sort()
+
+        Enum.zip(ql, rl)
+        |> Enum.all?(fn {q, r} -> q == r end)
+    end
+  end
+
+  @spec res_response_type(msg) ::
+          {:referral, [binary]} | {:cname, binary} | :answer | :lame | :nodata
+  def res_response_type(
+        %{
+          header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
+          answer: [],
+          authority: aut
+        } = msg
+      )
+      when nsc > 0 do
+    # see also
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
+    # note that by now, the msg's question is same as that of the query and a
+    # proper referral has no SOA and relevant NS's in aut.
+    qname = hd(msg.question).name
+    match = fn zone -> dname_subzone?(qname, zone) or dname_equal?(qname, zone) end
+
+    case aut do
+      [] ->
+        :nodata
+
+      _ ->
+        soa = Enum.any?(aut, fn rr -> rr.type == :SOA end)
+        nss = Enum.any?(aut, fn rr -> rr.type == :NS and match.(rr.name) end)
+
+        cond do
+          soa -> :nodata
+          nss -> {:referral, nss}
+          true -> :lame
+        end
+    end
+  end
+
+  def res_response_type(%{
+        header: %{anc: anc, qdc: 1, rcode: :NOERROR},
+        question: [qtn],
+        answer: ans
+      })
+      when anc > 0 do
+    # see also
+    # - https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2
+    # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-1
+    # - https://datatracker.ietf.org/doc/html/rfc2181#section-10.1
+    # If the qname was an alias and the answer includes the CNAME of qname
+    # resolve needs to requery the canonical name, unless A/AAAA RR's are
+    # included in the answer (i.e. canonical name is inside qname's zone)
+    cname = Enum.any?(ans, fn rr -> rr.type == :CNAME end)
+    addrs = Enum.any?(ans, fn rr -> rr.type in [:A, :AAAA] end)
+
+    cond do
+      addrs -> :answer
+      cname -> if qtn.type == :CNAME, do: :answer, else: :cname
+      true -> :lame
+    end
+  end
+
+  def res_response_type(_),
+    do: :answer
 
   @spec xrcode(msg) :: atom | non_neg_integer
   defp xrcode(msg) do
