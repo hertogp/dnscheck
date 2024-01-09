@@ -68,6 +68,14 @@ defmodule DNS.Cache do
     end
   end
 
+  @spec clear() :: boolean
+  def clear() do
+    case :ets.whereis(@cache) do
+      :undefined -> false
+      _ -> :ets.delete_all_objects(@cache)
+    end
+  end
+
   @doc """
   Returns the number of entries in the DNS cache
 

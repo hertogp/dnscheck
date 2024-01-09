@@ -591,22 +591,19 @@ defmodule DNS do
     end
   end
 
-  @spec res_response_type(msg) ::
-          {:referral, [binary]} | {:cname, binary} | :answer | :lame | :nodata
-  def res_response_type(
-        %{
-          header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
-          answer: [],
-          authority: aut
-        } = msg
-      )
+  @spec res_response_type(msg) :: :referral | :cname | :answer | :lame | :nodata
+  def res_response_type(%{
+        header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
+        question: [%{name: qname}],
+        answer: [],
+        authority: aut
+      })
       when nsc > 0 do
     # see also
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
     # note that by now, the msg's question is same as that of the query and a
     # proper referral has no SOA and relevant NS's in aut.
-    qname = hd(msg.question).name
     match = fn zone -> dname_subzone?(qname, zone) or dname_equal?(qname, zone) end
 
     case aut do
@@ -619,7 +616,7 @@ defmodule DNS do
 
         cond do
           soa -> :nodata
-          nss -> {:referral, nss}
+          nss -> :referral
           true -> :lame
         end
     end
@@ -627,7 +624,7 @@ defmodule DNS do
 
   def res_response_type(%{
         header: %{anc: anc, qdc: 1, rcode: :NOERROR},
-        question: [qtn],
+        question: [%{type: qtype}],
         answer: ans
       })
       when anc > 0 do
@@ -636,15 +633,23 @@ defmodule DNS do
     # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-1
     # - https://datatracker.ietf.org/doc/html/rfc2181#section-10.1
-    # If the qname was an alias and the answer includes the CNAME of qname
-    # resolve needs to requery the canonical name, unless A/AAAA RR's are
-    # included in the answer (i.e. canonical name is inside qname's zone)
+    # * if query was for :CNAME, always qualify response as :answer
+    # * if answer includes a :CNAME and some RR's of qtype, then we assume:
+    #   - that ns is also authoritative for the cname, and
+    #   - that the RR's with qtype are for the cname given
+    #   otherwise the :answer would actually be :lame. For now that is
+    #   up to the caller to detect/decide
+    #   => TODO: should we check those RR's of qtype are for the cname?
+    # * if answer includes a :CNAME and no RR's of qtype, then
+    #   nameserver is not authoritative for zone of canonical name
+    #   and `resolve` will have to follow up on the canonical name
     cname = Enum.any?(ans, fn rr -> rr.type == :CNAME end)
-    addrs = Enum.any?(ans, fn rr -> rr.type in [:A, :AAAA] end)
+    wants = Enum.any?(ans, fn rr -> rr.type == qtype end)
 
     cond do
-      addrs -> :answer
-      cname -> if qtn.type == :CNAME, do: :answer, else: :cname
+      qtype == :CNAME -> :answer
+      wants -> :answer
+      cname -> :cname
       true -> :lame
     end
   end
