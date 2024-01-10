@@ -260,25 +260,25 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_subzone?("example.COM", "com")
+      iex> dname_subdomain?("example.COM", "com")
       true
 
-      iex> dname_subzone?("host.example.com", "example.com")
+      iex> dname_subdomain?("host.example.com", "example.com")
       true
 
-      iex> dname_subzone?("example.com.", "com")
+      iex> dname_subdomain?("example.com.", "com")
       true
 
-      iex> dname_subzone?("example.com.", "example.com")
+      iex> dname_subdomain?("example.com.", "example.com")
       false
 
-      iex> dname_subzone?("example.com.", "net")
+      iex> dname_subdomain?("example.com.", "net")
       false
 
 
   """
-  @spec dname_subzone?(binary, binary) :: boolean
-  def dname_subzone?(child, parent) do
+  @spec dname_subdomain?(binary, binary) :: boolean
+  def dname_subdomain?(child, parent) do
     {:ok, child} = dname_normalize(child, join: false)
     {:ok, parent} = dname_normalize(parent, join: false)
 

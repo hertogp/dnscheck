@@ -27,11 +27,11 @@ defmodule DNS.Cache do
   import DNS.Utils
 
   # TODO:
-  # [ ] initialize cache with root name servers (query via priv/named.root.rrs)
-  # [ ] maybe add get_ns(domain name) -> searches the cache?
+  # [c] initialize cache with root name servers (query via priv/named.root.rrs)
+  # [x] maybe add nss(domain name) -> searches the cache?
   # [ ] handle put_msg better!
-  # [ ] clear rdata/wdata before caching if not raw
-  # [ ] should we cache RR's with wildcard domain names?
+  # [x] clear rdata/wdata before caching if not raw
+  # [ ] should we cache RR's with wildcard domain names? -> NO!
   # [ ] cache negative responses, but NXDOMAIN has only a SOA in aut
 
   @doc """
@@ -210,7 +210,9 @@ defmodule DNS.Cache do
       rrs =
         msg.authority
         |> Enum.filter(fn rr -> rr.type in [:NS, :DS, :RRSIG] end)
-        |> Enum.filter(fn rr -> dname_subzone?(qname, rr.name) or dname_equal?(qname, rr.name) end)
+        |> Enum.filter(fn rr ->
+          dname_subdomain?(qname, rr.name) or dname_equal?(qname, rr.name)
+        end)
 
       nsnames =
         rrs
