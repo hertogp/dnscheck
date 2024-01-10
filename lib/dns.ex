@@ -13,6 +13,7 @@ defmodule DNS do
   #     if not, ignore them as bogus
   # [ ] store IP addresses as tuples in Msg components, right now there is lot
   #     of needless conversions between binary & tuples.
+  # [ ] likewise, there is a lot of dname_normalize'ing for the same name going on
   # [x] add spec to resolve, detailing all possible error reasons
   # [x] resolve must try to answer from cache first and make_response
   # [ ] if qname is ip address, convert it to reverse ptr name
