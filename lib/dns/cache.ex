@@ -375,9 +375,11 @@ defmodule DNS.Cache do
     # [ ] SHOULD cache negative responses
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
     # [x] do not cache RR's from a truncated response
-    # [x] result of *inverse query* (QTYPE) should not be cached
+    # [x] do not cache RR's from *inverse query* (QTYPE)
     # [x] do not cache results that have QNAME with a wildcard label  (*.xyz.tld, or xyz.*.tld)
     # [?] RR's of responses of dubious reliability, but how to determine that?
+    # [?] should responses from e.g. 9.9.9.9 be cached? (their TTL's for
+    #     NXDOMAIN are all over the place.. i.e. non-authoritative answers.
     # [x] unsollicited responses or RR DATA that was not requested (resolver MUST check this)
     #  `-> done by put(msg)
     # Sometimes cache data MUST be replaced

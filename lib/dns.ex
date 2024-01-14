@@ -8,7 +8,8 @@ defmodule DNS do
   # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
   # [ ] sort the root hints fastest to slowest RTT
-  # [ ] add time spent to result of resolve (plus last NS seen?)
+  # [ ] add time spent to result of resolve (plus last NS seen?),
+  #     stats: qtime = total, qrtt = last NS, qtstamp = timestamp, ns, port, rxsize (bytes received)
   # [ ] add check when recursing to see if delegated NSs are closer to QNAME
   #     if not, ignore them as bogus
   # [ ] store IP addresses as tuples in Msg components, right now there is lot
@@ -23,6 +24,12 @@ defmodule DNS do
   # [ ] responses must be better evaluated in query_nss
   #     - including extra validation rules for msg's (e.g. max 1 :OPT in additional, TSIG
   #       at the end, etc...)
+  # [ ] dname encoding/decoding etc.. should support escaped dots like \\. in a label
+  # [ ] randomize each nss set upon resolving/recursing (less predictable)
+  # [ ] NSS storage/retrieval -> donot query for all new NSS, just the first
+  #     one and later, when trying others, query for their address
+  # [ ] add resolve/1 for resolve("name") and resolve("10.10.10.10") and resolve({1,1,1,1})
+  #     it will always ask for A & AAAA or PTR RR's
   # BEHAVIOUR:
   # - NODATA -> msg w/ aa=1, anc=0, rcode NOERROR (name exists without data: empty non-terminal)
   # - NXDOMAIN -> name does exist, nor anything below it.
@@ -34,9 +41,7 @@ defmodule DNS do
   @root_nss Code.eval_file(@fname_nss) |> elem(0)
 
   alias DNS.Msg
-  # import DNS.Msg.Terms
   import DNS.Utils
-  # import DNS.Msg.Terms
   alias DNS.Cache
 
   @typedoc "Type of RR, as atom or non negative integer"

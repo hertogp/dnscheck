@@ -1848,6 +1848,17 @@ defmodule DNS.Msg.RR do
         :ip6 -> {8, 128}
       end
 
+    # <<_::binary-size(offset), ip::bitstring-size(bits), _::binary>> = msg
+    # {offset + bytes, Pfx.new(ip, bits) |> Pfx.to_tuple(mask: false)}
+    # TODO:
+    # <<_::binary-size(offset), ip::bitstring-size(bits), _::binary>> = msg
+    # Pfx.new(ip, bits) |> Pfx.to_tuple(mask: false)
+    # `-> works but is to complicated/convoluted
+    # [ ] use function patt match for (offset, :ip4, msg) vs (offset, :ip6, msg)
+    #     then do
+    #       <<_::size(offset), a::8, b::8, c::8, d::8, _::binary>> = msg
+    #       {offset + bytes, {a, b, c, d}}
+
     <<_::binary-size(offset), ip::size(bits), _::binary>> = msg
     {offset + bytes, "#{Pfx.new(<<ip::size(bits)>>, bits)}"}
   end

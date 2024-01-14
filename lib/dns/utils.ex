@@ -4,6 +4,9 @@ defmodule DNS.Utils do
 
   """
 
+  # TODO
+  # [ ] dname_equal?("x.example.com", "*.example.com") <- equal?
+
   @ldh Enum.concat([?a..?z, [?-], ?0..?9, ?A..?Z])
 
   import DNS.MsgError, only: [error: 2]
