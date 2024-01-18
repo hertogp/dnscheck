@@ -184,6 +184,7 @@ defmodule DNS.Cache do
   end
 
   def put(%DNS.Msg{answer: [_ | _]} = msg) do
+    # TODO:
     with true <- cacheable?(msg),
          qname <- hd(msg.question).name do
       msg.answer
@@ -203,7 +204,16 @@ defmodule DNS.Cache do
     # - ignores aut-RR's unless it's a parent for qname
     # - checks add-RR's are listed in remaining aut-NSs
     # TODO
+    # [ ] DS does not appear in msg.authority
+    # [ ] msg.aut may contain: NS, SOA, RRSIG, NSEC, NSEC3, NSEC3PARAM?
     # [ ] use max for TTL if exceptionally large
+    # [x] also cache *relevant* add records when msg is referral
+    # [ ] response answer-RRs from AA=1 response are preferred over cached RRs
+    #  `-> means put(RR) probably should be a private func and user should
+    #  |   always use put(qry, rsp) so qry.hdr/qtn section can be compared
+    #  `-> AA-bit is not stored w/ RRs in cache, so if rsp AA=1, always replace
+    #  `-> otherwise hang onto RRs with largest amount of time remaining since RRs
+    #      from AA=0 might come from some other cache where they lived a long time
     if cacheable?(msg) do
       qname = hd(msg.question).name
 
@@ -321,6 +331,12 @@ defmodule DNS.Cache do
         [] ->
           false
 
+        # TODO:
+        # [ ] cached nameserver might've been cached by name only!
+        # e.g. resolve shell.nl against ns of nl -> dns<x>.shell.com
+        # - that'll cache NSs but nl nameserver cannot provide glue for .com NSs
+        # - so nss should return names + A/AAAA's (if possible) and not only
+        #   take A/AAAA RRs !!
         nss ->
           nss
           |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
@@ -370,8 +386,8 @@ defmodule DNS.Cache do
 
   defp cacheable?(%DNS.Msg{} = msg) do
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
-    # [ ] SHOULD cache temporary failures (TTL order of minutes)
     # [ ] MUST never cache NS from root hints
+    # [ ] SHOULD cache temporary failures (TTL order of minutes)
     # [ ] SHOULD cache negative responses
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
     # [x] do not cache RR's from a truncated response

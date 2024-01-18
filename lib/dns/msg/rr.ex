@@ -1848,9 +1848,7 @@ defmodule DNS.Msg.RR do
         :ip6 -> {8, 128}
       end
 
-    # <<_::binary-size(offset), ip::bitstring-size(bits), _::binary>> = msg
-    # {offset + bytes, Pfx.new(ip, bits) |> Pfx.to_tuple(mask: false)}
-    # TODO:
+    # TODO: put tuples in rdmap instead of string (inspect turns it into str)
     # <<_::binary-size(offset), ip::bitstring-size(bits), _::binary>> = msg
     # Pfx.new(ip, bits) |> Pfx.to_tuple(mask: false)
     # `-> works but is to complicated/convoluted
@@ -1859,8 +1857,8 @@ defmodule DNS.Msg.RR do
     #       <<_::size(offset), a::8, b::8, c::8, d::8, _::binary>> = msg
     #       {offset + bytes, {a, b, c, d}}
 
-    <<_::binary-size(offset), ip::size(bits), _::binary>> = msg
-    {offset + bytes, "#{Pfx.new(<<ip::size(bits)>>, bits)}"}
+    <<_::binary-size(offset), ip::bitstring-size(bits), _::binary>> = msg
+    {offset + bytes, "#{Pfx.new(ip, bits)}"}
   end
 
   @spec ip_encode(any, :ip4 | :ip6) :: binary | no_return

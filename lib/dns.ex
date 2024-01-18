@@ -5,6 +5,9 @@ defmodule DNS do
   """
 
   # TODO:
+  # [ ] dname_normalize should handle escaped chars, see RFC4343
+  # [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
+  #     or maybe check interfaces on machine we're running on
   # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
   # [ ] sort the root hints fastest to slowest RTT
@@ -17,6 +20,10 @@ defmodule DNS do
   # [ ] likewise, there is a lot of dname_normalize'ing for the same name going on
   # [x] add spec to resolve, detailing all possible error reasons
   # [x] resolve must try to answer from cache first and make_response
+  # [ ] detect when a referral omits required glue records -> drop the NS
+  #     referred to (avoid getting in a loop!)
+  # [ ] detect when a NS refers to an alias instead of a canonical name
+  #     warn (!). BIND drops the NS, PowerDNS/Knot simple resolve it.
   # [ ] if qname is ip address, convert it to reverse ptr name
   # [x] query for NS names in aut section (ex. tourdewadden.nl)
   # [x] detect NS loops
@@ -43,6 +50,7 @@ defmodule DNS do
   alias DNS.Msg
   import DNS.Utils
   alias DNS.Cache
+  alias DNS.Msg.Terms
 
   @typedoc "Type of RR, as atom or non negative integer"
   @type type :: atom | non_neg_integer
@@ -113,6 +121,7 @@ defmodule DNS do
         [] ->
           # if opts.recurse is false -> use caller's explicitly provided opts.nameservers
           nss = (opts.recurse && Cache.nss(qname)) || opts.nameservers
+          IO.inspect(nss, label: :cached_nss)
           tstop = time(opts.maxtime)
 
           case query_nss(nss, qry, opts, tstop, 0, _failed = []) do
@@ -140,7 +149,7 @@ defmodule DNS do
                 else: {:ok, msg}
 
             {:error, reason} ->
-              {:error, reason}
+              IO.inspect({:error, reason}, label: :cached)
           end
 
         rrs ->
@@ -162,6 +171,7 @@ defmodule DNS do
 
     qtn = hd(qry.question)
     log(true, "- recursing for #{qtn.name} #{qtn.type}")
+    # TODO: Cache.put(qry, msg) so msg can be better sanity checked
     Cache.put(msg)
 
     # always move forward, never circle back hence filtering seen
@@ -492,8 +502,10 @@ defmodule DNS do
         do: [[bufsize: opts.bufsize, do: opts.do, type: :OPT]],
         else: []
 
+    # TODO
+    # [ ] hdr should take opcode as parameter that defaults to QUERY
     qtn_opts = [[name: name, type: type]]
-    hdr_opts = [rd: opts.rd, cd: opts.cd, id: Enum.random(0..65535)]
+    hdr_opts = [rd: opts.rd, cd: opts.cd, opcode: opts.opcode, id: Enum.random(0..65535)]
 
     case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
       {:ok, qry} -> Msg.encode(qry)
@@ -505,48 +517,38 @@ defmodule DNS do
 
   @spec make_options(Keyword.t()) :: {:ok, map} | {:error, binary}
   def make_options(opts \\ []) do
-    # cd is hdr option, not edns option
-    edns = opts[:do] == 1 or opts[:bufsize] != nil
-    recurse = opts[:nameservers] == nil
-
     opts2 = %{
-      nameservers: Keyword.get(opts, :nameservers, @root_nss),
-      srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
-      verbose: Keyword.get(opts, :verbose, false),
       bufsize: Keyword.get(opts, :bufsize, 1280),
-      timeout: Keyword.get(opts, :timeout, 2000),
-      maxtime: Keyword.get(opts, :maxtime, 20_000),
-      retry: Keyword.get(opts, :retry, 3),
-      tcp: Keyword.get(opts, :tcp, false),
+      cd: Keyword.get(opts, :cd, 0),
       do: Keyword.get(opts, :do, 0),
+      edns: opts[:do] == 1 or opts[:bufsize] != nil,
+      maxtime: Keyword.get(opts, :maxtime, 20_000),
+      nameservers: Keyword.get(opts, :nameservers, @root_nss),
+      opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
       rd: Keyword.get(opts, :rd, 0),
-      cd: Keyword.get(opts, :cd, 0)
+      recurse: opts[:nameservers] == nil,
+      retry: Keyword.get(opts, :retry, 3),
+      srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
+      tcp: Keyword.get(opts, :tcp, false),
+      timeout: Keyword.get(opts, :timeout, 2000),
+      verbose: Keyword.get(opts, :verbose, false)
     }
 
-    with {:nss, true} <- {:nss, check_nss(opts2.nameservers)},
-         {:srv, true} <- {:srv, opts2.srvfail_wait in 0..5000},
-         {:vrb, true} <- {:vrb, is_boolean(opts2.verbose)},
-         {:bfs, true} <- {:bfs, is_u16(opts2.bufsize)},
-         {:tmo, true} <- {:tmo, opts2.timeout in 0..5000},
-         {:mxt, true} <- {:mxt, is_integer(opts2.maxtime) and opts2.maxtime > 0},
-         {:ret, true} <- {:ret, opts2.retry in 0..5},
-         {:tcp, true} <- {:tcp, is_boolean(opts2.tcp)},
-         {:do, true} <- {:do, opts2.do in 0..1},
-         {:rd, true} <- {:rd, opts2.rd in 0..1},
-         {:cd, true} <- {:cd, opts2.cd in 0..1} do
-      {:ok, Map.put(opts2, :edns, edns) |> Map.put(:recurse, recurse)}
-    else
-      {:nss, _} -> {:error, "bad nameserver(s) #{inspect(opts2.nameservers)}"}
-      {:srv, _} -> {:error, "srvfail_wait not in range 0..5000"}
-      {:vrb, _} -> {:error, "verbose should be true or false"}
-      {:bfs, _} -> {:error, "bufsize out of u16 range"}
-      {:tmo, _} -> {:error, "timeout not in range 0..5000"}
-      {:mxt, _} -> {:error, "max time not non_neg_integer"}
-      {:ret, _} -> {:error, "retry not in range 0..5"}
-      {:tcp, _} -> {:error, "tcp should be either true or false"}
-      {:do, _} -> {:error, "do bit should be either 0 or 1"}
-      {:rd, _} -> {:error, "rd bit should be either 0 or 1"}
-      {:cd, _} -> {:error, "cd bit should be either 0 or 1"}
+    cond do
+      !check_nss(opts2.nameservers) -> {:error, "bad nameservers #{inspect(opts2.nameservers)}"}
+      !(opts2.opcode in 0..15) -> {:error, "opcode not in 0..15"}
+      !(opts2.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
+      !is_boolean(opts2.verbose) -> {:error, "verbose should be true of false"}
+      !is_u16(opts2.bufsize) -> {:error, "bufsize out of u16 range"}
+      !(opts2.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
+      !is_integer(opts2.maxtime) -> {:error, "maxtime should be positive integer"}
+      !(opts2.maxtime > 0) -> {:error, "maxtime should be positive integer"}
+      !(opts2.retry in 0..5) -> {:error, "retry not in range 0..5"}
+      !is_boolean(opts2.tcp) -> {:error, "tcp should be true of false"}
+      !(opts2.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
+      !(opts2.do in 0..1) -> {:error, "do bit should be 0 or 1"}
+      !(opts2.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
+      true -> {:ok, opts2}
     end
   end
 
