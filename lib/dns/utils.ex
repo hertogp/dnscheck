@@ -47,6 +47,7 @@ defmodule DNS.Utils do
   defp do_labels(acc, label, rest)
 
   defp do_labels(acc, l, rest) when rest in [<<>>, <<?.>>] do
+    # note: add_label checks validity of l (not empty, len < 63)
     labels =
       add_label(acc, l)
       |> Enum.reverse()
@@ -255,7 +256,10 @@ defmodule DNS.Utils do
   Returns true if given domain names are equal, false otherwise
 
   Basically a case-insensitive comparison.  Note that this does not
-  check whether given domain names are actually valid.
+  check whether given domain names are actually valid.  Both domain
+  names need to be in either `String.t` format (zone file format) or
+  in wire format.  Don't mix the two because they will never compare
+  equal.
 
   ## Examples
 
@@ -274,6 +278,14 @@ defmodule DNS.Utils do
       iex> dname_equal?(42, 42)
       false
 
+      iex> name1 = dname_encode("example.NET")
+      iex> name2 = dname_encode("EXAMPLE.net")
+      iex> dname_equal?(name1, name2)
+      true
+      iex> dname_equal?("example.NET", name1)
+      false
+      iex> dname_decode(0, name1)
+      {13, "example.NET"}
 
   """
   def dname_equal?(aname, bbame)

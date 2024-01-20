@@ -10,7 +10,8 @@ defmodule DNS do
   #     or maybe check interfaces on machine we're running on
   # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
-  # [ ] sort the root hints fastest to slowest RTT
+  # [c] sort the root hints fastest to slowest RTT
+  # [x] randomize NSs for root.nss each time they're used
   # [ ] add time spent to result of resolve (plus last NS seen?),
   #     stats: qtime = total, qrtt = last NS, qtstamp = timestamp, ns, port, rxsize (bytes received)
   # [ ] add check when recursing to see if delegated NSs are closer to QNAME

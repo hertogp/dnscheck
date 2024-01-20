@@ -27,6 +27,7 @@ defmodule DNS.Cache do
   # TODO
   # [?] prime the cache using DNS.resolve & root hints
   #     see https://datatracker.ietf.org/doc/draft-ietf-dnsop-rfc8109bis/
+  # [x] shuffle NSs around before handing off
 
   import DNS.Utils
 
