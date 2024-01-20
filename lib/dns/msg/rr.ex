@@ -239,10 +239,10 @@ defmodule DNS.Msg.RR do
   # - https://www.netmeister.org/blog/dns-rrs.html (shout out!)
   # [x] make using class :CH possible
   #     [ ] then update encode/decode with :IN, :CH or both, since common RR's include (see rfc1034)
-  # [ ] add guard is_qtype - https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.3
+  # [ ] add guard is_qonly - https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.3
   #     AXFR, IXFR, MAILB, MAILA, *, ANY, OPT (41) etc (more QTYPEs exist ...)
   # [ ] add encode/decode_ip_proto (name)
-  # [x] add guard is_ttl (u32 with range 0..2**31-1
+  # [x] add guard is_ttl (u32 with range 0..2**32-1 => should be 1--2**32 (!)
   # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names or mnemonics
   # [ ] add all/more names
@@ -286,10 +286,10 @@ defmodule DNS.Msg.RR do
             wdata: <<>>
 
   @typedoc "The DNS RR's class, either a number or a [known name](`DNS.Msg.Terms.encode_dns_class/1`)"
-  @type class :: atom | non_neg_integer
+  @type class :: atom | 0..65535
 
   @typedoc "The DNS RR's type, either a number or a [known name](`DNS.Msg.Terms.encode_rr_type/1`)"
-  @type type :: atom | non_neg_integer
+  @type type :: atom | 0..65535
 
   @typedoc "A non negative offset into a DNS message."
   @type offset :: non_neg_integer
@@ -633,7 +633,7 @@ defmodule DNS.Msg.RR do
     name = dname_encode(rr.name)
     class = encode_dns_class(rr.class)
     type = encode_rr_type(rr.type)
-    rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.rdmap)
+    rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.class, rr.rdmap)
     rdlen = byte_size(rdata)
 
     wdata =
@@ -650,32 +650,36 @@ defmodule DNS.Msg.RR do
   end
 
   # [[ ENCODE RDATA ]]
+  # RFC10135, 3.3 Standard RRs
+  # In particular, NS, SOA, CNAME, and PTR will be used in all classes, and have
+  # the same format in all classes (as well as TXT apparently).
 
-  @spec encode_rdata(type, map) :: binary | no_return
-  defp encode_rdata(type, rdmap)
+  @spec encode_rdata(type, class, map) :: binary | no_return
+  defp encode_rdata(type, class, rdmap)
 
   # IN A (1)
-  defp encode_rdata(:A, m) do
+  # CHAOS has a 16bit octal address (!)
+  defp encode_rdata(:A, :IN, m) do
     required(:A, m, :ip)
     |> ip_encode(:ip4)
   end
 
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
-  defp encode_rdata(:NS, m) do
+  defp encode_rdata(:NS, class, m) when class in [:IN, :CH] do
     required(:NS, m, :name, &is_binary/1) |> dname_encode()
   end
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
-  defp encode_rdata(:CNAME, m) do
+  defp encode_rdata(:CNAME, class, m) when class in [:IN, :CH] do
     name = required(:CNAME, m, :name, &is_binary/1)
     dname_encode(name)
   end
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
-  defp encode_rdata(:SOA, m) do
+  defp encode_rdata(:SOA, class, m) when class in [:IN, :CH] do
     # supply defaults where needed
     m =
       m
@@ -697,7 +701,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MB (7), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3
-  defp encode_rdata(:MB, m) do
+  defp encode_rdata(:MB, :IN, m) do
     name =
       required(:MB, m, :name, &is_binary/1)
       |> dname_encode()
@@ -706,7 +710,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MG (8), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6
-  defp encode_rdata(:MG, m) do
+  defp encode_rdata(:MG, :IN, m) do
     name =
       required(:MG, m, :name, &is_binary/1)
       |> dname_encode()
@@ -715,7 +719,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MR (9), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8
-  defp encode_rdata(:MR, m) do
+  defp encode_rdata(:MR, :IN, m) do
     name =
       required(:MR, m, :name, &is_binary/1)
       |> dname_encode()
@@ -725,13 +729,13 @@ defmodule DNS.Msg.RR do
 
   # IN NULL (10), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10
   # data is simply rdata, since interpretation is upto caller
-  defp encode_rdata(:NULL, m) do
+  defp encode_rdata(:NULL, :IN, m) do
     data = required(:NULL, m, :data, &is_binary/1)
     <<data::binary>>
   end
 
   # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
-  defp encode_rdata(:WKS, m) do
+  defp encode_rdata(:WKS, :IN, m) do
     ip = required(:WKS, m, :ip, &is_binary/1)
     proto = required(:WKS, m, :proto, &is_u8/1)
     services = required(:WKS, m, :services, &is_list/1)
@@ -741,7 +745,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN PTR (12), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
-  defp encode_rdata(:PTR, m) do
+  defp encode_rdata(:PTR, :IN, m) do
     name = required(:PTR, m, :name, &is_binary/1)
     dname_encode(name)
   end
@@ -749,7 +753,7 @@ defmodule DNS.Msg.RR do
   # IN HINFO (13)
   # https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2
   # revived by RFC8482
-  defp encode_rdata(:HINFO, m) do
+  defp encode_rdata(:HINFO, :IN, m) do
     cpu = required(:HINFO, m, :cpu, &is_binary/1)
     os = required(:HINFO, m, :os, &is_binary/1)
     clen = String.length(cpu)
@@ -758,7 +762,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MINFO (14), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.7
-  defp encode_rdata(:MINFO, m) do
+  defp encode_rdata(:MINFO, :IN, m) do
     rmailbx =
       required(:MINFO, m, :rmailbx, &is_binary/1)
       |> dname_encode()
@@ -771,7 +775,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MX (15), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
-  defp encode_rdata(:MX, m) do
+  defp encode_rdata(:MX, :IN, m) do
     pref = required(:MX, m, :pref, &is_u16/1)
     name = required(:MX, m, :name, &is_binary/1) |> dname_encode()
     <<pref::16, name::binary>>
@@ -782,7 +786,7 @@ defmodule DNS.Msg.RR do
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3
   # - a list of character-strings
   # - a character-string is <len>characters, whose length <= 256 (incl. len)
-  defp encode_rdata(:TXT, m) do
+  defp encode_rdata(:TXT, class, m) when class in [:IN, :CH] do
     data = required(:TXT, m, :txt, &is_list/1)
 
     with true <- length(data) > 0,
@@ -797,28 +801,28 @@ defmodule DNS.Msg.RR do
   end
 
   # IN RP (17), https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2
-  defp encode_rdata(:RP, m) do
+  defp encode_rdata(:RP, :IN, m) do
     mail = required(:RP, m, :mail, &is_binary/1) |> dname_encode()
     txt = required(:RP, m, :txt, &is_binary/1) |> dname_encode()
     <<mail::binary, txt::binary>>
   end
 
   # IN AFSDB (18), https://www.rfc-editor.org/rfc/rfc1183.html#section-1
-  defp encode_rdata(:AFSDB, m) do
+  defp encode_rdata(:AFSDB, :IN, m) do
     type = required(:AFSDB, m, :type, &is_u16/1)
     name = required(:AFSDB, m, :name, &is_binary/1) |> dname_encode()
     <<type::16, name::binary>>
   end
 
   # IN X25 (19), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1
-  defp encode_rdata(:X25, m) do
+  defp encode_rdata(:X25, :IN, m) do
     address = required(:X25, m, :address, &is_binary/1)
     len = String.length(address)
     <<len::8, address::binary>>
   end
 
   # IN ISDN (20), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2
-  defp encode_rdata(:ISDN, m) do
+  defp encode_rdata(:ISDN, :IN, m) do
     address = required(:ISDN, m, :address, &is_binary/1)
     sa = required(:ISDN, m, :sa, &is_binary/1)
     lena = String.length(address)
@@ -830,20 +834,20 @@ defmodule DNS.Msg.RR do
   end
 
   # IN RT (21), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3
-  defp encode_rdata(:RT, m) do
+  defp encode_rdata(:RT, :IN, m) do
     name = required(:RT, m, :name, &is_binary/1) |> dname_encode()
     pref = required(:RT, m, :pref, &is_u16/1)
     <<pref::16, name::binary>>
   end
 
   # IN AAAA (28)
-  defp encode_rdata(:AAAA, m),
+  defp encode_rdata(:AAAA, :IN, m),
     do: required(:AAAA, m, :ip) |> ip_encode(:ip6)
 
   # IN SRV (33)
   # - https://www.rfc-editor.org/rfc/rfc2782
   # - https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml
-  defp encode_rdata(:SRV, m) do
+  defp encode_rdata(:SRV, :IN, m) do
     prio = required(:SRV, m, :prio, &is_u16/1)
     weight = required(:SRV, m, :weight, &is_u16/1)
     port = required(:SRV, m, :port, &is_u16/1)
@@ -853,7 +857,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN KX (36), https://datatracker.ietf.org/doc/html/rfc2230#section-3
-  defp encode_rdata(:KX, m) do
+  defp encode_rdata(:KX, :IN, m) do
     pref = required(:KX, m, :pref, &is_u16/1)
     name = required(:KX, m, :name, &is_binary/1) |> dname_encode()
     <<pref::16, name::binary>>
@@ -861,7 +865,7 @@ defmodule DNS.Msg.RR do
 
   # CERT (37)
   # - https://www.rfc-editor.org/rfc/rfc4398.html#section-2
-  defp encode_rdata(:CERT, m) do
+  defp encode_rdata(:CERT, :IN, m) do
     type = required(:CERT, m, :type, &is_u16/1)
     keytag = required(:CERT, m, :keytag, &is_u16/1)
     algo = required(:CERT, m, :algo, &is_u8/1)
@@ -872,7 +876,7 @@ defmodule DNS.Msg.RR do
 
   # - DNAME (39)
   #   - https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1
-  defp encode_rdata(:DNAME, m) do
+  defp encode_rdata(:DNAME, :IN, m) do
     dname = required(:DNAME, m, :dname, &is_binary/1)
     dname_encode(dname)
   end
@@ -880,7 +884,8 @@ defmodule DNS.Msg.RR do
   # IN OPT (41)
   # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
-  defp encode_rdata(:OPT, m) do
+  # nb: :OPT uses class for bufsize!
+  defp encode_rdata(:OPT, _class, m) do
     m = Map.put_new(m, :opts, [])
     opts = required(:OPT, m, :opts, &is_list/1)
 
@@ -889,7 +894,7 @@ defmodule DNS.Msg.RR do
 
   # IN DS (43)
   # https://www.rfc-editor.org/rfc/rfc4034#section-5
-  defp encode_rdata(:DS, m) do
+  defp encode_rdata(:DS, :IN, m) do
     k = required(:DS, m, :keytag, &is_u16/1)
     a = required(:DS, m, :algo, &is_u8/1)
     t = required(:DS, m, :type, &is_u8/1)
@@ -899,7 +904,7 @@ defmodule DNS.Msg.RR do
 
   # IN SSHFP (44)
   # - https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1
-  defp encode_rdata(:SSHFP, m) do
+  defp encode_rdata(:SSHFP, :IN, m) do
     algo = required(:SSHFP, m, :algo, &is_u8/1)
     type = required(:SSHFP, m, :type, &is_u8/1)
     fp = required(:SSHFP, m, :fp, &is_binary/1)
@@ -908,7 +913,7 @@ defmodule DNS.Msg.RR do
 
   # IN IPSECKEY (45)
   # - https://www.rfc-editor.org/rfc/rfc4025.html#section-2
-  defp encode_rdata(:IPSECKEY, m) do
+  defp encode_rdata(:IPSECKEY, :IN, m) do
     gtype = required(:IPSECKEY, m, :gw_type, &is_u8/1)
     gwstr = required(:IPSECKEY, m, :gateway, &is_binary/1)
     pref = required(:IPSECKEY, m, :pref, &is_u8/1)
@@ -928,7 +933,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN RRSIG (46), https://www.rfc-editor.org/rfc/rfc4034#section-3
-  defp encode_rdata(:RRSIG, m) do
+  defp encode_rdata(:RRSIG, :IN, m) do
     type = required(:RRSIG, m, :type, fn t -> encode_rr_type(t) |> is_u16 end)
     algo = required(:RRSIG, m, :algo, &is_u8/1)
     labels = required(:RRSIG, m, :labels, &is_u8/1)
@@ -944,7 +949,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN NSEC (47), https://www.rfc-editor.org/rfc/rfc4034#section-4
-  defp encode_rdata(:NSEC, m) do
+  defp encode_rdata(:NSEC, :IN, m) do
     name = required(:NSEC, m, :name, &is_binary/1) |> dname_encode()
     covers = required(:NSEC, m, :covers, &is_list/1)
     bitmap = bitmap_4_rrs(covers)
@@ -953,7 +958,7 @@ defmodule DNS.Msg.RR do
 
   # IN DNSKEY (48)
   # https://www.rfc-editor.org/rfc/rfc4034#section-2
-  defp encode_rdata(:DNSKEY, m) do
+  defp encode_rdata(:DNSKEY, :IN, m) do
     flags = required(:DNSKEY, m, :flags, &is_u16/1)
     proto = required(:DNSKEY, m, :proto, &is_u8/1)
     algo = required(:DNSKEY, m, :algo, &is_u8/1)
@@ -963,7 +968,7 @@ defmodule DNS.Msg.RR do
 
   # IN NSEC3 (50)
   # https://www.rfc-editor.org/rfc/rfc5155#section-3.2
-  defp encode_rdata(:NSEC3, m) do
+  defp encode_rdata(:NSEC3, :IN, m) do
     algo = required(:NSEC3, m, :algo, &is_u8/1)
     flags = required(:NSEC3, m, :flags, &is_u8/1)
     iterations = required(:NSEC3, m, :iterations, &is_u16/1)
@@ -978,7 +983,7 @@ defmodule DNS.Msg.RR do
 
   # IN NSEC3PARAM (51)
   # https://www.rfc-editor.org/rfc/rfc5155#section-4.1
-  defp encode_rdata(:NSEC3PARAM, m) do
+  defp encode_rdata(:NSEC3PARAM, :IN, m) do
     algo = required(:NSEC3PARAM, m, :algo, &is_u8/1)
     flags = required(:NSEC3PARAM, m, :flags, &is_u8/1)
     iterations = required(:NSEC3PARAM, m, :iterations, &is_u16/1)
@@ -988,7 +993,7 @@ defmodule DNS.Msg.RR do
 
   # IN TLSA (52)
   # https://www.rfc-editor.org/rfc/rfc6698#section-2
-  defp encode_rdata(:TLSA, m) do
+  defp encode_rdata(:TLSA, :IN, m) do
     usage = required(:TLSA, m, :usage, &is_u8/1)
     selector = required(:TSLA, m, :selector, &is_u8/1)
     type = required(:TSLA, m, :type, &is_u8/1)
@@ -999,7 +1004,7 @@ defmodule DNS.Msg.RR do
   # IN CDS (59)
   # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1
   # e.g. is dnsimple.zone
-  defp encode_rdata(:CDS, m) do
+  defp encode_rdata(:CDS, :IN, m) do
     keytag = required(:CDS, m, :keytag, &is_u16/1)
     algo = required(:CDS, m, :algo, &is_u8/1)
     type = required(:CDS, m, :type, &is_u8/1)
@@ -1009,7 +1014,7 @@ defmodule DNS.Msg.RR do
 
   # IN CDNSKEY (60)
   # https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2
-  defp encode_rdata(:CDNSKEY, m) do
+  defp encode_rdata(:CDNSKEY, :IN, m) do
     flags = required(:CDNSKEY, m, :flags, &is_u16/1)
     proto = required(:CDNSKEY, m, :proto, &is_u8/1)
     algo = required(:CDNSKEY, m, :algo, &is_u8/1)
@@ -1018,7 +1023,7 @@ defmodule DNS.Msg.RR do
   end
 
   # CSYNC (62), https://www.rfc-editor.org/rfc/rfc7477.html#section-2
-  defp encode_rdata(:CSYNC, m) do
+  defp encode_rdata(:CSYNC, :IN, m) do
     soa_serial = required(:CSYNC, m, :soa_serial, &is_u32/1)
     flags = required(:CSYNC, m, :flags, &is_u16/1)
     covers = required(:CSYNC, m, :covers, &is_list/1)
@@ -1027,7 +1032,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN ZONEMD (63), https://datatracker.ietf.org/doc/html/rfc8976#section-2
-  defp encode_rdata(:ZONEMD, m) do
+  defp encode_rdata(:ZONEMD, :IN, m) do
     serial = required(:ZONEMD, m, :serial, &is_u32/1)
     scheme = required(:ZONEMD, m, :scheme, &is_u8/1)
     algo = required(:ZONEMD, m, :algo, &is_u8/1)
@@ -1039,7 +1044,7 @@ defmodule DNS.Msg.RR do
   # pseudo QTYPE, never an RRtype, see also RFC882 and RFC8482
 
   # IN URI (256), https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
-  defp encode_rdata(:URI, m) do
+  defp encode_rdata(:URI, :IN, m) do
     prio = required(:URI, m, :prio, &is_u16/1)
     weight = required(:URI, m, :weight, &is_u16/1)
     target = required(:URI, m, :target, &is_binary/1)
@@ -1047,7 +1052,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN CAA (257), https://www.rfc-editor.org/rfc/rfc8659#section-4
-  defp encode_rdata(:CAA, m) do
+  defp encode_rdata(:CAA, :IN, m) do
     flags = required(:CAA, m, :flags, &is_u8/1)
     tag = required(:CAA, m, :tag, &is_binary/1)
     value = required(:CAA, m, :value, &is_binary/1)
@@ -1055,7 +1060,7 @@ defmodule DNS.Msg.RR do
   end
 
   # AMTRELAY (260), https://datatracker.ietf.org/doc/html/rfc8777#section-4
-  defp encode_rdata(:AMTRELAY, m) do
+  defp encode_rdata(:AMTRELAY, :IN, m) do
     pref = required(:AMTRELAY, m, :pref, &is_u8/1)
     d = required(:AMTRELAY, m, :d, &is_bool/1) |> bool_encode()
     type = required(:AMTRELAY, m, :type, &is_u7/1)
@@ -1075,10 +1080,11 @@ defmodule DNS.Msg.RR do
 
   ## [[ catch all ]]
   # we're here because rr.raw is false and hence we MUST be able to encode!
-  defp encode_rdata(type, rdmap),
+  defp encode_rdata(type, _class, rdmap),
     do: error(:eencode, "#{type}, cannot encode rdmap: #{inspect(rdmap)}")
 
   # [[ ENCODE EDNS0 opts ]]
+  # - https://www.rfc-editor.org/rfc/rfc6891 - Extension Mechanisms for DNS (EDNS(0))
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
   # @doc """
   # Encodes an EDNS0 option to a binary.
@@ -1757,7 +1763,7 @@ defmodule DNS.Msg.RR do
     end
   end
 
-  # catch all: keep what we donot understand as raw values
+  # catch all: keep what we do not understand as raw values
   defp decode_edns_opt(code, _, data),
     do: {code, data}
 
@@ -1877,7 +1883,7 @@ defmodule DNS.Msg.RR do
   end
 
   # used to check rdmap for mandatory fields when encoding an RR
-  # a convencience func that also gives consistent, clear error messages
+  # a convenience func that also gives consistent, clear error messages
   defp required(type, map, field, check \\ fn _ -> true end) do
     v = Map.get(map, field) || error(:encode, "#{type} RR missing #{field}, got: #{inspect(map)}")
 
@@ -1964,7 +1970,7 @@ defimpl String.Chars, for: DNS.Msg.RR do
     do: "#{m.pref} #{m.algo} #{m.gw_type} #{m.gateway} #{Base.encode64(m.pubkey)}"
 
   defp rdmap_tostr(:ISDN, %{rdmap: m}),
-    do: "#{m.addess} #{m.sa}"
+    do: "#{m.address} #{m.sa}"
 
   defp rdmap_tostr(:KX, %{rdmap: m}),
     do: "#{m.pref} #{m.name}"

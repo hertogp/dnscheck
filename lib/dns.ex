@@ -485,7 +485,7 @@ defmodule DNS do
   def make_query(name, type, opts) do
     # assumes opts is safe (made by make_options)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
-    # [ ] support class is CHAOS
+    # [x] support class is CHAOS
     name =
       if Pfx.valid?(name) do
         Pfx.dns_ptr(name)
@@ -499,7 +499,7 @@ defmodule DNS do
 
     edns_opts =
       if opts.edns,
-        do: [[bufsize: opts.bufsize, do: opts.do, type: :OPT]],
+        do: [[bufsize: opts.bufsize, do: opts.do, type: :OPT, class: :IN]],
         else: []
 
     # TODO

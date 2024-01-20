@@ -38,8 +38,8 @@ defmodule DNS.Utils do
   # -2**31..2**31-1
   defguard is_s32(n) when n in -2_147_483_648..2_147_483_647
 
-  @doc "Returns `true` if `n` is a valid ttl in range of 0..2**31-1"
-  defguard is_ttl(n) when n in 0..2_147_483_647
+  @doc "Returns `true` if `n` is a valid ttl in range of 0..2**32 - 1"
+  defguard is_ttl(n) when n in 0..4_294_967_295
 
   # [[ DNAME HELPERS ]]
 
