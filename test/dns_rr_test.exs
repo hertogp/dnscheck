@@ -18,8 +18,8 @@ defmodule DNS.Msg.RRTest do
     assert_raise DNS.MsgError, fn -> RR.new(name: "example.co-") end
     label_too_long = String.duplicate("a", 64)
     assert_raise DNS.MsgError, fn -> RR.new(name: label_too_long <> ".com") end
-    name_too_long = String.duplicate("aa", 84) |> String.replace("aa", "a.a") |> Kernel.<>(".a")
-    assert 254 == String.length(name_too_long)
+    name_too_long = String.duplicate("aa", 85) |> String.replace("aa", "a.a")
+    assert 255 == String.length(name_too_long)
     assert_raise DNS.MsgError, fn -> RR.new(name: name_too_long) end
 
     # new accepts :rdata, sets :raw to true, ignores :wdata
@@ -62,8 +62,8 @@ defmodule DNS.Msg.RRTest do
     assert_raise DNS.MsgError, fn -> RR.put(rr, name: "example.co-") end
     label_too_long = String.duplicate("a", 64)
     assert_raise DNS.MsgError, fn -> RR.put(rr, name: label_too_long <> ".com") end
-    name_too_long = String.duplicate("aa", 84) |> String.replace("aa", "a.a") |> Kernel.<>(".a")
-    assert 254 == String.length(name_too_long)
+    name_too_long = String.duplicate("aa", 85) |> String.replace("aa", "a.a")
+    assert 255 == String.length(name_too_long)
     assert_raise DNS.MsgError, fn -> RR.put(rr, name: name_too_long) end
 
     # good put's

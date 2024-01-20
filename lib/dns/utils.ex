@@ -43,24 +43,92 @@ defmodule DNS.Utils do
 
   # [[ DNAME HELPERS ]]
 
-  defp do_labels(a, l, <<>>), do: add_label(a, l)
-  defp do_labels(a, l, <<?.>>), do: add_label(a, l)
-  defp do_labels(a, l, <<?., rest::binary>>), do: do_labels(add_label(a, l), <<>>, rest)
-  defp do_labels(a, l, <<c::8, rest::binary>>), do: do_labels(a, <<l::binary, c::8>>, rest)
-  defp add_label(_a, l) when byte_size(l) > 63, do: error(:eencode, "domain name label > 63")
-  defp add_label(_a, l) when byte_size(l) < 1, do: error(:eencode, "domain name has empty label")
-  defp add_label(a, l), do: [l | a]
+  @spec do_labels([binary], binary, binary) :: [binary] | no_return
+  defp do_labels(acc, label, rest)
+
+  defp do_labels(acc, l, rest) when rest in [<<>>, <<?.>>] do
+    labels =
+      add_label(acc, l)
+      |> Enum.reverse()
+
+    len =
+      labels
+      |> Enum.map(fn l -> byte_size(l) + 1 end)
+      |> Enum.sum()
+      |> Kernel.+(1)
+
+    if len < 256,
+      do: labels,
+      else: error(:eencode, "domain name > 255 octets: #{len}")
+  end
+
+  # escaped numbers, eg \000..\255, i.e. num in 0..255
+  defp do_labels(acc, l, <<?\\, a::8, b::8, c::8, rest::binary>>)
+       when a in ?0..?9 and b in ?0..?9 and c in ?0..?9 do
+    num = (a - ?0) * 100 + (b - ?0) * 10 + c - ?0
+
+    unless num < 256,
+      do: error(:eencode, "'\\#{num}' is illegal in a domain name")
+
+    do_labels(acc, <<l::binary, num::8>>, rest)
+  end
+
+  # escaped chars, eg \\, \., \(, \), \; (and all others)
+  defp do_labels(acc, l, <<?\\, c::8, rest::binary>>),
+    do: do_labels(acc, <<l::binary, c::8>>, rest)
+
+  defp do_labels(acc, l, <<?., rest::binary>>),
+    do: do_labels(add_label(acc, l), <<>>, rest)
+
+  defp do_labels(acc, l, <<c::8, rest::binary>>),
+    do: do_labels(acc, <<l::binary, c::8>>, rest)
+
+  # adds non-empty label <= 63 octets or raises DNSError
+  @spec add_label([binary], binary) :: [binary] | no_return
+  defp add_label(_acc, l) when byte_size(l) > 63,
+    do: error(:eencode, "domain name label > 63")
+
+  defp add_label(_acc, l) when byte_size(l) < 1,
+    do: error(:eencode, "domain name has empty label")
+
+  defp add_label(acc, l), do: [l | acc]
+
+  @spec ldh?(0..255) :: boolean
+  defp ldh?(c) do
+    cond do
+      c in ?a..?z -> true
+      c in ?0..?9 -> true
+      c in ?A..?Z -> true
+      c == ?- -> true
+      true -> false
+    end
+  end
 
   # [[ DNAME ]]
 
-  @doc """
-  Decodes a length-encoded domain name from given `msg` binary, starting at the zero-based `offset`.
+  @doc ~S"""
+  Decodes a length-encoded domain name from given `msg` binary, starting at the
+  zero-based `offset`.
 
   Returns `{new_offset, name}`, if successful.  The `new_offset` can be used to
   read more stuff from the binary.
 
   DNS [name compression](https://www.rfc-editor.org/rfc/rfc1035, sec 4.1.4) is
   supported, but raises on detection of a compression loop.
+
+  Octets that are part of a label have values in range 0..255 and need some
+  form of escaping when transformed into a string:
+  - octet values for ' ;().' have special meaning in a zone file
+  - octet values < 32 or > 127 are (mostly) not printable
+  hence, octet values for special characters are represented as `\c' (e.g. `\;`)
+  while the others are represented as `\ddd` where `ddd`is the string representation
+  of the octet's value.  Examples:
+  - `<<0>>` becomes> `\000`,
+  - `<<59>>` becomes `\;',
+  - `<<128>>` becomes `\128` and so on.
+
+  See [RFC4343](https://datatracker.ietf.org/doc/html/rfc4343).
+
 
   ## Examples
 
@@ -70,40 +138,67 @@ defmodule DNS.Utils do
       iex> dname_decode(5, <<3, ?n, ?e, ?t, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>)
       {15, "example.net"}
 
+      iex> dname_decode(0, <<1, 255, 0>>)
+      {3, "\\255"}
+
   """
   @spec dname_decode(non_neg_integer, binary) :: {non_neg_integer, binary}
   def dname_decode(offset, msg) when is_binary(msg),
     do: dname_decode(offset, msg, <<>>, %{})
 
-  defp dname_decode(offset, msg, name, seen) do
-    # note: OPT RR (EDNS0) MUST have root name (i.e. "" encoded as <<0>>)
+  defp dname_decode(offset, msg, acc, seen) do
+    # notes:
+    # - OPT RR (EDNS0) MUST have root acc (i.e. "" encoded as <<0>>)
+    # - case stmt matches either 0 (root), label_len < 64 or ptr to next label_len
+    # - loop protecton: seen -> offsets already processed (ptr is just the next offset)
     <<_::binary-size(offset), bin::binary>> = msg
 
     case bin do
       <<0::8, _::binary>> ->
-        {offset + 1, name}
+        {offset + 1, acc}
 
       <<0::2, n::6, label::binary-size(n), _::binary>> ->
-        name =
-          if name == <<>>,
-            do: <<label::binary>>,
-            else: <<name::binary, ?., label::binary>>
+        label = label_decode(label, <<>>)
 
-        dname_decode(offset + n + 1, msg, name, Map.put(seen, offset, []))
+        acc =
+          if acc == <<>>,
+            do: <<label::binary>>,
+            else: <<acc::binary, ?., label::binary>>
+
+        dname_decode(offset + n + 1, msg, acc, Map.put(seen, offset, []))
 
       <<3::2, ptr::14, _::binary>> ->
         if Map.has_key?(seen, ptr),
           do: error(:edecode, "domain name compression loop at offset #{offset}")
 
-        {_, name} = dname_decode(ptr, msg, name, Map.put(seen, ptr, []))
-        {offset + 2, name}
+        {_, acc} = dname_decode(ptr, msg, acc, Map.put(seen, ptr, []))
+        {offset + 2, acc}
 
       _ ->
-        error(:edecode, "domain name, bad label after #{inspect(name)}")
+        error(:edecode, "domain name has bad label after #{inspect(acc)}")
     end
   end
 
-  @doc """
+  defp label_decode(<<>>, <<>>),
+    do: error(:edecode, "domain name has empty label")
+
+  defp label_decode(<<>>, acc),
+    do: acc
+
+  defp label_decode(<<c::8, rest::binary>>, acc) do
+    # octets in a label are u8 (0..255), i.e. legal in DNS
+    # escape some special chars and encode non-printables as \ddd
+    # note: order of the clauses matter
+    cond do
+      c in [?., ?;, ?(, ?), ?\s, ?\\] -> label_decode(rest, <<acc::binary, ?\\::8, c::8>>)
+      c in 33..126 -> label_decode(rest, <<acc::binary, c::8>>)
+      c > 99 -> label_decode(rest, <<acc::binary, ?\\::8, Integer.to_string(c)::binary>>)
+      c > 9 -> label_decode(rest, <<acc::binary, ?\\::8, "0", Integer.to_string(c)::binary>>)
+      true -> label_decode(rest, <<acc::binary, ?\\::8, "00", Integer.to_string(c)::binary>>)
+    end
+  end
+
+  @doc ~S"""
   Encodes a domain `name` as a length-encoded binary string.
 
   An argument error will be raised when:
@@ -121,6 +216,14 @@ defmodule DNS.Utils do
       iex> dname_encode("acdc.au")
       <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
 
+      # escaped characters
+      iex> dname_encode("one\\.label.see")
+      <<9, "one.label", 3, "see", 0>>
+
+      # escaped numbers
+      iex> dname_encode("two\\.one\\.\\000.boom")
+      <<9, "two.one.", 0, 4, "boom", 0>>
+
       iex> dname_encode("acdc.au.")
       <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
 
@@ -128,16 +231,21 @@ defmodule DNS.Utils do
       iex> dname_encode("acdc.-au-.")
       <<4, 97, 99, 100, 99, 4, 45, 97, 117, 45, 0>>
 
+
   """
   # https://www.rfc-editor.org/rfc/rfc1035, sec 2.3.1, 3.1
   @spec dname_encode(binary) :: binary
   def dname_encode(name) when is_binary(name) do
-    # FIXME: use byte_size, not String.length (utf8)
-    name
-    |> dname_to_labels()
-    |> Enum.map(fn label -> <<String.length(label)::8, label::binary>> end)
-    |> Enum.join()
-    |> Kernel.<>(<<0>>)
+    name =
+      name
+      |> dname_to_labels()
+      |> Enum.map(fn label -> <<byte_size(label)::8, label::binary>> end)
+      |> Enum.join()
+      |> Kernel.<>(<<0>>)
+
+    if byte_size(name) < 256,
+      do: name,
+      else: error(:eencode, "domain name too long #{byte_size(name)}")
   end
 
   def dname_encode(noname),
@@ -179,11 +287,11 @@ defmodule DNS.Utils do
   def dname_equal?(<<>>, <<?.>>),
     do: true
 
-  def dname_equal?(<<a::8, arest::binary>>, <<b::8, brest::binary>>) do
+  def dname_equal?(<<a::8, rest_a::binary>>, <<b::8, rest_b::binary>>) do
     cond do
-      a == b -> dname_equal?(arest, brest)
-      a == b + 32 and a in ?a..?z -> dname_equal?(arest, brest)
-      a + 32 == b and a in ?A..?Z -> dname_equal?(arest, brest)
+      a == b -> dname_equal?(rest_a, rest_b)
+      a == b + 32 and a in ?a..?z -> dname_equal?(rest_a, rest_b)
+      a + 32 == b and a in ?A..?Z -> dname_equal?(rest_a, rest_b)
       true -> false
     end
   end
@@ -237,18 +345,13 @@ defmodule DNS.Utils do
   """
   @spec dname_reverse(binary) :: binary
   def dname_reverse(name) when is_binary(name) do
-    name =
-      case name do
-        <<>> -> [name]
-        <<?.>> -> [name]
-        name -> do_labels([], <<>>, name)
-      end
-      |> Enum.join(".")
-
-    if String.length(name) > 253,
-      do: error(:eencode, "domain name > 253 characters")
-
-    name
+    case name do
+      <<>> -> []
+      <<?.>> -> []
+      name -> do_labels([], <<>>, name)
+    end
+    |> Enum.reverse()
+    |> Enum.join(".")
   end
 
   def dname_reverse(noname),
@@ -323,25 +426,11 @@ defmodule DNS.Utils do
 
   """
   def dname_to_labels(name) when is_binary(name) do
-    labels =
-      case name do
-        <<>> -> []
-        <<?.>> -> []
-        name -> do_labels([], <<>>, name)
-      end
-      |> Enum.reverse()
-
-    # https://datatracker.ietf.org/doc/html/rfc1035#section-2.3.4
-    # encoding = a sequence of length encoded strings, terminated by the root label <0>
-    # max length of encoding is 255, so string form max (without the terminating
-    # root) is 253 to account for the len-byte of the first label and the
-    # terminating root label.  Note that stripping the root dot first, might
-    # miss out on an empty label at the end, e.g. in a.b.. since a.b. itself is valid.
-
-    if Enum.join(labels, ".") |> String.length() > 253,
-      do: error(:eencode, "domain name > 253 characters")
-
-    labels
+    case name do
+      <<>> -> []
+      <<?.>> -> []
+      name -> do_labels([], <<>>, name)
+    end
   end
 
   def dname_to_labels(noname),
@@ -351,7 +440,7 @@ defmodule DNS.Utils do
   Checks whether a domain `name` is valid, or not.
 
   This checks for the following:
-  - name's length is in 0..253
+  - name's length (in encoded form) is in 1..255
   - label lengths are in 1..63
   - name consists of only ASCII characters
   - tld label does not start or end with a hyphen
@@ -394,7 +483,16 @@ defmodule DNS.Utils do
       labels = dname_to_labels(name)
       tld = List.last(labels)
 
+      len =
+        labels
+        |> Enum.map(fn l -> byte_size(l) + 1 end)
+        |> Enum.sum()
+        |> Kernel.+(1)
+
       cond do
+        len not in 1..255 ->
+          false
+
         labels == [] ->
           true
 
@@ -402,17 +500,18 @@ defmodule DNS.Utils do
         name != for(<<c <- name>>, c < 128, into: "", do: <<c>>) ->
           false
 
-        # ldh check, cannot start/end with hyphen though
-        tld != for(<<c <- tld>>, c in @ldh, into: "", do: <<c>>) ->
+        # tld only letters, digits or hyphens
+        tld != for(<<c <- tld>>, ldh?(c), into: "", do: <<c>>) ->
           false
 
+        # tld cannot start/end with hyphen
         String.starts_with?(tld, "-") ->
           false
 
         String.ends_with?(tld, "-") ->
           false
 
-        # tld all numeric?
+        # tld cannot be all numeric
         tld == for(<<c <- tld>>, c in ?0..?9, into: "", do: <<c>>) ->
           false
 
@@ -420,6 +519,7 @@ defmodule DNS.Utils do
           true
       end
     rescue
+      # do_labels will raise on empty labels and/or labels > 63 octets
       _ -> false
     end
   end

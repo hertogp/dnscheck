@@ -204,8 +204,8 @@ defmodule DNS.Cache do
     # - ignores aut-RR's unless it's a parent for qname
     # - checks add-RR's are listed in remaining aut-NSs
     # TODO
-    # [ ] DS does not appear in msg.authority
-    # [ ] msg.aut may contain: NS, SOA, RRSIG, NSEC, NSEC3, NSEC3PARAM?
+    # [!] DS does appear in msg.authority in case of a referral
+    # [ ] msg.aut may contain: SOA, NS, DS, RRSIG, NSEC, NSEC3, NSEC3PARAM?
     # [ ] use max for TTL if exceptionally large
     # [x] also cache *relevant* add records when msg is referral
     # [ ] response answer-RRs from AA=1 response are preferred over cached RRs
