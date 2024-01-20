@@ -238,14 +238,20 @@ defmodule DNS.Msg.RR do
   # - https://www.rfc-editor.org/rfc/rfc6891 (EDNS0)
   # - https://www.netmeister.org/blog/dns-rrs.html (shout out!)
   # [x] make using class :CH possible
-  #     [ ] then update encode/decode with :IN, :CH or both, since common RR's include (see rfc1034)
+  #     [x] then update encode/decode with :IN, :CH or both, since common RR's
+  #     include (see rfc1034): NS, SOA, CNAME, PTR (?) and TXT
+  #     note: A for CH is different: its a 16bit address, not 32bit, so PTR
+  #     will be different as well?
+  #     see https://sleeplessbeastie.eu/2022/06/13/how-to-provide-custom-txt-records-in-chaos-class-using-bind9/
+  #     see https://chaosnet.net/protocol
+  #     https://handwiki.org/wiki/Hesiod_(name_service)
   # [ ] add guard is_qonly - https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.3
   #     AXFR, IXFR, MAILB, MAILA, *, ANY, OPT (41) etc (more QTYPEs exist ...)
   # [ ] add encode/decode_ip_proto (name)
   # [x] add guard is_ttl (u32 with range 0..2**32-1 => should be 1--2**32 (!)
-  # [ ] add section RR's to module doc with explanation & examples & rfc ref(s)
+  # [x] add section RR's to module doc with explanation & examples & rfc ref(s)
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names or mnemonics
-  # [ ] add all/more names
+  # [ ] add all/more names to Terms' @rr_types
   # [c] accept TYPEnnn as mnemonic -> not needed, a bind ns sends numeric anyway
   # [c] move the only func in DNS.Msg.Utils into Names module (only place it'll be used)
   #     impossible, used at compile time to expand module attributes
@@ -666,20 +672,23 @@ defmodule DNS.Msg.RR do
 
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
-  defp encode_rdata(:NS, class, m) when class in [:IN, :CH] do
+  # format is the same for all DNS classes
+  defp encode_rdata(:NS, _class, m) do
     required(:NS, m, :name, &is_binary/1) |> dname_encode()
   end
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
-  defp encode_rdata(:CNAME, class, m) when class in [:IN, :CH] do
+  # format is the same for all DNS classes
+  defp encode_rdata(:CNAME, _class, m) do
     name = required(:CNAME, m, :name, &is_binary/1)
     dname_encode(name)
   end
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
-  defp encode_rdata(:SOA, class, m) when class in [:IN, :CH] do
+  # format is the same for all DNS classes
+  defp encode_rdata(:SOA, _class, m) do
     # supply defaults where needed
     m =
       m
@@ -745,7 +754,8 @@ defmodule DNS.Msg.RR do
   end
 
   # IN PTR (12), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
-  defp encode_rdata(:PTR, :IN, m) do
+  # format is the same for all DNS classes (not sure about this though)
+  defp encode_rdata(:PTR, _class, m) do
     name = required(:PTR, m, :name, &is_binary/1)
     dname_encode(name)
   end
@@ -786,7 +796,8 @@ defmodule DNS.Msg.RR do
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3
   # - a list of character-strings
   # - a character-string is <len>characters, whose length <= 256 (incl. len)
-  defp encode_rdata(:TXT, class, m) when class in [:IN, :CH] do
+  # format is the same for all DNS classes
+  defp encode_rdata(:TXT, _class, m) do
     data = required(:TXT, m, :txt, &is_list/1)
 
     with true <- length(data) > 0,

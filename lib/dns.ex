@@ -538,7 +538,7 @@ defmodule DNS do
     cond do
       !is_u16(opts2.bufsize) -> {:error, "bufsize out of u16 range"}
       !(opts2.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
-      !(opts2.class in [:IN, :CH]) -> {:error, "class not in [:IN, :CH], got #{opts2.class}"}
+      !(opts2.class in [:IN, :CH, :HS]) -> {:error, "unknown DNS class: #{opts2.class}"}
       !check_nss(opts2.nameservers) -> {:error, "bad nameservers #{inspect(opts2.nameservers)}"}
       !(opts2.opcode in 0..15) -> {:error, "opcode not in 0..15"}
       !(opts2.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
