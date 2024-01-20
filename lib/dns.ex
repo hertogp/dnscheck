@@ -524,7 +524,7 @@ defmodule DNS do
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
       maxtime: Keyword.get(opts, :maxtime, 20_000),
-      nameservers: Keyword.get(opts, :nameservers, @root_nss),
+      nameservers: Keyword.get(opts, :nameservers, Enum.shuffle(@root_nss)),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
       rd: Keyword.get(opts, :rd, 0),
       recurse: opts[:nameservers] == nil,

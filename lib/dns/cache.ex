@@ -346,6 +346,7 @@ defmodule DNS.Cache do
           |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
           |> List.flatten()
           |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+          |> Enum.shuffle()
       end
     else
       _ -> false
