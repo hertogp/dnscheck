@@ -483,22 +483,13 @@ defmodule DNS.Utils do
       labels = dname_to_labels(name)
       tld = List.last(labels)
 
-      len =
-        labels
-        |> Enum.map(fn l -> byte_size(l) + 1 end)
-        |> Enum.sum()
-        |> Kernel.+(1)
-
       cond do
-        len not in 1..255 ->
-          false
-
         labels == [] ->
           true
 
         # ascii check
-        name != for(<<c <- name>>, c < 128, into: "", do: <<c>>) ->
-          false
+        # name != for(<<c <- name>>, c < 128, into: "", do: <<c>>) ->
+        #   false
 
         # tld only letters, digits or hyphens
         tld != for(<<c <- tld>>, ldh?(c), into: "", do: <<c>>) ->

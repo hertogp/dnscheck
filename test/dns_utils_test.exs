@@ -81,9 +81,9 @@ defmodule DNS.UtilsTest do
     assert false == dname_valid?("example.123")
     assert false == dname_valid?("example.c@m")
 
-    # not ascii
+    # not ascii, but still valid! see rfc4343
     name = "example." <> <<128, 129>> <> ".com"
-    assert false == dname_valid?(name)
+    assert true == dname_valid?(name)
   end
 
   test "DNAME - dname_encode" do
