@@ -504,7 +504,7 @@ defmodule DNS do
 
     # TODO
     # [ ] hdr should take opcode as parameter that defaults to QUERY
-    qtn_opts = [[name: name, type: type]]
+    qtn_opts = [[name: name, type: type, class: opts.class]]
     hdr_opts = [rd: opts.rd, cd: opts.cd, opcode: opts.opcode, id: Enum.random(0..65535)]
 
     case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
@@ -520,6 +520,7 @@ defmodule DNS do
     opts2 = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
+      class: Keyword.get(opts, :class, :IN),
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
       maxtime: Keyword.get(opts, :maxtime, 20_000),
@@ -535,11 +536,13 @@ defmodule DNS do
     }
 
     cond do
+      !is_u16(opts2.bufsize) -> {:error, "bufsize out of u16 range"}
+      !(opts2.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
+      !(opts2.class in [:IN, :CH]) -> {:error, "class not in [:IN, :CH], got #{opts2.class}"}
       !check_nss(opts2.nameservers) -> {:error, "bad nameservers #{inspect(opts2.nameservers)}"}
       !(opts2.opcode in 0..15) -> {:error, "opcode not in 0..15"}
       !(opts2.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
       !is_boolean(opts2.verbose) -> {:error, "verbose should be true of false"}
-      !is_u16(opts2.bufsize) -> {:error, "bufsize out of u16 range"}
       !(opts2.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
       !is_integer(opts2.maxtime) -> {:error, "maxtime should be positive integer"}
       !(opts2.maxtime > 0) -> {:error, "maxtime should be positive integer"}
@@ -547,7 +550,6 @@ defmodule DNS do
       !is_boolean(opts2.tcp) -> {:error, "tcp should be true of false"}
       !(opts2.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
       !(opts2.do in 0..1) -> {:error, "do bit should be 0 or 1"}
-      !(opts2.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
       true -> {:ok, opts2}
     end
   end
