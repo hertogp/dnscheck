@@ -1079,7 +1079,8 @@ defmodule DNS.Msg.RR do
   end
 
   ## [[ catch all ]]
-  # we're here because rr.raw is false and hence we MUST be able to encode!
+  # we're here because rr.raw is false and hence we MUST(!) be able to encode,
+  # but.. we can't so raise an error
   defp encode_rdata(type, _class, rdmap),
     do: error(:eencode, "#{type}, cannot encode rdmap: #{inspect(rdmap)}")
 
@@ -1167,7 +1168,7 @@ defmodule DNS.Msg.RR do
     # new will put symbolic name for :type, :class numbers if possible
     rr = new(name: name, type: type, class: class, ttl: ttl, rdlen: rdlen)
     # need to pass in rdlen as well, since some RR's may have rdlen of 0
-    rdmap = decode_rdata(rr.type, offset2 + 10, rdlen, msg)
+    rdmap = decode_rdata(rr.type, rr.class, offset2 + 10, rdlen, msg)
     wdata = :binary.part(msg, {offset, offset2 - offset + 10 + rdlen})
     raw = map_size(rdmap) == 0 and byte_size(rdata) > 0
     rr = %{rr | raw: raw, rdlen: rdlen, rdmap: rdmap, rdata: rdata, wdata: wdata}
@@ -1184,32 +1185,33 @@ defmodule DNS.Msg.RR do
   # - rdlen is needed since some RR's have rdlen of 0
   # - offset, msg is needed since rdata may contain compressed domain names
 
-  @spec decode_rdata(type, offset, length, binary) :: map | no_return
-  defp decode_rdata(type, offset, rdlen, msg)
+  @spec decode_rdata(type, class, offset, length, binary) :: map | no_return
+  defp decode_rdata(type, class, offset, rdlen, msg)
 
   # IN A (1)
-  defp decode_rdata(:A, offset, 4, msg) do
+  # CHAOS has a 16bit octal address (!)
+  defp decode_rdata(:A, :IN, offset, 4, msg) do
     {_, ip} = ip_decode(offset, :ip4, msg)
     %{ip: ip}
   end
 
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
-  defp decode_rdata(:NS, offset, _rdlen, msg) do
+  defp decode_rdata(:NS, class, offset, _rdlen, msg) when class in [:IN, :CH] do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
-  defp decode_rdata(:CNAME, offset, _rdlen, msg) do
+  defp decode_rdata(:CNAME, class, offset, _rdlen, msg) when class in [:IN, :CH] do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # CSYNC (62)
   # - https://www.rfc-editor.org/rfc/rfc7477.html#section-2
-  defp decode_rdata(:CSYNC, offset, rdlen, msg) do
+  defp decode_rdata(:CSYNC, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<soa_serial::32, flags::16, bitmap::binary>> = rdata
     covers = bitmap_2_rrs(bitmap)
@@ -1218,7 +1220,7 @@ defmodule DNS.Msg.RR do
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
-  defp decode_rdata(:SOA, offset, _rdlen, msg) do
+  defp decode_rdata(:SOA, class, offset, _rdlen, msg) when class in [:IN, :CH] do
     {offset, mname} = dname_decode(offset, msg)
     {offset, rname} = dname_decode(offset, msg)
 
@@ -1237,31 +1239,31 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MB (7), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3
-  defp decode_rdata(:MB, offset, _rdlen, msg) do
+  defp decode_rdata(:MB, :IN, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN MG (8), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6
-  defp decode_rdata(:MG, offset, _rdlen, msg) do
+  defp decode_rdata(:MG, :IN, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN MR (9), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8
-  defp decode_rdata(:MR, offset, _rdlen, msg) do
+  defp decode_rdata(:MR, :IN, offset, _rdlen, msg) do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN NULL (10), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10
-  defp decode_rdata(:NULL, offset, rdlen, msg) do
+  defp decode_rdata(:NULL, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     %{data: rdata}
   end
 
   # IN WKS (11), https://datatracker.ietf.org/doc/html/rfc1035#section-3.4.2
-  defp decode_rdata(:WKS, offset, rdlen, msg) do
+  defp decode_rdata(:WKS, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     {offset, ip} = ip_decode(0, :ip4, rdata)
     <<_::binary-size(offset), proto::8, bitmap::binary>> = rdata
@@ -1271,14 +1273,14 @@ defmodule DNS.Msg.RR do
 
   # IN PTR (12)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
-  defp decode_rdata(:PTR, offset, _rdlen, msg) do
+  defp decode_rdata(:PTR, class, offset, _rdlen, msg) when class in [:IN, :CH] do
     {_, name} = dname_decode(offset, msg)
     %{name: name}
   end
 
   # IN HINFO (13)
   # https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2
-  defp decode_rdata(:HINFO, offset, rdlen, msg) do
+  defp decode_rdata(:HINFO, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<clen::8, cpu::binary-size(clen), olen::8, os::binary-size(olen)>> = rdata
 
@@ -1286,14 +1288,14 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MINFO (14), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.70
-  defp decode_rdata(:MINFO, offset, _rdlen, msg) do
+  defp decode_rdata(:MINFO, :IN, offset, _rdlen, msg) do
     {offset, rmailbx} = dname_decode(offset, msg)
     {_, emailbx} = dname_decode(offset, msg)
     %{rmailbx: rmailbx, emailbx: emailbx}
   end
 
   # IN MX (15), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.9
-  defp decode_rdata(:MX, offset, _rdlen, msg) do
+  defp decode_rdata(:MX, :IN, offset, _rdlen, msg) do
     <<_::binary-size(offset), pref::16, _::binary>> = msg
     {_offset, name} = dname_decode(offset + 2, msg)
     %{name: name, pref: pref}
@@ -1301,7 +1303,7 @@ defmodule DNS.Msg.RR do
 
   # IN TXT (16)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.14
-  defp decode_rdata(:TXT, offset, rdlen, msg) do
+  defp decode_rdata(:TXT, class, offset, rdlen, msg) when class in [:IN, :CH] do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     lines =
@@ -1312,7 +1314,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN RP (17), https://www.rfc-editor.org/rfc/rfc1183.html#section-2.2
-  defp decode_rdata(:RP, offset, _rdlen, msg) do
+  defp decode_rdata(:RP, :IN, offset, _rdlen, msg) do
     {offset, mail} = dname_decode(offset, msg)
     {_offset, txt} = dname_decode(offset, msg)
 
@@ -1320,7 +1322,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN AFSDB (18), https://www.rfc-editor.org/rfc/rfc1183.html#section-1
-  defp decode_rdata(:AFSDB, offset, _rdlen, msg) do
+  defp decode_rdata(:AFSDB, :IN, offset, _rdlen, msg) do
     <<_::binary-size(offset), type::16, _::binary>> = msg
     {_offset, name} = dname_decode(offset + 2, msg)
 
@@ -1328,13 +1330,13 @@ defmodule DNS.Msg.RR do
   end
 
   # IN X25 (19), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.1
-  defp decode_rdata(:X25, offset, _rdlen, msg) do
+  defp decode_rdata(:X25, :IN, offset, _rdlen, msg) do
     <<_::binary-size(offset), len::8, address::binary-size(len), _::binary>> = msg
     %{address: address}
   end
 
   # IN ISDN (20), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.2
-  defp decode_rdata(:ISDN, offset, rdlen, msg) do
+  defp decode_rdata(:ISDN, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     dta = for <<len::8, txt::binary-size(len) <- rdata>>, do: txt
 
@@ -1349,14 +1351,14 @@ defmodule DNS.Msg.RR do
   end
 
   # IN RT (21), https://www.rfc-editor.org/rfc/rfc1183.html#section-3.3
-  defp decode_rdata(:RT, offset, _rdlen, msg) do
+  defp decode_rdata(:RT, :IN, offset, _rdlen, msg) do
     <<_::binary-size(offset), pref::16, _::binary>> = msg
     {_, name} = dname_decode(offset + 2, msg)
     %{name: name, pref: pref}
   end
 
   # IN AAAA (28)
-  defp decode_rdata(:AAAA, offset, 16, msg) do
+  defp decode_rdata(:AAAA, :IN, offset, 16, msg) do
     {_, ip} = ip_decode(offset, :ip6, msg)
     %{ip: ip}
   end
@@ -1364,7 +1366,7 @@ defmodule DNS.Msg.RR do
   # IN SRV (33)
   # - https://www.rfc-editor.org/rfc/rfc2782
   # - https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml
-  defp decode_rdata(:SRV, offset, rdlen, msg) do
+  defp decode_rdata(:SRV, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<prio::16, weight::16, port::16, _::binary>> = rdata
     # just in case name compression is used.
@@ -1373,7 +1375,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN KX (36), https://datatracker.ietf.org/doc/html/rfc2230#section-3
-  defp decode_rdata(:KX, offset, _rdlen, msg) do
+  defp decode_rdata(:KX, :IN, offset, _rdlen, msg) do
     <<_::binary-size(offset), pref::16, _::binary>> = msg
     {_offset, name} = dname_decode(offset + 2, msg)
     %{name: name, pref: pref}
@@ -1381,7 +1383,7 @@ defmodule DNS.Msg.RR do
 
   # CERT (37)
   # - https://www.rfc-editor.org/rfc/rfc4398.html#section-2
-  defp decode_rdata(:CERT, offset, rdlen, msg) do
+  defp decode_rdata(:CERT, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<type::16, keytag::16, algo::8, cert::binary>> = rdata
 
@@ -1394,7 +1396,7 @@ defmodule DNS.Msg.RR do
   end
 
   # DNAME (39), https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1
-  defp decode_rdata(:DNAME, offset, _rdlen, msg) do
+  defp decode_rdata(:DNAME, :IN, offset, _rdlen, msg) do
     {_offset, dname} = dname_decode(offset, msg)
     %{dname: dname}
   end
@@ -1402,7 +1404,7 @@ defmodule DNS.Msg.RR do
   # IN OPT (41) pseudo-rr
   # - https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
   # - https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
-  defp decode_rdata(:OPT, offset, _rdlen, msg) do
+  defp decode_rdata(:OPT, _class, offset, _rdlen, msg) do
     # OPT RR's class is requestor's bufsize, so read it as such.
     # backup 8 bytes to the start of RR's class and ttl and decode those
     # and the rdlen & rdata fields as well
@@ -1426,7 +1428,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN DS (43), https://www.rfc-editor.org/rfc/rfc4034#section-5
-  defp decode_rdata(:DS, offset, rdlen, msg) do
+  defp decode_rdata(:DS, :IN, offset, rdlen, msg) do
     # digest MUST be presented as case-insensitive hex digits
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
@@ -1441,7 +1443,7 @@ defmodule DNS.Msg.RR do
   end
 
   # SSHFP (44), https://www.rfc-editor.org/rfc/rfc4255.html#section-3.1
-  defp decode_rdata(:SSHFP, offset, rdlen, msg) do
+  defp decode_rdata(:SSHFP, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<algo::8, type::8, fp::binary>> = rdata
 
@@ -1453,7 +1455,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IPSECKEY (45), https://www.rfc-editor.org/rfc/rfc4025.html#section-2
-  defp decode_rdata(:IPSECKEY, offset, rdlen, msg) do
+  defp decode_rdata(:IPSECKEY, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<pref::8, gw_type::8, algo::8, rest::binary>> = rdata
@@ -1492,7 +1494,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN RRSIG (46), https://www.rfc-editor.org/rfc/rfc4034#section-3
-  defp decode_rdata(:RRSIG, offset, rdlen, msg) do
+  defp decode_rdata(:RRSIG, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<type::16, algo::8, labels::8, ttl::32, notafter::32, notbefore::32, keytag::16,
@@ -1519,7 +1521,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN NSEC (47), https://www.rfc-editor.org/rfc/rfc4034#section-4
-  defp decode_rdata(:NSEC, offset, rdlen, msg) do
+  defp decode_rdata(:NSEC, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     {offset, name} = dname_decode(0, rdata)
     <<_::binary-size(offset), bitmap::binary>> = rdata
@@ -1528,7 +1530,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN DNSKEY (48), https://www.rfc-editor.org/rfc/rfc4034#section-2
-  defp decode_rdata(:DNSKEY, offset, rdlen, msg) do
+  defp decode_rdata(:DNSKEY, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<flags::16, proto::8, algo::8, pubkey::binary>> = rdata
 
@@ -1562,7 +1564,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN NSEC3 (50), https://www.rfc-editor.org/rfc/rfc5155#section-3.2
-  defp decode_rdata(:NSEC3, offset, rdlen, msg) do
+  defp decode_rdata(:NSEC3, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<algo::8, flags::8, iter::16, slen::8, salt::binary-size(slen), hlen::8,
@@ -1584,7 +1586,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN NSEC3PARAM (51), https://www.rfc-editor.org/rfc/rfc5155#section-4.1
-  defp decode_rdata(:NSEC3PARAM, offset, rdlen, msg) do
+  defp decode_rdata(:NSEC3PARAM, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<algo::8, flags::8, iter::16, slen::8, salt::binary-size(slen)>> = rdata
@@ -1599,7 +1601,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN TLSA (52), https://www.rfc-editor.org/rfc/rfc6698#section-2
-  defp decode_rdata(:TLSA, offset, rdlen, msg) do
+  defp decode_rdata(:TLSA, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<usage::8, selector::8, type::8, data::binary>> = rdata
 
@@ -1612,7 +1614,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN CDS (59), https://www.rfc-editor.org/rfc/rfc7344.html#section-3.1
-  defp decode_rdata(:CDS, offset, rdlen, msg) do
+  defp decode_rdata(:CDS, :IN, offset, rdlen, msg) do
     # digest MUST be presented as case-insensitive hex digits
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
@@ -1627,7 +1629,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN CDNSKEY (60), https://www.rfc-editor.org/rfc/rfc7344.html#section-3.2
-  defp decode_rdata(:CDNSKEY, offset, rdlen, msg) do
+  defp decode_rdata(:CDNSKEY, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<flags::16, proto::8, algo::8, pubkey::binary>> = rdata
 
@@ -1659,7 +1661,7 @@ defmodule DNS.Msg.RR do
   end
 
   # IN ZONEMD (63), https://datatracker.ietf.org/doc/html/rfc8976#section-2
-  defp decode_rdata(:ZONEMD, offset, rdlen, msg) do
+  defp decode_rdata(:ZONEMD, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<serial::32, scheme::8, algo::8, digest::binary>> = rdata
     %{serial: serial, scheme: scheme, algo: algo, digest: digest}
@@ -1672,7 +1674,7 @@ defmodule DNS.Msg.RR do
 
   # IN URI (256)
   # - https://www.rfc-editor.org/rfc/rfc7553.html#section-4.5
-  defp decode_rdata(:URI, offset, rdlen, msg) do
+  defp decode_rdata(:URI, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
     <<prio::16, weight::16, target::binary>> = rdata
     %{prio: prio, weight: weight, target: target}
@@ -1680,7 +1682,7 @@ defmodule DNS.Msg.RR do
 
   # IN CAA (257)
   # https://www.rfc-editor.org/rfc/rfc8659#section-4
-  defp decode_rdata(:CAA, offset, rdlen, msg) do
+  defp decode_rdata(:CAA, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<flags::8, len::8, tag::binary-size(len), value::binary>> = rdata
@@ -1696,7 +1698,7 @@ defmodule DNS.Msg.RR do
   end
 
   # AMTRELAY (260), https://datatracker.ietf.org/doc/html/rfc8777#section-4
-  defp decode_rdata(:AMTRELAY, offset, rdlen, msg) do
+  defp decode_rdata(:AMTRELAY, :IN, offset, rdlen, msg) do
     <<_::binary-size(offset), rdata::binary-size(rdlen), _::binary>> = msg
 
     <<pref::8, d::1, type::7, rest::binary>> = rdata
@@ -1716,7 +1718,7 @@ defmodule DNS.Msg.RR do
   ## [[ catch all ]]
   # no decoder available, so simply return empty rdmap
   # if rdata is non-empty, will cause the rr.raw to be set to true
-  defp decode_rdata(_type, _offset, _rdlen, _msg),
+  defp decode_rdata(_type, _class, _offset, _rdlen, _msg),
     do: %{}
 
   # [[ DECODE ENDS0 opts ]]
