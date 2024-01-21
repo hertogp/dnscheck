@@ -147,7 +147,7 @@ defmodule DNS do
               # [ ] answer is :CNAME and qtype != :CNAME -> recurse with new name
               #     retain CNAME and include that in the answer
 
-              res_response_type(msg) |> IO.inspect(label: :rsp_type)
+              response_type(msg) |> IO.inspect(label: :rsp_type)
               # is this always sound?
               if anc == 0 and ctx.recurse and nsc > 0 and :NOERROR == xrcode,
                 do: recurse(qry, msg, ctx, tstop, %{}),
@@ -567,112 +567,6 @@ defmodule DNS do
 
   # [[ HELPERS ]]
 
-  @spec res_response_type(msg) :: :referral | :cname | :answer | :lame | :nodata
-  def res_response_type(%{
-        header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
-        question: [%{name: qname}],
-        answer: [],
-        authority: aut
-      })
-      when nsc > 0 do
-    # see also
-    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
-    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
-    # note that by now, the msg's question is same as that of the query and a
-    # proper referral has no SOA and relevant NS's in aut.
-    match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
-
-    case aut do
-      [] ->
-        :nodata
-
-      _ ->
-        soa = Enum.any?(aut, fn rr -> rr.type == :SOA end)
-        nss = Enum.any?(aut, fn rr -> rr.type == :NS and match.(rr.name) end)
-
-        cond do
-          soa -> :nodata
-          nss -> :referral
-          true -> :lame
-        end
-    end
-  end
-
-  def res_response_type(%{
-        header: %{anc: anc, qdc: 1, rcode: :NOERROR},
-        question: [%{type: qtype}],
-        answer: ans
-      })
-      when anc > 0 do
-    # see also
-    # - https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2
-    # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
-    # - https://datatracker.ietf.org/doc/html/rfc2308#section-1
-    # - https://datatracker.ietf.org/doc/html/rfc2181#section-10.1
-    # * if query was for :CNAME, always qualify response as :answer
-    # * if answer includes a :CNAME and some RR's of qtype, then we assume:
-    #   - that ns is also authoritative for the cname, and
-    #   - that the RR's with qtype are for the cname given
-    #   otherwise the :answer would actually be :lame. For now that is
-    #   up to the caller to detect/decide
-    #   => TODO: should we check those RR's of qtype are for the cname?
-    # * if answer includes a :CNAME and no RR's of qtype, then
-    #   nameserver is not authoritative for zone of canonical name
-    #   and `resolve` will have to follow up on the canonical name
-    cname = Enum.any?(ans, fn rr -> rr.type == :CNAME end)
-    wants = Enum.any?(ans, fn rr -> rr.type == qtype end)
-
-    cond do
-      qtype == :CNAME -> :answer
-      wants -> :answer
-      cname -> :cname
-      true -> :lame
-    end
-  end
-
-  def res_response_type(_),
-    do: :answer
-
-  @spec xrcode(msg) :: atom | non_neg_integer
-  defp xrcode(msg) do
-    # calculate rcode (no TSIG's yet)
-
-    xrcode =
-      Enum.find(msg.additional, %{}, fn rr -> rr.type == :OPT end)
-      |> Map.get(:rdmap, %{})
-      |> Map.get(:xrcode, :NOERROR)
-      |> Msg.Terms.encode_dns_rcode()
-
-    rcode =
-      (16 * xrcode + DNS.Msg.Terms.encode_dns_rcode(msg.header.rcode))
-      |> Msg.Terms.decode_dns_rcode()
-
-    rcode
-  end
-
-  defp log(false, _),
-    do: :ok
-
-  defp log(true, msg),
-    do: IO.puts(msg)
-
-  defp unwrap({{_ip, _port} = ns, t}) do
-    wait(timeout(t))
-    ns
-  end
-
-  defp unwrap(ns),
-    do: ns
-
-  defp udp_timeout(timeout, retry, n, tstop) do
-    tdelta = div(timeout * 2 ** n, retry)
-
-    tdelta
-    |> time()
-    |> timeout(tstop)
-    |> min(tdelta)
-  end
-
   @spec reply?(msg, msg) :: boolean
   def reply?(qry, rsp) do
     # Says whether `rsp` is considered a reply to `qry`
@@ -713,6 +607,112 @@ defmodule DNS do
         Enum.zip(ql, rl)
         |> Enum.all?(fn {q, r} -> q == r end)
     end
+  end
+
+  @spec response_type(msg) :: :referral | :cname | :answer | :lame | :nodata
+  def response_type(%{
+        header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
+        question: [%{name: qname}],
+        answer: [],
+        authority: aut
+      })
+      when nsc > 0 do
+    # see also
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
+    # note that by now, the msg's question is same as that of the query and a
+    # proper referral has no SOA and relevant NS's in aut.
+    match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
+
+    case aut do
+      [] ->
+        :nodata
+
+      _ ->
+        soa = Enum.any?(aut, fn rr -> rr.type == :SOA end)
+        nss = Enum.any?(aut, fn rr -> rr.type == :NS and match.(rr.name) end)
+
+        cond do
+          soa -> :nodata
+          nss -> :referral
+          true -> :lame
+        end
+    end
+  end
+
+  def response_type(%{
+        header: %{anc: anc, qdc: 1, rcode: :NOERROR},
+        question: [%{type: qtype}],
+        answer: ans
+      })
+      when anc > 0 do
+    # see also
+    # - https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2
+    # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-1
+    # - https://datatracker.ietf.org/doc/html/rfc2181#section-10.1
+    # * if query was for :CNAME, always qualify response as :answer
+    # * if answer includes a :CNAME and some RR's of qtype, then we assume:
+    #   - that ns is also authoritative for the cname, and
+    #   - that the RR's with qtype are for the cname given
+    #   otherwise the :answer would actually be :lame. For now that is
+    #   up to the caller to detect/decide
+    #   => TODO: should we check those RR's of qtype are for the cname?
+    # * if answer includes a :CNAME and no RR's of qtype, then
+    #   nameserver is not authoritative for zone of canonical name
+    #   and `resolve` will have to follow up on the canonical name
+    cname = Enum.any?(ans, fn rr -> rr.type == :CNAME end)
+    wants = Enum.any?(ans, fn rr -> rr.type == qtype end)
+
+    cond do
+      qtype == :CNAME -> :answer
+      wants -> :answer
+      cname -> :cname
+      true -> :lame
+    end
+  end
+
+  def response_type(_),
+    do: :answer
+
+  @spec xrcode(msg) :: atom | non_neg_integer
+  defp xrcode(msg) do
+    # calculate rcode (no TSIG's yet)
+
+    xrcode =
+      Enum.find(msg.additional, %{}, fn rr -> rr.type == :OPT end)
+      |> Map.get(:rdmap, %{})
+      |> Map.get(:xrcode, :NOERROR)
+      |> Msg.Terms.encode_dns_rcode()
+
+    rcode =
+      (16 * xrcode + DNS.Msg.Terms.encode_dns_rcode(msg.header.rcode))
+      |> Msg.Terms.decode_dns_rcode()
+
+    rcode
+  end
+
+  defp log(false, _),
+    do: :ok
+
+  defp log(true, msg),
+    do: IO.puts(msg)
+
+  defp unwrap({{_ip, _port} = ns, t}) do
+    wait(timeout(t))
+    ns
+  end
+
+  defp unwrap(ns),
+    do: ns
+
+  defp udp_timeout(timeout, retry, n, tstop) do
+    tdelta = div(timeout * 2 ** n, retry)
+
+    tdelta
+    |> time()
+    |> timeout(tstop)
+    |> min(tdelta)
   end
 
   # wrap a nameserver with an absolute point in time,
