@@ -150,7 +150,7 @@ defmodule DNS do
               res_response_type(msg) |> IO.inspect(label: :rsp_type)
               # is this always sound?
               if anc == 0 and ctx.recurse and nsc > 0 and :NOERROR == xrcode,
-                do: res_recurse(qry, msg, ctx, tstop, %{}),
+                do: recurse(qry, msg, ctx, tstop, %{}),
                 else: {:ok, msg}
 
             {:error, reason} ->
@@ -166,7 +166,7 @@ defmodule DNS do
     end
   end
 
-  def res_recurse(qry, msg, ctx, tstop, seen) do
+  def recurse(qry, msg, ctx, tstop, seen) do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7     - resolver implementation
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
@@ -184,7 +184,7 @@ defmodule DNS do
       msg.authority
       |> Enum.filter(fn rr -> rr.type == :NS end)
       |> Enum.map(fn rr -> rr.rdmap.name end)
-      |> res_recurse_nss()
+      |> recurse_nss()
       |> Enum.filter(fn ns -> not Map.has_key?(seen, ns) end)
 
     zone =
@@ -207,7 +207,7 @@ defmodule DNS do
       case xrcode do
         :NOERROR when anc == 0 and nsc > 0 ->
           Cache.put(msg)
-          res_recurse(qry, msg, ctx, tstop, seen)
+          recurse(qry, msg, ctx, tstop, seen)
 
         :NOERROR when anc > 0 ->
           Cache.put(msg)
@@ -222,8 +222,8 @@ defmodule DNS do
     end
   end
 
-  @spec res_recurse_nss([binary]) :: [{:inet.ip_address(), integer}]
-  def res_recurse_nss(nsnames) do
+  @spec recurse_nss([binary]) :: [{:inet.ip_address(), integer}]
+  def recurse_nss(nsnames) do
     # given a list of names of :NS namerservers taken from authority,
     # get their IP addresses.  Consult the cache first, then resolve
     # any that are not yet in the cache.  Note that the msg on whose
