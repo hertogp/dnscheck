@@ -112,12 +112,13 @@ defmodule DNS do
 
   """
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
-  def resolve(name, type, ctx \\ []) do
+  def resolve(name, type, opts \\ []) do
     # TODO:
     # [ ] probably move this to dnscheck.ex at some point
+    # [ ] resolve should return {:ok, {xrcode, msg}} | {:error, {:reason, msg}}
     Cache.init(clear: false)
 
-    with {:ok, ctx} <- make_context(ctx),
+    with {:ok, ctx} <- make_context(opts),
          {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, :IN, type) do
@@ -127,7 +128,7 @@ defmodule DNS do
         [] ->
           # if ctx.recurse is false -> use caller's explicitly provided ctx.nameservers
           nss = (ctx.recurse && Cache.nss(qname)) || ctx.nameservers
-          IO.inspect(nss, label: :cached_nss)
+          IO.inspect(nss, label: :initial_nss)
           tstop = time(ctx.maxtime)
 
           case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
@@ -137,22 +138,15 @@ defmodule DNS do
               anc = msg.header.anc
               nsc = msg.header.nsc
               arc = msg.header.arc
+              rsp_type = response_type(msg)
 
               log(
                 true,
-                "- server replied: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+                "- server reply (#{rsp_type}): #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
               )
 
-              # RECURSE when:
-              # [ ] anc is 0, nsc > 0
-              # [ ] answer is :CNAME and qtype != :CNAME -> recurse with new name
-              #     retain CNAME and include that in the answer
-
-              response_type(msg) |> IO.inspect(label: :rsp_type)
-              # is this always sound?
-              if anc == 0 and ctx.recurse and nsc > 0 and :NOERROR == xrcode,
-                do: recurse(qry, msg, ctx, tstop, %{}),
-                else: {:ok, msg}
+              # try www.azure.com for a cname chain)
+              handle_response(qry, msg, ctx, tstop, %{})
 
             {:error, reason} ->
               IO.inspect({:error, reason}, label: :cached)
@@ -163,7 +157,7 @@ defmodule DNS do
           make_response(qry, rrs)
       end
     else
-      e -> e
+      e -> IO.inspect(e, label: :resolve_error)
     end
   end
 
@@ -176,17 +170,22 @@ defmodule DNS do
     # - same qry, different nameservers due to redirection
 
     qtn = hd(qry.question)
-    log(true, "- recursing for #{qtn.name} #{qtn.type}")
-    # TODO: Cache.put(qry, msg) so msg can be better sanity checked
     Cache.put(msg)
+    log(true, "- recursing for #{qtn.name} #{qtn.type}")
 
     # always move forward, never circle back hence filtering seen
+    # -----------------------------------------------------------
+    # TODO: this doesn't work that way: we might come back to the
+    # same set of nameservers for a different (c)name/zone
+    # So: track zone we're being referred to or each {qname,ns}?
+    # -----------------------------------------------------------
     nss =
       msg.authority
       |> Enum.filter(fn rr -> rr.type == :NS end)
       |> Enum.map(fn rr -> rr.rdmap.name end)
       |> recurse_nss()
-      |> Enum.filter(fn ns -> not Map.has_key?(seen, ns) end)
+
+    # |> Enum.filter(fn ns -> not Map.has_key?(seen, ns) end)
 
     zone =
       if length(msg.authority) > 0,
@@ -199,24 +198,11 @@ defmodule DNS do
     seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
 
     # TODO: report an error when all ns were seen before
-    log(ctx.verbose, "- new nss: #{inspect(nss)}")
+    log(true, "- new nss: #{inspect(nss)}")
 
-    with {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []),
-         xrcode <- xrcode(msg),
-         anc <- msg.header.anc,
-         nsc <- msg.header.nsc do
-      case xrcode do
-        :NOERROR when anc == 0 and nsc > 0 ->
-          Cache.put(msg)
-          recurse(qry, msg, ctx, tstop, seen)
-
-        :NOERROR when anc > 0 ->
-          Cache.put(msg)
-          {:ok, msg}
-
-        other ->
-          {:error, {other, msg}}
-      end
+    with {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
+      Cache.put(msg)
+      handle_response(qry, msg, ctx, tstop, seen)
     else
       {:error, reason} -> {:error, {reason, msg}}
       other -> {:error, other}
@@ -226,41 +212,19 @@ defmodule DNS do
   @spec recurse_nss([binary]) :: [{:inet.ip_address(), integer}]
   def recurse_nss(nsnames) do
     # given a list of names of :NS namerservers taken from authority,
-    # get their IP addresses.  Consult the cache first, then resolve
-    # any that are not yet in the cache.  Note that the msg on whose
-    # authority we're recursing on will have been cached already, so
-    # any glue records for nameservers that were in the additional
-    # section, can be retrieved from the cache.
-    nss =
-      for ns <- nsnames, type <- [:A, :AAAA] do
-        Cache.get(ns, :IN, type)
-      end
-      |> List.flatten()
-
-    old =
-      nss
-      |> Enum.map(fn rr -> rr.name end)
-      |> Enum.map(fn name -> dname_normalize(name) |> elem(1) end)
-      |> Enum.filter(fn n -> not is_atom(n) end)
-
-    new =
-      nsnames
-      |> Enum.map(fn name -> dname_normalize(name) |> elem(1) end)
-      |> Enum.filter(fn name -> name not in old end)
-      |> Enum.filter(fn n -> not is_atom(n) end)
-
-    log(true, "- resolving new ns: #{Enum.join(new, ",")}")
-
-    for ns <- new, type <- [:A, :AAAA] do
+    # get their IP addresses.  Note that the referral msg will have
+    # been cached already and resolve consults cache first before
+    # reaching out to the dns tree.
+    for ns <- nsnames, type <- [:A, :AAAA] do
       case resolve(ns, type) do
         {:ok, msg} -> msg.answer
-        _ -> []
+        other -> IO.inspect([], label: "!! #{ns} not resolved #{inspect(other)}")
       end
     end
     |> List.flatten()
-    |> Enum.concat(nss)
     |> Enum.map(fn rr -> rr.rdmap.ip end)
     |> Enum.map(fn ip -> {Pfx.to_tuple(ip, mask: false), 53} end)
+    |> Enum.shuffle()
   rescue
     _ -> []
   end
@@ -307,6 +271,9 @@ defmodule DNS do
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
+                # TODO: is this the right place to (always) cache a msg before
+                # passing it back upstairs?
+                Cache.put(msg)
                 {:ok, msg}
             end
         end
@@ -395,7 +362,8 @@ defmodule DNS do
     # - if it's not an answer to the question, try again until timeout has passed
     # - sock is connected, so addr,port *should* be ok
     {:ok, {ip, p}} = :inet.peername(sock)
-    ns = "#{Pfx.new(ip)}:#{p}/udp"
+    # "#{Pfx.new(ip)}:#{p}/udp"
+    ns = inspect({ip, p})
     log(true, "- resolving against #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
@@ -510,6 +478,43 @@ defmodule DNS do
     case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
       {:ok, qry} -> Msg.encode(qry)
       {:error, e} -> {:error, e.data}
+    end
+  end
+
+  # [[ HANDLE RESPONSE ]]
+  def handle_response(qry, msg, ctx, tstop, seen) do
+    xrcode = xrcode(msg)
+    type = hd(qry.question).type
+
+    case response_type(msg) do
+      :answer ->
+        {:ok, {xrcode, msg}}
+
+      :referral ->
+        recurse(qry, msg, ctx, tstop, seen)
+
+      :cname ->
+        case Enum.find(msg.answer, false, fn rr -> rr.type == :CNAME end) do
+          false ->
+            {:error, {:lame, msg}}
+
+          rr ->
+            new_opts =
+              ctx
+              |> Map.delete(:nameservers)
+              |> Map.put(:maxtime, timeout(tstop))
+              |> Map.put(:rd, 1)
+              |> Keyword.new()
+
+            resolve(rr.rdmap.name, type, new_opts)
+            |> IO.inspect(label: rr.rdmap.name)
+        end
+
+      :nodata ->
+        {:ok, {:nodata, msg}}
+
+      :lame ->
+        {:error, {:lame, msg}}
     end
   end
 
@@ -659,7 +664,7 @@ defmodule DNS do
     #   - that the RR's with qtype are for the cname given
     #   otherwise the :answer would actually be :lame. For now that is
     #   up to the caller to detect/decide
-    #   => TODO: should we check those RR's of qtype are for the cname?
+    #   TODO: should we check those RR's of qtype are for the cname?
     # * if answer includes a :CNAME and no RR's of qtype, then
     #   nameserver is not authoritative for zone of canonical name
     #   and `resolve` will have to follow up on the canonical name
