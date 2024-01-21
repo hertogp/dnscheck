@@ -5,9 +5,13 @@ defmodule DNS do
   """
 
   # TODO:
-  # [ ] dname_normalize should handle escaped chars, see RFC4343
+  # [ ] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
+  #     context (ctx) is more logical & storing additional stuff is less weird
+  # [x] dname_normalize should handle escaped chars, see RFC4343
   # [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
   #     or maybe check interfaces on machine we're running on
+  #     :inet.getifaddrs/0 yields info on IP addresses in use on the machine
+  #     `-> add :ip4/:ip6 capabilities & use that to select/filter NSs
   # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
   # [c] sort the root hints fastest to slowest RTT
@@ -107,25 +111,25 @@ defmodule DNS do
 
   """
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
-  def resolve(name, type, opts \\ []) do
+  def resolve(name, type, ctx \\ []) do
     # TODO:
     # [ ] probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
 
-    with {:ok, opts} <- make_options(opts),
-         {:ok, qry} <- make_query(name, type, opts),
+    with {:ok, ctx} <- make_context(ctx),
+         {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, :IN, type) do
       log(true, "resolving #{qname}, #{type}")
 
       case cached do
         [] ->
-          # if opts.recurse is false -> use caller's explicitly provided opts.nameservers
-          nss = (opts.recurse && Cache.nss(qname)) || opts.nameservers
+          # if ctx.recurse is false -> use caller's explicitly provided ctx.nameservers
+          nss = (ctx.recurse && Cache.nss(qname)) || ctx.nameservers
           IO.inspect(nss, label: :cached_nss)
-          tstop = time(opts.maxtime)
+          tstop = time(ctx.maxtime)
 
-          case query_nss(nss, qry, opts, tstop, 0, _failed = []) do
+          case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
             {:ok, msg} ->
               Cache.put(msg)
               xrcode = xrcode(msg)
@@ -145,8 +149,8 @@ defmodule DNS do
 
               res_response_type(msg) |> IO.inspect(label: :rsp_type)
               # is this always sound?
-              if anc == 0 and opts.recurse and nsc > 0 and :NOERROR == xrcode,
-                do: res_recurse(qry, msg, opts, tstop, %{}),
+              if anc == 0 and ctx.recurse and nsc > 0 and :NOERROR == xrcode,
+                do: res_recurse(qry, msg, ctx, tstop, %{}),
                 else: {:ok, msg}
 
             {:error, reason} ->
@@ -162,7 +166,7 @@ defmodule DNS do
     end
   end
 
-  def res_recurse(qry, msg, opts, tstop, seen) do
+  def res_recurse(qry, msg, ctx, tstop, seen) do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7     - resolver implementation
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
@@ -194,16 +198,16 @@ defmodule DNS do
     seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
 
     # TODO: report an error when all ns were seen before
-    log(opts.verbose, "- new nss: #{inspect(nss)}")
+    log(ctx.verbose, "- new nss: #{inspect(nss)}")
 
-    with {:ok, msg} <- query_nss(nss, qry, opts, tstop, 0, []),
+    with {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []),
          xrcode <- xrcode(msg),
          anc <- msg.header.anc,
          nsc <- msg.header.nsc do
       case xrcode do
         :NOERROR when anc == 0 and nsc > 0 ->
           Cache.put(msg)
-          res_recurse(qry, msg, opts, tstop, seen)
+          res_recurse(qry, msg, ctx, tstop, seen)
 
         :NOERROR when anc > 0 ->
           Cache.put(msg)
@@ -262,34 +266,34 @@ defmodule DNS do
 
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
           {:ok, DNS.Msg.t()} | {:error, any}
-  def query_nss([] = _nss, _qry, _opts, _tstop, _nth, [] = _failed),
+  def query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
     do: {:error, :nxdomain}
 
-  def query_nss([] = _nss, qry, opts, tstop, nth, failed),
-    do: query_nss(Enum.reverse(failed), qry, opts, tstop, nth + 1, [])
+  def query_nss([] = _nss, qry, ctx, tstop, nth, failed),
+    do: query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
 
-  def query_nss([ns | nss], qry, opts, tstop, nth, failed) do
+  def query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
     # query_nss only queries the list of NSS for an acceptable response
     # resolve decides to continue with a new NSS list or not
     cond do
       timeout(tstop) == 0 ->
         {:error, :timeout}
 
-      opts.retry < nth ->
+      ctx.retry < nth ->
         {:error, :timeout}
 
       true ->
         ns = unwrap(ns)
 
-        case query_ns(ns, qry, opts, tstop, nth) do
+        case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
-            log(opts.verbose, "- pushing #{inspect(ns)} onto failed list (:timeout)")
-            query_nss(nss, qry, opts, tstop, nth, [wrap(ns, opts.srvfail_wait) | failed])
+            log(ctx.verbose, "- pushing #{inspect(ns)} onto failed list (:timeout)")
+            query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
           {:error, reason} ->
             # :system_limit | :not_owner | :inet.posix() do not bode well for this ns
-            log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
-            query_nss(nss, qry, opts, tstop, nth, failed)
+            log(ctx.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
+            query_nss(nss, qry, ctx, tstop, nth, failed)
 
           {:ok, msg} ->
             # https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1
@@ -298,8 +302,8 @@ defmodule DNS do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
                 # ns either spoke in tongues or gave a somewhat hostile response, f^hskip it
-                log(opts.verbose, "- dropping #{inspect(ns)}, due to error: #{rcode}")
-                query_nss(nss, qry, opts, tstop, nth, failed)
+                log(ctx.verbose, "- dropping #{inspect(ns)}, due to error: #{rcode}")
+                query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
                 {:ok, msg}
@@ -309,17 +313,17 @@ defmodule DNS do
   end
 
   @spec query_ns(ns, msg, map, timeT, counter) :: {:ok, msg} | {:error, reason}
-  def query_ns(ns, qry, opts, tstop, n) do
+  def query_ns(ns, qry, ctx, tstop, n) do
     # queries a single nameserver
     # [?] should we fallback to plain dns in case EDNS leads to BADVERS?
-    bufsize = opts.bufsize
-    timeout = opts.timeout
+    bufsize = ctx.bufsize
+    timeout = ctx.timeout
     payload = byte_size(qry.wdata)
 
-    if payload > bufsize or opts.tcp do
+    if payload > bufsize or ctx.tcp do
       query_tcp(ns, qry, timeout, tstop)
     else
-      udp_timeout = udp_timeout(timeout, opts.retry, n, tstop)
+      udp_timeout = udp_timeout(timeout, ctx.retry, n, tstop)
 
       case query_udp(ns, qry, udp_timeout, bufsize) do
         {:ok, rsp} when rsp.header.tc == 1 ->
@@ -375,8 +379,8 @@ defmodule DNS do
 
     with true <- is_u16(port),
          true <- iptype in [:inet, :inet6] do
-      opts = [:binary, iptype, active: false, recbuf: bufsize]
-      :gen_udp.open(0, opts)
+      ctx = [:binary, iptype, active: false, recbuf: bufsize]
+      :gen_udp.open(0, ctx)
     else
       false -> {:error, :badarg}
     end
@@ -458,8 +462,8 @@ defmodule DNS do
 
     with true <- is_u16(port),
          true <- iptype in [:inet, :inet6] do
-      opts = [:binary, iptype, active: false, packet: 2]
-      :gen_tcp.connect(ip, port, opts, tcp_timeout)
+      ctx = [:binary, iptype, active: false, packet: 2]
+      :gen_tcp.connect(ip, port, ctx, tcp_timeout)
     else
       false -> {:error, :badarg}
     end
@@ -483,10 +487,9 @@ defmodule DNS do
   end
 
   @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
-  def make_query(name, type, opts) do
-    # assumes opts is safe (made by make_options)
+  def make_query(name, type, ctx) do
+    # assumes ctx is safe (made by make_context)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
-    # [x] support class is CHAOS
     name =
       if Pfx.valid?(name) do
         Pfx.dns_ptr(name)
@@ -499,14 +502,14 @@ defmodule DNS do
       end
 
     edns_opts =
-      if opts.edns,
-        do: [[bufsize: opts.bufsize, do: opts.do, type: :OPT, class: :IN]],
+      if ctx.edns,
+        do: [[bufsize: ctx.bufsize, do: ctx.do, type: :OPT, class: :IN]],
         else: []
 
     # TODO
     # [ ] hdr should take opcode as parameter that defaults to QUERY
-    qtn_opts = [[name: name, type: type, class: opts.class]]
-    hdr_opts = [rd: opts.rd, cd: opts.cd, opcode: opts.opcode, id: Enum.random(0..65535)]
+    qtn_opts = [[name: name, type: type, class: ctx.class]]
+    hdr_opts = [rd: ctx.rd, cd: ctx.cd, opcode: ctx.opcode, id: Enum.random(0..65535)]
 
     case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
       {:ok, qry} -> Msg.encode(qry)
@@ -516,9 +519,10 @@ defmodule DNS do
 
   # [[ OPTIONS ]]
 
-  @spec make_options(Keyword.t()) :: {:ok, map} | {:error, binary}
-  def make_options(opts \\ []) do
-    opts2 = %{
+  @spec make_context(Keyword.t()) :: {:ok, map} | {:error, binary}
+  def make_context(opts \\ []) do
+    # ctx is carried around while (possibly recursively) resolving a request
+    ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
       class: Keyword.get(opts, :class, :IN),
@@ -537,21 +541,21 @@ defmodule DNS do
     }
 
     cond do
-      !is_u16(opts2.bufsize) -> {:error, "bufsize out of u16 range"}
-      !(opts2.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
-      !(opts2.class in [:IN, :CH, :HS]) -> {:error, "unknown DNS class: #{opts2.class}"}
-      !check_nss(opts2.nameservers) -> {:error, "bad nameservers #{inspect(opts2.nameservers)}"}
-      !(opts2.opcode in 0..15) -> {:error, "opcode not in 0..15"}
-      !(opts2.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
-      !is_boolean(opts2.verbose) -> {:error, "verbose should be true of false"}
-      !(opts2.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
-      !is_integer(opts2.maxtime) -> {:error, "maxtime should be positive integer"}
-      !(opts2.maxtime > 0) -> {:error, "maxtime should be positive integer"}
-      !(opts2.retry in 0..5) -> {:error, "retry not in range 0..5"}
-      !is_boolean(opts2.tcp) -> {:error, "tcp should be true of false"}
-      !(opts2.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
-      !(opts2.do in 0..1) -> {:error, "do bit should be 0 or 1"}
-      true -> {:ok, opts2}
+      !is_u16(ctx.bufsize) -> {:error, "bufsize out of u16 range"}
+      !(ctx.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
+      !(ctx.class in [:IN, :CH, :HS]) -> {:error, "unknown DNS class: #{ctx.class}"}
+      !check_nss(ctx.nameservers) -> {:error, "bad nameservers #{inspect(ctx.nameservers)}"}
+      !(ctx.opcode in 0..15) -> {:error, "opcode not in 0..15"}
+      !(ctx.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
+      !is_boolean(ctx.verbose) -> {:error, "verbose should be true of false"}
+      !(ctx.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
+      !is_integer(ctx.maxtime) -> {:error, "maxtime should be positive integer"}
+      !(ctx.maxtime > 0) -> {:error, "maxtime should be positive integer"}
+      !(ctx.retry in 0..5) -> {:error, "retry not in range 0..5"}
+      !is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
+      !(ctx.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
+      !(ctx.do in 0..1) -> {:error, "do bit should be 0 or 1"}
+      true -> {:ok, ctx}
     end
   end
 
