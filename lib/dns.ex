@@ -623,7 +623,7 @@ defmodule DNS do
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
     # note that by now, the msg's question is same as that of the query and a
-    # proper referral has no SOA and relevant NS's in aut.
+    # proper referral has no SOA and will have relevant NS's in authority
     match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
 
     case aut do
