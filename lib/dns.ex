@@ -391,7 +391,7 @@ defmodule DNS do
     do: {:error, :timeout}
 
   def query_udp_recv(sock, qry, timeout) do
-    # - if it's no answer to the question, try again until timeout has passed
+    # - if it's not an answer to the question, try again until timeout has passed
     # - sock is connected, so addr,port *should* be ok
     {:ok, {ip, p}} = :inet.peername(sock)
     ns = "#{Pfx.new(ip)}:#{p}/udp"
@@ -401,13 +401,11 @@ defmodule DNS do
 
     with {:ok, {_addr, _p, rsp}} <- :gen_udp.recv(sock, 0, timeout),
          {:ok, msg} <- Msg.decode(rsp),
-         true <- msg.header.id == qry.header.id,
-         true <- msg.header.qr == 1 do
+         true <- reply?(qry, msg) do
       t = now() - tstart
       b = byte_size(msg.wdata)
       log(true, "- received #{b} bytes in #{t} ms, from #{ns}")
 
-      IO.inspect(valid?(qry, msg), label: :valid)
       {:ok, msg}
     else
       false -> query_udp_recv(sock, qry, timeout(tstop))
@@ -427,8 +425,7 @@ defmodule DNS do
     with :ok <- :gen_tcp.send(sock, qry.wdata),
          {:ok, rsp} <- :gen_tcp.recv(sock, 0, timeout),
          {:ok, msg} <- Msg.decode(rsp),
-         true <- msg.header.id == qry.header.id,
-         true <- msg.header.qr == 1 do
+         true <- reply?(qry, msg) do
       :gen_tcp.close(sock)
       t = now() - t0
       log(true, "- received #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
@@ -570,42 +567,6 @@ defmodule DNS do
 
   # [[ HELPERS ]]
 
-  @spec valid?(msg, msg) :: boolean
-  def valid?(qry, rsp) do
-    # See also https://datatracker.ietf.org/doc/html/rfc5452.html, section 9.1
-    # - query_udp_open lets OS pick a random port
-    # - query_udp connect ensures incoming data is from "connected" name server
-    # - so here, check: ID, QR and compare question section
-    # note: this says nothing about the contents of ans/aut/add sections
-    cond do
-      qry.header.id != rsp.header.id ->
-        false
-
-      rsp.header.qr != 1 ->
-        false
-
-      length(qry.question) != length(rsp.question) ->
-        false
-
-      true ->
-        # can't compare wiredata directly.  Question section *could* contain
-        # more than one question, in which case possible name compression would
-        # make the wdata fields different.  Names in qry question already
-        # normalized.  rsp's names MUST be normalized so sorting should equal
-        # that of qry.
-        ql =
-          Enum.map(qry.question, fn q -> {q.name, q.type, q.class} end)
-          |> Enum.sort()
-
-        rl =
-          Enum.map(rsp.question, fn r -> {elem(dname_normalize(r.name), 1), r.type, r.class} end)
-          |> Enum.sort()
-
-        Enum.zip(ql, rl)
-        |> Enum.all?(fn {q, r} -> q == r end)
-    end
-  end
-
   @spec res_response_type(msg) :: :referral | :cname | :answer | :lame | :nodata
   def res_response_type(%{
         header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
@@ -695,37 +656,6 @@ defmodule DNS do
   defp log(true, msg),
     do: IO.puts(msg)
 
-  defp validate(qry, rsp) do
-    # https://github.com/erlang/otp/blob/master/lib/kernel/src/inet_res.erl#L1093C5-L1093C5
-    # https://github.com/erlang/otp/blob/master/lib/kernel/src/inet_res.erl#L1131
-    # erlang's inet_res checks:
-    # - that header fields id, opcode and rd are the same
-    # - that header qr == 1
-    # - rr TYPE, CLASS and dname correspond with the question asked
-    [rq] = rsp.question
-
-    with true <- qry.header.id == rsp.header.id,
-         1 <- rsp.header.qr,
-         true <- Enum.all?(rsp.answer, fn rr -> validate_rsp_rr(rr, rq) end) do
-      {:ok, rsp}
-    else
-      _ -> {:error, {:bad_response, rsp}}
-    end
-  end
-
-  defp validate_rsp_rr(rr, rq) do
-    # todo:
-    # - when rr.type is ANY what do we accept then?
-    dname_equal?(rr.name, rq.name) and
-      rr.class == rq.class and
-      (rr.type == rq.type or rr.type in [:DS, :RRSIG])
-  end
-
-  # wrap a nameserver with an absolute point in time,
-  # later on, when revisiting, we'll wait the remaining time
-  defp wrap(ns, timeout),
-    do: {ns, time(timeout)}
-
   defp unwrap({{_ip, _port} = ns, t}) do
     wait(timeout(t))
     ns
@@ -742,4 +672,51 @@ defmodule DNS do
     |> timeout(tstop)
     |> min(tdelta)
   end
+
+  @spec reply?(msg, msg) :: boolean
+  def reply?(qry, rsp) do
+    # Says whether `rsp` is considered a reply to `qry`
+    # See also https://datatracker.ietf.org/doc/html/rfc5452.html#section-9.1
+    # - Query ID, Query name, class & type all MUST match.
+    # - not named in rfc5452, but rsp.header.qr must be 1 (!)
+    # - dst Port (src Port in reply) is randomized by OS IP stack
+    # - qry-dst-IP/rsp-src-IP reply match due to tcp or query_udp_connect
+    #   (the latter only accepts traffic from the "connected" IP)
+    # - note: this says nothing about the contents of ans/aut/add sections
+    #   some auth nameservers provide an actual reply with bogus content
+    #   (e.g. aa=1, a=127.0.0.2, NS "" is localhost !, when asked for something
+    #    they are not authoritative for ...)
+    cond do
+      qry.header.id != rsp.header.id ->
+        false
+
+      rsp.header.qr != 1 ->
+        false
+
+      length(qry.question) != length(rsp.question) ->
+        false
+
+      true ->
+        # can't compare wiredata directly.  Question section *could* contain
+        # more than one question, in which case possible name compression would
+        # make the wdata fields different.  Names in qry question already
+        # normalized.  rsp's names MUST be normalized so sorting should equal
+        # that of qry.
+        ql =
+          Enum.map(qry.question, fn q -> {q.name, q.type, q.class} end)
+          |> Enum.sort()
+
+        rl =
+          Enum.map(rsp.question, fn r -> {elem(dname_normalize(r.name), 1), r.type, r.class} end)
+          |> Enum.sort()
+
+        Enum.zip(ql, rl)
+        |> Enum.all?(fn {q, r} -> q == r end)
+    end
+  end
+
+  # wrap a nameserver with an absolute point in time,
+  # later on, when revisiting, we'll wait the remaining time
+  defp wrap(ns, timeout),
+    do: {ns, time(timeout)}
 end
