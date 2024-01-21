@@ -12,6 +12,7 @@ defmodule DNS do
   #     or maybe check interfaces on machine we're running on
   #     :inet.getifaddrs/0 yields info on IP addresses in use on the machine
   #     `-> add :ip4/:ip6 capabilities & use that to select/filter NSs
+  # [x] query (hdr) should take opcode as parameter that defaults to QUERY
   # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
   # [c] sort the root hints fastest to slowest RTT
@@ -503,8 +504,6 @@ defmodule DNS do
         do: [[bufsize: ctx.bufsize, do: ctx.do, type: :OPT, class: :IN]],
         else: []
 
-    # TODO
-    # [ ] hdr should take opcode as parameter that defaults to QUERY
     qtn_opts = [[name: name, type: type, class: ctx.class]]
     hdr_opts = [rd: ctx.rd, cd: ctx.cd, opcode: ctx.opcode, id: Enum.random(0..65535)]
 
@@ -518,11 +517,13 @@ defmodule DNS do
 
   @spec make_context(Keyword.t()) :: {:ok, map} | {:error, binary}
   def make_context(opts \\ []) do
-    # ctx is carried around while (possibly recursively) resolving a request
+    # - ctx is carried around while (possibly recursively) resolving a request
+    # - decode class since validation checks if it's in a list of atoms could've
+    #    used is_u16, but only :IN is supported along with a few RR's for :CH and :HS
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
-      class: Keyword.get(opts, :class, :IN),
+      class: Keyword.get(opts, :class, :IN) |> Terms.decode_dns_class(),
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
       maxtime: Keyword.get(opts, :maxtime, 20_000),
@@ -541,17 +542,17 @@ defmodule DNS do
       !is_u16(ctx.bufsize) -> {:error, "bufsize out of u16 range"}
       !(ctx.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
       !(ctx.class in [:IN, :CH, :HS]) -> {:error, "unknown DNS class: #{ctx.class}"}
-      !check_nss(ctx.nameservers) -> {:error, "bad nameservers #{inspect(ctx.nameservers)}"}
-      !(ctx.opcode in 0..15) -> {:error, "opcode not in 0..15"}
-      !(ctx.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
-      !is_boolean(ctx.verbose) -> {:error, "verbose should be true of false"}
-      !(ctx.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
+      !(ctx.do in 0..1) -> {:error, "do bit should be 0 or 1"}
       !is_integer(ctx.maxtime) -> {:error, "maxtime should be positive integer"}
       !(ctx.maxtime > 0) -> {:error, "maxtime should be positive integer"}
-      !(ctx.retry in 0..5) -> {:error, "retry not in range 0..5"}
-      !is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
+      !check_nss(ctx.nameservers) -> {:error, "bad nameserver(s) #{inspect(ctx.nameservers)}"}
+      !(ctx.opcode in 0..15) -> {:error, "opcode not in 0..15"}
       !(ctx.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
-      !(ctx.do in 0..1) -> {:error, "do bit should be 0 or 1"}
+      !(ctx.retry in 0..5) -> {:error, "retry not in range 0..5"}
+      !(ctx.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
+      !is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
+      !is_boolean(ctx.verbose) -> {:error, "verbose should be true of false"}
+      !(ctx.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
       true -> {:ok, ctx}
     end
   end

@@ -322,6 +322,7 @@ defmodule DNS.Utils do
   has a label longer than 63 octets), the error tuple is returned.
 
   """
+  @spec dname_normalize(binary, Keyword.t()) :: {:ok, binary | [binary]} | {:error, :eencode}
   def dname_normalize(name, opts \\ []) do
     join = Keyword.get(opts, :join, true)
 
