@@ -572,17 +572,17 @@ defmodule DNS do
   def reply?(qry, rsp) do
     # Says whether `rsp` is considered a reply to `qry`
     # See also https://datatracker.ietf.org/doc/html/rfc5452.html#section-9.1
-    # - Query ID, Query name, class & type all MUST match.
     # - not named in rfc5452, but rsp.header.qr must be 1 (!)
-    # - dst Port (src Port in reply) is randomized by OS IP stack
-    # - qry-dst-IP/rsp-src-IP reply match due to tcp or query_udp_connect
-    #   (the latter only accepts traffic from the "connected" IP)
+    # - [?] also check the opcode's line up
     # - note: this says nothing about the contents of ans/aut/add sections
     #   some auth nameservers provide an actual reply with bogus content
     #   (e.g. aa=1, a=127.0.0.2, NS "" is localhost !, when asked for something
     #    they are not authoritative for ...)
     cond do
       qry.header.id != rsp.header.id ->
+        false
+
+      qry.header.opcode != rsp.header.opcode ->
         false
 
       rsp.header.qr != 1 ->
@@ -592,21 +592,22 @@ defmodule DNS do
         false
 
       true ->
-        # can't compare wiredata directly.  Question section *could* contain
-        # more than one question, in which case possible name compression would
-        # make the wdata fields different.  Names in qry question already
-        # normalized.  rsp's names MUST be normalized so sorting should equal
-        # that of qry.
+        # nowadays a question section with more than 1 question is unlikely,
+        # still it is possible.  Direct wdata comparison is not possible:
+        # - domain name compression might be present in the reply, or
+        # - domain name in response might have different case (?)
+        # so qry/rsp names are normalized so both sort the same
         ql =
-          Enum.map(qry.question, fn q -> {q.name, q.type, q.class} end)
+          qry.question
+          |> Enum.map(fn q -> {elem(dname_normalize(q.name), 1), q.type, q.class} end)
           |> Enum.sort()
 
         rl =
-          Enum.map(rsp.question, fn r -> {elem(dname_normalize(r.name), 1), r.type, r.class} end)
+          rsp.question
+          |> Enum.map(fn r -> {elem(dname_normalize(r.name), 1), r.type, r.class} end)
           |> Enum.sort()
 
-        Enum.zip(ql, rl)
-        |> Enum.all?(fn {q, r} -> q == r end)
+        ql == rl
     end
   end
 
