@@ -25,7 +25,7 @@ defmodule DNS do
   #     of needless conversions between binary & tuples.
   # [ ] likewise, there is a lot of dname_normalize'ing for the same name going on
   # [x] add spec to resolve, detailing all possible error reasons
-  # [x] resolve must try to answer from cache first and make_response
+  # [x] resolve must try to answer from cache first and response_make
   # [ ] detect when a referral omits required glue records -> drop the NS
   #     referred to (avoid getting in a loop!)
   # [ ] detect when a NS refers to an alias instead of a canonical name
@@ -116,6 +116,7 @@ defmodule DNS do
     # TODO:
     # [ ] probably move this to dnscheck.ex at some point
     # [ ] resolve should return {:ok, {xrcode, msg}} | {:error, {:reason, msg}}
+    #     `-> FIXME: this @spec & make response_make respond accordingly
     Cache.init(clear: false)
 
     with {:ok, ctx} <- make_context(opts),
@@ -127,6 +128,7 @@ defmodule DNS do
       case cached do
         [] ->
           # if ctx.recurse is false -> use caller's explicitly provided ctx.nameservers
+          # FIXME: if Cache.nss is [] -> fallback to root hints?
           nss = (ctx.recurse && Cache.nss(qname)) || ctx.nameservers
           IO.inspect(nss, label: :initial_nss)
           tstop = time(ctx.maxtime)
@@ -142,19 +144,20 @@ defmodule DNS do
 
               log(
                 true,
-                "- server reply (#{rsp_type}): #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+                "- server reply (#{rsp_type}) to #{qname}: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
               )
 
               # try www.azure.com for a cname chain)
-              handle_response(qry, msg, ctx, tstop, %{})
+              response_handle(qry, msg, ctx, tstop, %{})
 
             {:error, reason} ->
-              IO.inspect({:error, reason}, label: :cached)
+              {:error, reason}
+              |> IO.inspect(label: :cached)
           end
 
         rrs ->
           log(true, "- using cached answer with #{length(rrs)} answer(s)")
-          make_response(qry, rrs)
+          response_make(qry, rrs)
       end
     else
       e -> IO.inspect(e, label: :resolve_error)
@@ -175,7 +178,7 @@ defmodule DNS do
 
     # always move forward, never circle back hence filtering seen
     # -----------------------------------------------------------
-    # TODO: this doesn't work that way: we might come back to the
+    # FIXME: this doesn't work that way: we might come back to the
     # same set of nameservers for a different (c)name/zone
     # So: track zone we're being referred to or each {qname,ns}?
     # -----------------------------------------------------------
@@ -185,8 +188,6 @@ defmodule DNS do
       |> Enum.map(fn rr -> rr.rdmap.name end)
       |> recurse_nss()
 
-    # |> Enum.filter(fn ns -> not Map.has_key?(seen, ns) end)
-
     zone =
       if length(msg.authority) > 0,
         do: hd(msg.authority).name,
@@ -194,15 +195,15 @@ defmodule DNS do
 
     log(true, "- referral to #{zone}, found #{length(nss)} nss")
 
-    # keep track of where we've been
-    seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
+    # FIXME: loop protection doesn't work this way ...
+    # seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
 
     # TODO: report an error when all ns were seen before
     log(true, "- new nss: #{inspect(nss)}")
 
     with {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
       Cache.put(msg)
-      handle_response(qry, msg, ctx, tstop, seen)
+      response_handle(qry, msg, ctx, tstop, seen)
     else
       {:error, reason} -> {:error, {reason, msg}}
       other -> {:error, other}
@@ -218,7 +219,7 @@ defmodule DNS do
     for ns <- nsnames, type <- [:A, :AAAA] do
       case resolve(ns, type) do
         {:ok, msg} -> msg.answer
-        other -> IO.inspect([], label: "!! #{ns} not resolved #{inspect(other)}")
+        _other -> IO.inspect([], label: "!! could not resolve ns #{ns} #{type}")
       end
     end
     |> List.flatten()
@@ -232,7 +233,7 @@ defmodule DNS do
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
           {:ok, DNS.Msg.t()} | {:error, any}
   def query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
-    do: {:error, :nxdomain}
+    do: {:error, :servfail}
 
   def query_nss([] = _nss, qry, ctx, tstop, nth, failed),
     do: query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
@@ -437,21 +438,6 @@ defmodule DNS do
 
   # [[ MAKE QRY/RSP MSG ]]
 
-  @spec make_response(msg, [DNS.Msg.RR.t()]) :: {:ok, msg}
-  def make_response(qry, rrs) do
-    # a synthesized answer:
-    # - is created by copying & updating the vanilla qry msg
-    # - has no wdata and id of 0
-    # - aa=0, since we're not an authoritative source
-    # - ra=1, since we're answering and recursion is available
-    # Note: individual RR's *will* have wdata if they are raw RR's
-    hdr = %{qry.header | anc: length(rrs), aa: 0, ra: 1, qr: 1, id: 0, wdata: ""}
-    qtn = %{hd(qry.question) | wdata: ""}
-
-    rsp = %{qry | header: hdr, question: [qtn], answer: rrs, wdata: ""}
-    {:ok, rsp}
-  end
-
   @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
   def make_query(name, type, ctx) do
     # assumes ctx is safe (made by make_context)
@@ -481,14 +467,14 @@ defmodule DNS do
     end
   end
 
-  # [[ HANDLE RESPONSE ]]
-  def handle_response(qry, msg, ctx, tstop, seen) do
-    xrcode = xrcode(msg)
+  # [[ RESPONSES ]]
+  @spec response_handle(msg, msg, map, timeT, map) :: {:ok, msg} | {:error, {atom, msg}}
+  def response_handle(qry, msg, ctx, tstop, seen) do
     type = hd(qry.question).type
 
     case response_type(msg) do
       :answer ->
-        {:ok, {xrcode, msg}}
+        {:ok, msg}
 
       :referral ->
         recurse(qry, msg, ctx, tstop, seen)
@@ -506,16 +492,40 @@ defmodule DNS do
               |> Map.put(:rd, 1)
               |> Keyword.new()
 
-            resolve(rr.rdmap.name, type, new_opts)
-            |> IO.inspect(label: rr.rdmap.name)
+            # TODO: prepend rr (is cname rr) to resulting msg & set aa=0 (!)
+            case resolve(rr.rdmap.name, type, new_opts) do
+              {:ok, msg} ->
+                anc = msg.header.anc + 1
+                answer = [%{rr | wdata: <<>>} | msg.answer]
+                msg = %{msg | answer: answer, header: %{msg.header | anc: anc, aa: 0}}
+                IO.inspect({:ok, msg}, label: :prepend_to_ok)
+
+              error ->
+                IO.inspect(error, label: :no_prepend_to_nok)
+            end
         end
 
       :nodata ->
-        {:ok, {:nodata, msg}}
+        {:ok, msg}
 
       :lame ->
         {:error, {:lame, msg}}
     end
+  end
+
+  @spec response_make(msg, [DNS.Msg.RR.t()]) :: {:ok, msg}
+  def response_make(qry, rrs) do
+    # a synthesized answer:
+    # - is created by copying & updating the vanilla qry msg
+    # - has no wdata and id of 0
+    # - aa=0, since we're not an authoritative source
+    # - ra=1, since we're answering and recursion is available
+    # Note: individual RR's *will* have wdata if they are raw RR's
+    hdr = %{qry.header | anc: length(rrs), aa: 0, ra: 1, qr: 1, id: 0, wdata: ""}
+    qtn = %{hd(qry.question) | wdata: ""}
+
+    rsp = %{qry | header: hdr, question: [qtn], answer: rrs, wdata: ""}
+    {:ok, rsp}
   end
 
   # [[ OPTIONS ]]

@@ -333,21 +333,8 @@ defmodule DNS.Cache do
   def nss(zone) when is_binary(zone) do
     with {:ok, labels} <- dname_normalize(zone, join: false) do
       case do_nss(labels) do
-        [] ->
-          false
-
-        # TODO:
-        # [ ] cached nameserver might've been cached by name only!
-        # e.g. resolve shell.nl against ns of nl -> dns<x>.shell.com
-        # - that'll cache NSs but nl nameserver cannot provide glue for .com NSs
-        # - so nss should return names + A/AAAA's (if possible) and not only
-        #   take A/AAAA RRs !!
-        nss ->
-          nss
-          |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
-          |> List.flatten()
-          |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
-          |> Enum.shuffle()
+        [] -> false
+        nss -> nss
       end
     else
       _ -> false
@@ -358,15 +345,25 @@ defmodule DNS.Cache do
   defp do_nss([]),
     do: []
 
-  defp do_nss([_ | rest] = labels) do
-    zone = Enum.join(labels, ".")
+  defp do_nss([first | rest]) do
+    zone = Enum.join([first | rest], ".")
 
     case get(zone, :IN, :NS) do
       [] ->
         do_nss(rest)
 
       nss ->
-        Enum.map(nss, fn rr -> rr.rdmap.name end)
+        nss =
+          nss
+          |> Enum.map(fn rr -> rr.rdmap.name end)
+          |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
+          |> List.flatten()
+          |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+          |> Enum.shuffle()
+
+        if nss == [],
+          do: do_nss(rest),
+          else: nss
     end
   end
 
