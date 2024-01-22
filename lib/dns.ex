@@ -5,43 +5,71 @@ defmodule DNS do
   """
 
   # TODO:
-  # [ ] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
+  # [x] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
   #     context (ctx) is more logical & storing additional stuff is less weird
+  # [ ] caller sets RD=1, resolve sends RD=0 (!)
+  #     caller may set nameservers, we'll start there.
+  #     If caller sets RD=0 & nameservers => we'll send RD=1 to those NSs
   # [x] dname_normalize should handle escaped chars, see RFC4343
   # [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
   #     or maybe check interfaces on machine we're running on
   #     :inet.getifaddrs/0 yields info on IP addresses in use on the machine
   #     `-> add :ip4/:ip6 capabilities & use that to select/filter NSs
   # [x] query (hdr) should take opcode as parameter that defaults to QUERY
-  # [ ] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
+  # [x] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
   #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
   # [c] sort the root hints fastest to slowest RTT
   # [x] randomize NSs for root.nss each time they're used
   # [ ] add time spent to result of resolve (plus last NS seen?),
   #     stats: qtime = total, qrtt = last NS, qtstamp = timestamp, ns, port, rxsize (bytes received)
   # [ ] add check when recursing to see if delegated NSs are closer to QNAME
-  #     if not, ignore them as bogus
+  #     if not, ignore them as bogus (use label match count as per rfc?)
   # [ ] store IP addresses as tuples in Msg components, right now there is lot
   #     of needless conversions between binary & tuples.
   # [ ] likewise, there is a lot of dname_normalize'ing for the same name going on
   # [x] add spec to resolve, detailing all possible error reasons
   # [x] resolve must try to answer from cache first and response_make
   # [ ] detect when a referral omits required glue records -> drop the NS
-  #     referred to (avoid getting in a loop!)
+  #     referred to
   # [ ] detect when a NS refers to an alias instead of a canonical name
   #     warn (!). BIND drops the NS, PowerDNS/Knot simple resolve it.
-  # [ ] if qname is ip address, convert it to reverse ptr name
+  # [x] if qname is ip address, convert it to reverse ptr name
   # [x] query for NS names in aut section (ex. tourdewadden.nl)
-  # [x] detect NS loops
-  # [ ] detect CNAME loops
+  # [ ] detect NS loops => need a working solution
+  #     normal referral                  lame referral
+  #     q -> NSS0 -> zone1 + NSS1        q -> NSS0 -> zone1 + NSS1
+  #     q -> NSS1 -> zone2 + NSS2        q -> NSS1 -> zone2 + NSS2
+  #     q -> NSS2 -> answer              q -> NSS2 -> zone1 + NSS1
+  #     So {q, zone<x>} MUST only happen once!
+  #     Note that during recursing, a set of NNSx may be visited more
+  #     than once when resolving NS records for their A/AAAA records!
+  #     Note that zone<x> may come back in different cases
+  #     Note that loop protection goes across recursion boundaries => ctx!
+  #
+  # [ ] detect CNAME loops => ditto, need a working solution
+  #     q  -> NSS0 -> c1 [NSS + A/AAAA if possible]
+  #     c1 -> NSSx -> c2
+  #     c2 -> c1
+  #     So {q, c<x>} MUST only happen once!
+  #     Note that c<x> may come back in different cases
+  #     Note that loop protection goes across recursion boundaries => ctx!
+  #
   # [ ] responses must be better evaluated in query_nss
   #     - including extra validation rules for msg's (e.g. max 1 :OPT in additional, TSIG
   #       at the end, etc...)
-  # [ ] dname encoding/decoding etc.. should support escaped dots like \\. in a label
-  # [ ] randomize each nss set upon resolving/recursing (less predictable)
+  # [ ] check that resolve's {:error, reason} typespec is actually correct!
+  #     {:ok, msg} means successful reply that is deemed a valid answer
+  #     might still be NODATA -> needs a public response_type/1
+  #     How about: @spec resolve(..) :: {:ok, msg} | {:error, {reason, msg | DNS.MsgError.t}}
+  #     Some :error situations could include: {:nodata, msg}, {:nxdomain, msg},
+  #     {:eencode, DNS.MsgError), {:edecode, DNS.MsgError} etc ...
+  # [x] dname encoding/decoding etc.. should support escaped dots like \\. in a label
+  # [x] randomize each nss set upon resolving/recursing (less predictable)
   # [ ] NSS storage/retrieval -> donot query for all new NSS, just the first
   #     one and later, when trying others, query for their address
-  # [ ] add resolve/1 for resolve("name") and resolve("10.10.10.10") and resolve({1,1,1,1})
+  # [ ] add negative caching
+  # [ ] do Cache.put(msg) in only one place (in handle response?)
+  # [?] add resolve/1 for resolve("name") and resolve("10.10.10.10") and resolve({1,1,1,1})
   #     it will always ask for A & AAAA or PTR RR's
   # BEHAVIOUR:
   # - NODATA -> msg w/ aa=1, anc=0, rcode NOERROR (name exists without data: empty non-terminal)
@@ -148,7 +176,7 @@ defmodule DNS do
               )
 
               # try www.azure.com for a cname chain)
-              response_handle(qry, msg, ctx, tstop, %{})
+              response_handler(qry, msg, ctx, tstop, %{})
 
             {:error, reason} ->
               {:error, reason}
@@ -203,7 +231,7 @@ defmodule DNS do
 
     with {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
       Cache.put(msg)
-      response_handle(qry, msg, ctx, tstop, seen)
+      response_handler(qry, msg, ctx, tstop, seen)
     else
       {:error, reason} -> {:error, {reason, msg}}
       other -> {:error, other}
@@ -468,9 +496,10 @@ defmodule DNS do
   end
 
   # [[ RESPONSES ]]
-  @spec response_handle(msg, msg, map, timeT, map) :: {:ok, msg} | {:error, {atom, msg}}
-  def response_handle(qry, msg, ctx, tstop, seen) do
+  @spec response_handler(msg, msg, map, timeT, map) :: {:ok, msg} | {:error, {atom, msg}}
+  def response_handler(qry, msg, ctx, tstop, seen) do
     type = hd(qry.question).type
+    qname = hd(qry.question).name
 
     case response_type(msg) do
       :answer ->
@@ -485,23 +514,29 @@ defmodule DNS do
             {:error, {:lame, msg}}
 
           rr ->
-            new_opts =
+            opts =
               ctx
               |> Map.delete(:nameservers)
               |> Map.put(:maxtime, timeout(tstop))
               |> Map.put(:rd, 1)
               |> Keyword.new()
 
-            # TODO: prepend rr (is cname rr) to resulting msg & set aa=0 (!)
-            case resolve(rr.rdmap.name, type, new_opts) do
+            case resolve(rr.rdmap.name, type, opts) do
               {:ok, msg} ->
-                anc = msg.header.anc + 1
+                # Modify message returned
+                # [ ] reset question to alias queried
+                # [ ] prepend cname RR to msg.answer
+                # [ ] AA := 0 (NS not necessarily authoritative for all answer-RRs)
+                # anc = msg.header.anc + 1
+                header = %{msg.header | aa: 0, anc: msg.header.anc + 1, wdata: <<>>}
+                question = hd(msg.question)
+                question = %{question | name: qname, wdata: <<>>}
                 answer = [%{rr | wdata: <<>>} | msg.answer]
-                msg = %{msg | answer: answer, header: %{msg.header | anc: anc, aa: 0}}
-                IO.inspect({:ok, msg}, label: :prepend_to_ok)
+                msg = %{msg | header: header, question: [question], answer: answer}
+                {:ok, msg}
 
               error ->
-                IO.inspect(error, label: :no_prepend_to_nok)
+                error
             end
         end
 
@@ -521,12 +556,79 @@ defmodule DNS do
     # - aa=0, since we're not an authoritative source
     # - ra=1, since we're answering and recursion is available
     # Note: individual RR's *will* have wdata if they are raw RR's
+    # Note: we need to deal with qtype=CNAME
     hdr = %{qry.header | anc: length(rrs), aa: 0, ra: 1, qr: 1, id: 0, wdata: ""}
     qtn = %{hd(qry.question) | wdata: ""}
 
     rsp = %{qry | header: hdr, question: [qtn], answer: rrs, wdata: ""}
     {:ok, rsp}
   end
+
+  @spec response_type(msg) :: :referral | :cname | :answer | :lame | :nodata
+  def response_type(%{
+        header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
+        question: [%{name: qname}],
+        answer: [],
+        authority: aut
+      })
+      when nsc > 0 do
+    # see also
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
+    # note that by now, the msg's question is same as that of the query and a
+    # proper referral has no SOA and will have relevant NS's in authority
+    match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
+
+    case aut do
+      [] ->
+        :nodata
+
+      _ ->
+        soa = Enum.any?(aut, fn rr -> rr.type == :SOA end)
+        nss = Enum.any?(aut, fn rr -> rr.type == :NS and match.(rr.name) end)
+
+        cond do
+          soa -> :nodata
+          nss -> :referral
+          true -> :lame
+        end
+    end
+  end
+
+  def response_type(%{
+        header: %{anc: anc, qdc: 1, rcode: :NOERROR},
+        question: [%{type: qtype}],
+        answer: ans
+      })
+      when anc > 0 do
+    # see also
+    # - https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2
+    # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
+    # - https://datatracker.ietf.org/doc/html/rfc2308#section-1
+    # - https://datatracker.ietf.org/doc/html/rfc2181#section-10.1
+    # * if query was for :CNAME, always qualify response as :answer
+    # * if answer includes a :CNAME and some RR's of qtype, then we assume:
+    #   - that ns is also authoritative for the cname, and
+    #   - that the RR's with qtype are for the cname given
+    #   otherwise the :answer would actually be :lame. For now that is
+    #   up to the caller to detect/decide
+    #   TODO: should we check those RR's of qtype are for the cname?
+    # * if answer includes a :CNAME and no RR's of qtype, then
+    #   nameserver is not authoritative for zone of canonical name
+    #   and `resolve` will have to follow up on the canonical name
+    cname = Enum.any?(ans, fn rr -> rr.type == :CNAME end)
+    wants = Enum.any?(ans, fn rr -> rr.type == qtype end)
+
+    cond do
+      qtype == :CNAME -> :answer
+      wants -> :answer
+      cname -> :cname
+      true -> :lame
+    end
+  end
+
+  def response_type(_),
+    do: :answer
 
   # [[ OPTIONS ]]
 
@@ -625,72 +727,6 @@ defmodule DNS do
         ql == rl
     end
   end
-
-  @spec response_type(msg) :: :referral | :cname | :answer | :lame | :nodata
-  def response_type(%{
-        header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
-        question: [%{name: qname}],
-        answer: [],
-        authority: aut
-      })
-      when nsc > 0 do
-    # see also
-    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
-    # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
-    # note that by now, the msg's question is same as that of the query and a
-    # proper referral has no SOA and will have relevant NS's in authority
-    match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
-
-    case aut do
-      [] ->
-        :nodata
-
-      _ ->
-        soa = Enum.any?(aut, fn rr -> rr.type == :SOA end)
-        nss = Enum.any?(aut, fn rr -> rr.type == :NS and match.(rr.name) end)
-
-        cond do
-          soa -> :nodata
-          nss -> :referral
-          true -> :lame
-        end
-    end
-  end
-
-  def response_type(%{
-        header: %{anc: anc, qdc: 1, rcode: :NOERROR},
-        question: [%{type: qtype}],
-        answer: ans
-      })
-      when anc > 0 do
-    # see also
-    # - https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2
-    # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
-    # - https://datatracker.ietf.org/doc/html/rfc2308#section-1
-    # - https://datatracker.ietf.org/doc/html/rfc2181#section-10.1
-    # * if query was for :CNAME, always qualify response as :answer
-    # * if answer includes a :CNAME and some RR's of qtype, then we assume:
-    #   - that ns is also authoritative for the cname, and
-    #   - that the RR's with qtype are for the cname given
-    #   otherwise the :answer would actually be :lame. For now that is
-    #   up to the caller to detect/decide
-    #   TODO: should we check those RR's of qtype are for the cname?
-    # * if answer includes a :CNAME and no RR's of qtype, then
-    #   nameserver is not authoritative for zone of canonical name
-    #   and `resolve` will have to follow up on the canonical name
-    cname = Enum.any?(ans, fn rr -> rr.type == :CNAME end)
-    wants = Enum.any?(ans, fn rr -> rr.type == qtype end)
-
-    cond do
-      qtype == :CNAME -> :answer
-      wants -> :answer
-      cname -> :cname
-      true -> :lame
-    end
-  end
-
-  def response_type(_),
-    do: :answer
 
   @spec xrcode(msg) :: atom | non_neg_integer
   defp xrcode(msg) do

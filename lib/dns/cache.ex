@@ -36,7 +36,7 @@ defmodule DNS.Cache do
   # [x] maybe add nss(domain name) -> searches the cache?
   # [ ] handle put_msg better!
   # [x] clear rdata/wdata before caching if not raw
-  # [ ] should we cache RR's with wildcard domain names? -> NO!
+  # [x] should we cache RR's with wildcard domain names? -> NO!
   # [ ] cache negative responses, but NXDOMAIN has only a SOA in aut
 
   @doc """
