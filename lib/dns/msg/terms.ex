@@ -72,7 +72,6 @@ defmodule DNS.Msg.Terms do
   # TODO
   # [[ TCP/UDP SERVICES ]]
   # https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?&page=1
-  # TODO
 
   # [[ DNS CLASS ]]
   # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-2

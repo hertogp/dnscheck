@@ -24,20 +24,7 @@ defmodule DNS.Cache do
 
   """
 
-  # TODO
-  # [?] prime the cache using DNS.resolve & root hints
-  #     see https://datatracker.ietf.org/doc/draft-ietf-dnsop-rfc8109bis/
-  # [x] shuffle NSs around before handing off
-
   import DNS.Utils
-
-  # TODO:
-  # [c] initialize cache with root name servers (query via priv/named.root.rrs)
-  # [x] maybe add nss(domain name) -> searches the cache?
-  # [ ] handle put_msg better!
-  # [x] clear rdata/wdata before caching if not raw
-  # [x] should we cache RR's with wildcard domain names? -> NO!
-  # [ ] cache negative responses, but NXDOMAIN has only a SOA in aut
 
   @doc """
   Creates and initializes to an empty cache.
@@ -189,7 +176,6 @@ defmodule DNS.Cache do
   end
 
   def put(%DNS.Msg{answer: [_ | _]} = msg) do
-    # TODO:
     with true <- cacheable?(msg),
          qname <- hd(msg.question).name do
       msg.answer
@@ -208,17 +194,6 @@ defmodule DNS.Cache do
     # - ignores message if truncated, etc
     # - ignores aut-RR's unless it's a parent for qname
     # - checks add-RR's are listed in remaining aut-NSs
-    # TODO
-    # [!] DS does appear in msg.authority in case of a referral
-    # [ ] msg.aut may contain: SOA, NS, DS, RRSIG, NSEC, NSEC3, NSEC3PARAM?
-    # [ ] use max for TTL if exceptionally large
-    # [x] also cache *relevant* add records when msg is referral
-    # [ ] response answer-RRs from AA=1 response are preferred over cached RRs
-    #  `-> means put(RR) probably should be a private func and user should
-    #  |   always use put(qry, rsp) so qry.hdr/qtn section can be compared
-    #  `-> AA-bit is not stored w/ RRs in cache, so if rsp AA=1, always replace
-    #  `-> otherwise hang onto RRs with largest amount of time remaining since RRs
-    #      from AA=0 might come from some other cache where they lived a long time
     if cacheable?(msg) do
       qname = hd(msg.question).name
 

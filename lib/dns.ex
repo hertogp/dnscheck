@@ -5,72 +5,6 @@ defmodule DNS do
   """
 
   # TODO:
-  # [x] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
-  #     context (ctx) is more logical & storing additional stuff is less weird
-  # [ ] caller sets RD=1, resolve sends RD=0 (!)
-  #     caller may set nameservers, we'll start there.
-  #     If caller sets RD=0 & nameservers => we'll send RD=1 to those NSs
-  # [x] dname_normalize should handle escaped chars, see RFC4343
-  # [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
-  #     or maybe check interfaces on machine we're running on
-  #     :inet.getifaddrs/0 yields info on IP addresses in use on the machine
-  #     `-> add :ip4/:ip6 capabilities & use that to select/filter NSs
-  # [x] query (hdr) should take opcode as parameter that defaults to QUERY
-  # [x] change iana.update hints -> store hints as [{:inet.ip_address, 53}], and
-  #     use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
-  # [c] sort the root hints fastest to slowest RTT
-  # [x] randomize NSs for root.nss each time they're used
-  # [ ] add time spent to result of resolve (plus last NS seen?),
-  #     stats: qtime = total, qrtt = last NS, qtstamp = timestamp, ns, port, rxsize (bytes received)
-  # [ ] add check when recursing to see if delegated NSs are closer to QNAME
-  #     if not, ignore them as bogus (use label match count as per rfc?)
-  # [ ] store IP addresses as tuples in Msg components, right now there is lot
-  #     of needless conversions between binary & tuples.
-  # [ ] likewise, there is a lot of dname_normalize'ing for the same name going on
-  # [x] add spec to resolve, detailing all possible error reasons
-  # [x] resolve must try to answer from cache first and response_make
-  # [ ] detect when a referral omits required glue records -> drop the NS
-  #     referred to
-  # [ ] detect when a NS refers to an alias instead of a canonical name
-  #     warn (!). BIND drops the NS, PowerDNS/Knot simple resolve it.
-  # [x] if qname is ip address, convert it to reverse ptr name
-  # [x] query for NS names in aut section (ex. tourdewadden.nl)
-  # [ ] detect NS loops => need a working solution
-  #     normal referral                  lame referral
-  #     q -> NSS0 -> zone1 + NSS1        q -> NSS0 -> zone1 + NSS1
-  #     q -> NSS1 -> zone2 + NSS2        q -> NSS1 -> zone2 + NSS2
-  #     q -> NSS2 -> answer              q -> NSS2 -> zone1 + NSS1
-  #     So {q, zone<x>} MUST only happen once!
-  #     Note that during recursing, a set of NNSx may be visited more
-  #     than once when resolving NS records for their A/AAAA records!
-  #     Note that zone<x> may come back in different cases
-  #     Note that loop protection goes across recursion boundaries => ctx!
-  #
-  # [ ] detect CNAME loops => ditto, need a working solution
-  #     q  -> NSS0 -> c1 [NSS + A/AAAA if possible]
-  #     c1 -> NSSx -> c2
-  #     c2 -> c1
-  #     So {q, c<x>} MUST only happen once!
-  #     Note that c<x> may come back in different cases
-  #     Note that loop protection goes across recursion boundaries => ctx!
-  #
-  # [ ] responses must be better evaluated in query_nss
-  #     - including extra validation rules for msg's (e.g. max 1 :OPT in additional, TSIG
-  #       at the end, etc...)
-  # [ ] check that resolve's {:error, reason} typespec is actually correct!
-  #     {:ok, msg} means successful reply that is deemed a valid answer
-  #     might still be NODATA -> needs a public response_type/1
-  #     How about: @spec resolve(..) :: {:ok, msg} | {:error, {reason, msg | DNS.MsgError.t}}
-  #     Some :error situations could include: {:nodata, msg}, {:nxdomain, msg},
-  #     {:eencode, DNS.MsgError), {:edecode, DNS.MsgError} etc ...
-  # [x] dname encoding/decoding etc.. should support escaped dots like \\. in a label
-  # [x] randomize each nss set upon resolving/recursing (less predictable)
-  # [ ] NSS storage/retrieval -> donot query for all new NSS, just the first
-  #     one and later, when trying others, query for their address
-  # [ ] add negative caching
-  # [ ] do Cache.put(msg) in only one place (in handle response?)
-  # [?] add resolve/1 for resolve("name") and resolve("10.10.10.10") and resolve({1,1,1,1})
-  #     it will always ask for A & AAAA or PTR RR's
   # BEHAVIOUR:
   # - NODATA -> msg w/ aa=1, anc=0, rcode NOERROR (name exists without data: empty non-terminal)
   # - NXDOMAIN -> name does exist, nor anything below it.
@@ -141,10 +75,7 @@ defmodule DNS do
   """
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
   def resolve(name, type, opts \\ []) do
-    # TODO:
-    # [ ] probably move this to dnscheck.ex at some point
-    # [ ] resolve should return {:ok, {xrcode, msg}} | {:error, {:reason, msg}}
-    #     `-> FIXME: this @spec & make response_make respond accordingly
+    # TODO: probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
 
     with {:ok, ctx} <- make_context(opts),
