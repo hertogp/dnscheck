@@ -78,23 +78,30 @@ defmodule DNS do
     # TODO: probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
 
-    with {:ok, ctx} <- make_context(opts),
-         {:ok, qry} <- make_query(name, type, ctx),
+    with {:ok, ctx} <- make_context(opts) do
+      resolvep(name, type, ctx)
+    else
+      e -> IO.inspect(e, label: :ctx_error)
+    end
+  end
+
+  # resolvep is also used when following a referral (for NS given without glue info)
+  # or when following cnames
+  defp resolvep(name, type, ctx) do
+    with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, :IN, type) do
       log(true, "resolving #{qname}, #{type}")
 
       case cached do
         [] ->
-          # if ctx.recurse is false -> use caller's explicitly provided ctx.nameservers
-          # FIXME: if Cache.nss is [] -> fallback to root hints?
-          nss = (ctx.recurse && Cache.nss(qname)) || ctx.nameservers
+          nss = (ctx[:nameservers] || Cache.nss(qname) || @root_nss) |> Enum.shuffle()
           IO.inspect(nss, label: :initial_nss)
           tstop = time(ctx.maxtime)
 
           case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
             {:ok, msg} ->
-              Cache.put(msg)
+              # Cache.put(msg)
               xrcode = xrcode(msg)
               anc = msg.header.anc
               nsc = msg.header.nsc
@@ -103,10 +110,10 @@ defmodule DNS do
 
               log(
                 true,
-                "- server reply (#{rsp_type}) to #{qname}: #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+                "- qry #{qname} -> server reply (#{rsp_type}): #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
               )
 
-              # try www.azure.com for a cname chain)
+              # try www.azure.com for a cname chain
               response_handler(qry, msg, ctx, tstop, %{})
 
             {:error, reason} ->
@@ -130,38 +137,18 @@ defmodule DNS do
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
     # NOTES
     # - same qry, different nameservers due to redirection
+    # - a referral does not necessarily have all addresses of the NS's it
+    # mentions as glue available. Hence all names are `resolve`d and if it
+    # was cached, no actual DNS request goes out.  Only for those NS names
+    # that were not available in the actual referral
 
     qtn = hd(qry.question)
-    Cache.put(msg)
-    log(true, "- recursing for #{qtn.name} #{qtn.type}")
+    log(true, "#{qtn.name} #{qtn.type} - following referral, recursing")
 
-    # always move forward, never circle back hence filtering seen
-    # -----------------------------------------------------------
-    # FIXME: this doesn't work that way: we might come back to the
-    # same set of nameservers for a different (c)name/zone
-    # So: track zone we're being referred to or each {qname,ns}?
-    # -----------------------------------------------------------
-    nss =
-      msg.authority
-      |> Enum.filter(fn rr -> rr.type == :NS end)
-      |> Enum.map(fn rr -> rr.rdmap.name end)
-      |> recurse_nss()
+    # FIXME: implement loop detection
 
-    zone =
-      if length(msg.authority) > 0,
-        do: hd(msg.authority).name,
-        else: "no ns found"
-
-    log(true, "- referral to #{zone}, found #{length(nss)} nss")
-
-    # FIXME: loop protection doesn't work this way ...
-    # seen = Enum.reduce(nss, seen, fn ns, acc -> Map.put(acc, ns, []) end)
-
-    # TODO: report an error when all ns were seen before
-    log(true, "- new nss: #{inspect(nss)}")
-
-    with {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
-      Cache.put(msg)
+    with nss <- recurse_nss(msg, ctx, tstop),
+         {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
       response_handler(qry, msg, ctx, tstop, seen)
     else
       {:error, reason} -> {:error, {reason, msg}}
@@ -169,28 +156,47 @@ defmodule DNS do
     end
   end
 
-  @spec recurse_nss([binary]) :: [{:inet.ip_address(), integer}]
-  def recurse_nss(nsnames) do
-    # given a list of names of :NS namerservers taken from authority,
-    # get their IP addresses.  Note that the referral msg will have
-    # been cached already and resolve consults cache first before
-    # reaching out to the dns tree.
-    for ns <- nsnames, type <- [:A, :AAAA] do
-      case resolve(ns, type) do
-        {:ok, msg} -> msg.answer
-        _other -> IO.inspect([], label: "!! could not resolve ns #{ns} #{type}")
+  @spec recurse_nss(msg, map, timeT) :: [ns]
+  def recurse_nss(msg, ctx, tstop) do
+    # referral may have glue records in additional section (or not)
+    # [ ] only try to resolve those NS names that are not in glue
+    # - ns might have A, AAAA, both or none (i.e. lame delegation)
+    with :referral <- response_type(msg),
+         zone <- hd(msg.authority).name,
+         nsrrs <- Enum.filter(msg.authority, fn rr -> rr.type == :NS end),
+         glue <- Enum.map(msg.additional, fn rr -> rr.name end),
+         nsnames <- Enum.map(nsrrs, fn rr -> rr.rdmap.name end),
+         nsnames <- Enum.filter(nsnames, fn name -> name not in glue end) do
+      log(true, "#{hd(msg.question).name}, following referral to #{zone}")
+
+      for ns <- nsnames, type <- [:A, :AAAA] do
+        nss = (Cache.nss(ns) || @root_nss) |> Enum.shuffle()
+
+        ctx =
+          ctx
+          |> Map.put(:nameservers, nss)
+          |> Map.put(:maxtime, timeout(tstop))
+
+        case resolvep(ns, type, ctx) do
+          {:ok, msg} -> msg.answer
+          _other -> [] |> IO.inspect(label: "!! could not resolve ns #{ns} #{type}")
+        end
       end
+
+      # |> List.flatten()
+      # |> Enum.map(fn rr -> rr.rdmap.ip end)
+      # |> Enum.map(fn ip -> {Pfx.to_tuple(ip, mask: false), 53} end)
+      # |> Enum.shuffle()
+      Cache.nss(zone)
+    else
+      _ -> []
     end
-    |> List.flatten()
-    |> Enum.map(fn rr -> rr.rdmap.ip end)
-    |> Enum.map(fn ip -> {Pfx.to_tuple(ip, mask: false), 53} end)
-    |> Enum.shuffle()
   rescue
     _ -> []
   end
 
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
-          {:ok, DNS.Msg.t()} | {:error, any}
+          {:ok, DNS.Msg.t()} | {:error, reason}
   def query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
     do: {:error, :servfail}
 
@@ -216,17 +222,18 @@ defmodule DNS do
             query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
           {:error, reason} ->
-            # :system_limit | :not_owner | :inet.posix() do not bode well for this ns
+            # :system_limit | :not_owner | :inet.posix() | DNS.MsgError.t do not bode well for this ns
             log(ctx.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
             query_nss(nss, qry, ctx, tstop, nth, failed)
 
           {:ok, msg} ->
             # https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1
+            # https://datatracker.ietf.org/doc/rfc8914/ (extended DNS errors)
             # https://github.com/erlang/otp/blob/c55dc0d0a4a72fc59642aff186adde4621891cde/lib/kernel/src/inet_res.erl#L921
             case xrcode(msg) do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
-                # ns either spoke in tongues or gave a somewhat hostile response, f^hskip it
+                # ns either spoke in tongues or gave a somewhat hostile response, drop it & move on
                 log(ctx.verbose, "- dropping #{inspect(ns)}, due to error: #{rcode}")
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
@@ -324,7 +331,7 @@ defmodule DNS do
     {:ok, {ip, p}} = :inet.peername(sock)
     # "#{Pfx.new(ip)}:#{p}/udp"
     ns = inspect({ip, p})
-    log(true, "- resolving against #{ns}, timeout #{timeout} ms")
+    log(true, "- resolving #{hd(qry.question).name} against #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
 
@@ -437,6 +444,7 @@ defmodule DNS do
         {:ok, msg}
 
       :referral ->
+        log(true, "- response is a referral #{msg}")
         recurse(qry, msg, ctx, tstop, seen)
 
       :cname ->
@@ -445,19 +453,22 @@ defmodule DNS do
             {:error, {:lame, msg}}
 
           rr ->
-            opts =
+            # opts =
+            ctx =
               ctx
               |> Map.delete(:nameservers)
               |> Map.put(:maxtime, timeout(tstop))
               |> Map.put(:rd, 1)
-              |> Keyword.new()
 
-            case resolve(rr.rdmap.name, type, opts) do
+            # |> Keyword.new()
+
+            # case resolve(rr.rdmap.name, type, opts) do
+            case resolvep(rr.rdmap.name, type, ctx) do
               {:ok, msg} ->
                 # Modify message returned
-                # [ ] reset question to alias queried
-                # [ ] prepend cname RR to msg.answer
-                # [ ] AA := 0 (NS not necessarily authoritative for all answer-RRs)
+                # [x] reset question to alias queried
+                # [x] prepend cname RR to msg.answer
+                # [x] AA := 0 (NS not necessarily authoritative for all answer-RRs)
                 # anc = msg.header.anc + 1
                 header = %{msg.header | aa: 0, anc: msg.header.anc + 1, wdata: <<>>}
                 question = hd(msg.question)
@@ -574,7 +585,7 @@ defmodule DNS do
       class: Keyword.get(opts, :class, :IN) |> Terms.decode_dns_class(),
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
-      maxtime: Keyword.get(opts, :maxtime, 20_000),
+      maxtime: Keyword.get(opts, :maxtime, 2_000),
       nameservers: Keyword.get(opts, :nameservers, Enum.shuffle(@root_nss)),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
       rd: Keyword.get(opts, :rd, 0),

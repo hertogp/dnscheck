@@ -83,6 +83,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       it will always ask for A & AAAA or PTR RR's
 - [ ] resolve should return {:ok, {xrcode, msg}} | {:error, {:reason, msg}}
       `-> FIXME: this @spec & make response_make respond accordingly
+- [ ] add resolvep which can be called with ctx instead of opts
+      allows recursion with loop protection in ctx when following a cname chain
+      ditto for following referrals (ctx.referrals & ctx.cnames)
+      additional purpose is that these donot have to be included in opts as a
+      hidden option. Caller's call to resolve(..opts) always starts fresh,
+      during iteration call resolvep(.., ctx) so history is preserved and loops
+      detected.
 
 ### DNS.Msg
 - [ ] accessor functions for `t:DNS.Msg.t/0` struct.
@@ -127,7 +134,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      - AA-bit is not stored w/ RRs in cache, so if rsp AA=1, always replace
      - otherwise hang onto RRs with largest amount of time remaining since RRs
            from AA=0 might come from some other cache where they lived a long time
-
+- [ ] Need to detect when cached answer doesn't match DO-bit (both ways)
+      and respond accordingly
 
 ### DNS.Utils
 - [c] initialize cache with root name servers (query via priv/named.root.rrs)

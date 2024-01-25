@@ -328,17 +328,21 @@ defmodule DNS.Cache do
         do_nss(rest)
 
       nss ->
-        nss =
-          nss
-          |> Enum.map(fn rr -> rr.rdmap.name end)
-          |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
-          |> List.flatten()
-          |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
-          |> Enum.shuffle()
+        # nss =
+        nss
+        |> Enum.map(fn rr -> rr.rdmap.name end)
+        |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
+        |> List.flatten()
+        |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+        |> Enum.shuffle()
+        |> case do
+          [] -> do_nss(rest)
+          nss -> nss
+        end
 
-        if nss == [],
-          do: do_nss(rest),
-          else: nss
+        # if nss == [],
+        #   do: do_nss(rest),
+        #   else: nss
     end
   end
 
@@ -371,7 +375,7 @@ defmodule DNS.Cache do
     # [x] do not cache RR's from a truncated response
     # [x] do not cache RR's from *inverse query* (QTYPE)
     # [x] do not cache results that have QNAME with a wildcard label  (*.xyz.tld, or xyz.*.tld)
-    # [?] RR's of responses of dubious reliability, but how to determine that?
+    # [?] do not RR's of responses of dubious reliability, but how to determine that?
     # [?] should responses from e.g. 9.9.9.9 be cached? (their TTL's for
     #     NXDOMAIN are all over the place.. i.e. non-authoritative answers.
     # [x] unsollicited responses or RR DATA that was not requested (resolver MUST check this)
