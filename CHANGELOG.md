@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [x] resolve must try to answer from cache first and response_make
 - [ ] detect when a referral omits required glue records -> drop the NS
       referred to
-- [ ] detect when a NS refers to an alias instead of a canonical name
+- [?] detect when a NS refers to an alias instead of a canonical name
       warn (!). BIND drops the NS, PowerDNS/Knot simple resolve it.
 - [x] if qname is ip address, convert it to reverse ptr name
 - [x] query for NS names in aut section (ex. tourdewadden.nl)
@@ -75,15 +75,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       {:eencode, DNS.MsgError), {:edecode, DNS.MsgError} etc ...
 - [x] dname encoding/decoding etc.. should support escaped dots like \\. in a label
 - [x] randomize each nss set upon resolving/recursing (less predictable)
-- [ ] NSS storage/retrieval -> donot query for all new NSS, just the first
+- [?] NSS storage/retrieval -> donot query for all new NSS, just the first
       one and later, when trying others, query for their address
 - [ ] add negative caching
-- [ ] do Cache.put(msg) in only one place (in handle response?)
+- [x] do Cache.put(msg) in only one place (in handle response?)
 - [?] add resolve/1 for resolve("name") and resolve("10.10.10.10") and resolve({1,1,1,1})
       it will always ask for A & AAAA or PTR RR's
-- [ ] resolve should return {:ok, {xrcode, msg}} | {:error, {:reason, msg}}
+- [?] resolve should return {:ok, {xrcode, msg}} | {:error, {:reason, msg}}
       `-> FIXME: this @spec & make response_make respond accordingly
-- [ ] add resolvep which can be called with ctx instead of opts
+- [x] add resolvep which can be called with ctx instead of opts
       allows recursion with loop protection in ctx when following a cname chain
       ditto for following referrals (ctx.referrals & ctx.cnames)
       additional purpose is that these donot have to be included in opts as a

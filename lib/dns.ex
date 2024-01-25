@@ -28,7 +28,13 @@ defmodule DNS do
   @type msg :: DNS.Msg.t()
   @typedoc "Reasons why resolving may fail"
   @type reason ::
-          :timeout | :badarg | :system_limit | :not_owner | DNS.MsgError.t() | :inet.posix()
+          :timeout
+          | :servfail
+          | DNS.MsgError.t()
+          | :inet.posix()
+          | :badarg
+          | :system_limit
+          | :not_owner
   @typedoc "A counter is shorthand for non negative integer"
   @type counter :: non_neg_integer
   @typedoc "timeT is a, possibly future, absolute point in monolithic time"
@@ -85,10 +91,11 @@ defmodule DNS do
     end
   end
 
+  @spec resolvep(binary, type, map) :: {:ok, msg} | {:error, reason}
   defp resolvep(name, type, ctx) do
     # notes:
-    # - called by resolve to seek answer to caller's query (main use)
-    # - called by recurse_nss during referral, to resolve non-glue NSS
+    # - called by resolve to answer caller's query (main use)
+    # - called by recurse_nss during referral, to resolve non-glue NS's
     # - called by resolve_handler, to follow cnames
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
@@ -104,7 +111,6 @@ defmodule DNS do
 
           case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
             {:ok, msg} ->
-              # Cache.put(msg)
               xrcode = xrcode(msg)
               anc = msg.header.anc
               nsc = msg.header.nsc
@@ -125,7 +131,7 @@ defmodule DNS do
           end
 
         rrs ->
-          log(true, "- using cached answer with #{length(rrs)} answer(s)")
+          log(true, "- using cached ANSWER's (#{length(rrs)}")
           response_make(qry, rrs)
       end
     else
@@ -204,8 +210,7 @@ defmodule DNS do
     do: query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
 
   def query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
-    # query_nss only queries the list of NSS for an acceptable response
-    # resolve decides to continue with a new NSS list or not
+    # query_nss is responsible for getting 1 answer from NSS-list
     cond do
       timeout(tstop) == 0 ->
         {:error, :timeout}
@@ -234,12 +239,11 @@ defmodule DNS do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
                 # ns either spoke in tongues or gave a somewhat hostile response, drop it & move on
-                log(ctx.verbose, "- dropping #{inspect(ns)}, due to error: #{rcode}")
+                log(ctx.verbose, "- dropping #{inspect(ns)}, due to RCODE: #{rcode}")
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
-                # TODO: is this the right place to (always) cache a msg before
-                # passing it back upstairs?
+                # they only place where msg is offered to the cache
                 Cache.put(msg)
                 {:ok, msg}
             end
@@ -249,7 +253,7 @@ defmodule DNS do
 
   @spec query_ns(ns, msg, map, timeT, counter) :: {:ok, msg} | {:error, reason}
   def query_ns(ns, qry, ctx, tstop, n) do
-    # queries a single nameserver
+    # responsible for getting 1 answer from 1 nameserver
     # [?] should we fallback to plain dns in case EDNS leads to BADVERS?
     bufsize = ctx.bufsize
     timeout = ctx.timeout
@@ -284,7 +288,7 @@ defmodule DNS do
          {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
       # note that:
       # - query_udp_open uses random src port for each query
-      # - :gen_udp.connect ensure incoming data arrived at our src IP & port
+      # - :gen_udp.connect ensures incoming data arrived at our src IP & port
       # - query_udp_recv ensures qry/msg ID's are equal and msg's qr=1
       # the higher ups will need to deal with how to handle the response
       :gen_udp.close(sock)
@@ -354,7 +358,7 @@ defmodule DNS do
     do: {:error, :timeout}
 
   def query_tcp({ip, port}, qry, timeout, tstop) do
-    # connect outside with block, so we can always close the socket
+    # connect outside `with`-block, so we can always close the socket
     {:ok, sock} = query_tcp_connect({ip, port}, timeout, tstop)
     t0 = now()
 
@@ -395,8 +399,8 @@ defmodule DNS do
 
     with true <- is_u16(port),
          true <- iptype in [:inet, :inet6] do
-      ctx = [:binary, iptype, active: false, packet: 2]
-      :gen_tcp.connect(ip, port, ctx, tcp_timeout)
+      opts = [:binary, iptype, active: false, packet: 2]
+      :gen_tcp.connect(ip, port, opts, tcp_timeout)
     else
       false -> {:error, :badarg}
     end
