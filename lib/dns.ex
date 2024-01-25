@@ -37,9 +37,6 @@ defmodule DNS do
   # [[ NOTES ]]
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
   # https://www.rfc-editor.org/rfc/rfc1035#section-7
-  # - udp & fallback to tcp
-  # - do iterative queries, unless user specifies its own nameserver
-  # - handle timeout and multiple nameservers
   # - public-dns.info has lists of public nameservers
   # - question section SHOULD contain only 1 question
   # - A resolver MUST:
@@ -75,29 +72,35 @@ defmodule DNS do
   """
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
   def resolve(name, type, opts \\ []) do
+    # notes:
+    # - entry point for caller only
+    # - module code must use resolvep
     # TODO: probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
 
-    with {:ok, ctx} <- make_context(opts) do
+    with {:ok, ctx} <- make_context(name, type, opts) do
       resolvep(name, type, ctx)
     else
-      e -> IO.inspect(e, label: :ctx_error)
+      e -> IO.inspect(e, label: :opts_error)
     end
   end
 
-  # resolvep is also used when following a referral (for NS given without glue info)
-  # or when following cnames
   defp resolvep(name, type, ctx) do
+    # notes:
+    # - called by resolve to seek answer to caller's query (main use)
+    # - called by recurse_nss during referral, to resolve non-glue NSS
+    # - called by resolve_handler, to follow cnames
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
-         cached <- Cache.get(qname, :IN, type) do
+         cached <- Cache.get(qname, ctx.class, type) do
       log(true, "resolving #{qname}, #{type}")
 
       case cached do
         [] ->
           nss = (ctx[:nameservers] || Cache.nss(qname) || @root_nss) |> Enum.shuffle()
-          IO.inspect(nss, label: :initial_nss)
+          log(true, "#{name} #{type} got #{length(nss)} nameservers")
           tstop = time(ctx.maxtime)
+          log(true, "- time remaining #{timeout(tstop)}")
 
           case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
             {:ok, msg} ->
@@ -110,7 +113,7 @@ defmodule DNS do
 
               log(
                 true,
-                "- qry #{qname} -> server reply (#{rsp_type}): #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+                "- qry #{qname} #{type} -> server reply (#{rsp_type}): #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
               )
 
               # try www.azure.com for a cname chain
@@ -118,7 +121,7 @@ defmodule DNS do
 
             {:error, reason} ->
               {:error, reason}
-              |> IO.inspect(label: :cached)
+              |> IO.inspect(label: :query_nss_error)
           end
 
         rrs ->
@@ -136,16 +139,15 @@ defmodule DNS do
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
     # NOTES
-    # - same qry, different nameservers due to redirection
+    # - called by response_handler only, when following referral
+    # - so same qry, different nameservers due to redirection
     # - a referral does not necessarily have all addresses of the NS's it
-    # mentions as glue available. Hence all names are `resolve`d and if it
-    # was cached, no actual DNS request goes out.  Only for those NS names
-    # that were not available in the actual referral
+    #   mentions as glue available. Hence non-glue names are `resolve`d (a new,
+    #   fresh iterative query, respecting overall tstop).
 
-    qtn = hd(qry.question)
-    log(true, "#{qtn.name} #{qtn.type} - following referral, recursing")
-
-    # FIXME: implement loop detection
+    # FIXME: implement loop detection here: referral should:
+    # - bring us closer to qname
+    # - zone should not be seen before
 
     with nss <- recurse_nss(msg, ctx, tstop),
          {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
@@ -169,6 +171,8 @@ defmodule DNS do
          nsnames <- Enum.filter(nsnames, fn name -> name not in glue end) do
       log(true, "#{hd(msg.question).name}, following referral to #{zone}")
 
+      log(true, "glue ns: #{inspect(glue)}")
+
       for ns <- nsnames, type <- [:A, :AAAA] do
         nss = (Cache.nss(ns) || @root_nss) |> Enum.shuffle()
 
@@ -183,10 +187,6 @@ defmodule DNS do
         end
       end
 
-      # |> List.flatten()
-      # |> Enum.map(fn rr -> rr.rdmap.ip end)
-      # |> Enum.map(fn ip -> {Pfx.to_tuple(ip, mask: false), 53} end)
-      # |> Enum.shuffle()
       Cache.nss(zone)
     else
       _ -> []
@@ -444,7 +444,9 @@ defmodule DNS do
         {:ok, msg}
 
       :referral ->
-        log(true, "- response is a referral #{msg}")
+        # TODO: only recurse when ctx.rd == 1
+        zone = hd(msg.authority).name
+        log(true, "- #{qname} #{type} - got referral to #{zone}")
         recurse(qry, msg, ctx, tstop, seen)
 
       :cname ->
@@ -574,27 +576,32 @@ defmodule DNS do
 
   # [[ OPTIONS ]]
 
-  @spec make_context(Keyword.t()) :: {:ok, map} | {:error, binary}
-  def make_context(opts \\ []) do
+  @spec make_context(binary, type, Keyword.t()) :: {:ok, map} | {:error, binary}
+  def make_context(name, type, opts \\ []) do
     # - ctx is carried around while (possibly recursively) resolving a request
     # - decode class since validation checks if it's in a list of atoms could've
     #    used is_u16, but only :IN is supported along with a few RR's for :CH and :HS
+    nss = (Cache.nss(name) || @root_nss) |> Enum.shuffle()
+
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
       class: Keyword.get(opts, :class, :IN) |> Terms.decode_dns_class(),
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
-      maxtime: Keyword.get(opts, :maxtime, 2_000),
-      nameservers: Keyword.get(opts, :nameservers, Enum.shuffle(@root_nss)),
+      maxtime: Keyword.get(opts, :maxtime, 5_000),
+      nameservers: Keyword.get(opts, :nameservers, nss),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
       rd: Keyword.get(opts, :rd, 0),
-      recurse: opts[:nameservers] == nil,
       retry: Keyword.get(opts, :retry, 3),
       srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
       tcp: Keyword.get(opts, :tcp, false),
-      timeout: Keyword.get(opts, :timeout, 2000),
-      verbose: Keyword.get(opts, :verbose, false)
+      timeout: Keyword.get(opts, :timeout, 2_000),
+      verbose: Keyword.get(opts, :verbose, false),
+      # house keeping
+      name: name,
+      type: type,
+      seen: %{}
     }
 
     cond do
