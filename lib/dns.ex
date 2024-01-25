@@ -139,6 +139,7 @@ defmodule DNS do
     end
   end
 
+  @spec recurse(msg, msg, map, timeT) :: {:ok, msg} | {:error, {reason, msg}}
   def recurse(qry, msg, ctx, tstop) do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7     - resolver implementation
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
@@ -335,7 +336,7 @@ defmodule DNS do
     {:ok, {ip, p}} = :inet.peername(sock)
     # "#{Pfx.new(ip)}:#{p}/udp"
     ns = inspect({ip, p})
-    log(true, "- resolving #{hd(qry.question).name} against #{ns}, timeout #{timeout} ms")
+    log(true, "- resolving #{hd(qry.question).name} at #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
 
@@ -410,7 +411,7 @@ defmodule DNS do
 
   @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
   def make_query(name, type, ctx) do
-    # assumes ctx is safe (made by make_context)
+    # assumes ctx is safe (made by make_context and maybe updated on recursion)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
     name =
       if Pfx.valid?(name) do
@@ -440,8 +441,7 @@ defmodule DNS do
   # [[ RESPONSES ]]
   @spec response_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
   def response_handler(qry, msg, ctx, tstop) do
-    type = hd(qry.question).type
-    qname = hd(qry.question).name
+    qtn = hd(qry.question)
 
     case response_type(msg) do
       :answer ->
@@ -450,7 +450,7 @@ defmodule DNS do
       :referral ->
         # TODO: only recurse when ctx.rd == 1
         zone = hd(msg.authority).name
-        log(true, "- #{qname} #{type} - got referral to #{zone}")
+        log(true, "- #{qtn.name} #{qtn.type} - got referral to #{zone}")
         recurse(qry, msg, ctx, tstop)
 
       :cname ->
@@ -459,28 +459,20 @@ defmodule DNS do
             {:error, {:lame, msg}}
 
           rr ->
-            # opts =
             ctx =
               ctx
               |> Map.delete(:nameservers)
               |> Map.put(:maxtime, timeout(tstop))
               |> Map.put(:rd, 1)
 
-            # |> Keyword.new()
-
-            # case resolve(rr.rdmap.name, type, opts) do
-            case resolvep(rr.rdmap.name, type, ctx) do
+            case resolvep(rr.rdmap.name, qtn.type, ctx) do
               {:ok, msg} ->
-                # Modify message returned
-                # [x] reset question to alias queried
-                # [x] prepend cname RR to msg.answer
-                # [x] AA := 0 (NS not necessarily authoritative for all answer-RRs)
-                # anc = msg.header.anc + 1
+                # Modify message: prepend cname-RR, restore original question
+                # (AA=0 since msg was modified)
                 header = %{msg.header | aa: 0, anc: msg.header.anc + 1, wdata: <<>>}
-                question = hd(msg.question)
-                question = %{question | name: qname, wdata: <<>>}
+                question = [%{qtn | wdata: <<>>}]
                 answer = [%{rr | wdata: <<>>} | msg.answer]
-                msg = %{msg | header: header, question: [question], answer: answer}
+                msg = %{msg | header: header, question: question, answer: answer}
                 {:ok, msg}
 
               error ->
@@ -498,7 +490,7 @@ defmodule DNS do
 
   @spec response_make(msg, [DNS.Msg.RR.t()]) :: {:ok, msg}
   def response_make(qry, rrs) do
-    # a synthesized answer:
+    # a synthesized answer from cache:
     # - is created by copying & updating the vanilla qry msg
     # - has no wdata and id of 0
     # - aa=0, since we're not an authoritative source
