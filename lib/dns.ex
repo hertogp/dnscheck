@@ -113,11 +113,11 @@ defmodule DNS do
 
               log(
                 true,
-                "- qry #{qname} #{type} -> server reply (#{rsp_type}): #{xrcode}, #{anc} answers, #{nsc} authority, #{arc} additional"
+                "- qry #{qname} #{type} -> reply (#{rsp_type}): #{xrcode}, ANSWERS #{anc}, AUTHORITY #{nsc}, ADDITIONAL #{arc}"
               )
 
               # try www.azure.com for a cname chain
-              response_handler(qry, msg, ctx, tstop, %{})
+              response_handler(qry, msg, ctx, tstop)
 
             {:error, reason} ->
               {:error, reason}
@@ -133,7 +133,7 @@ defmodule DNS do
     end
   end
 
-  def recurse(qry, msg, ctx, tstop, seen) do
+  def recurse(qry, msg, ctx, tstop) do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7     - resolver implementation
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
@@ -151,7 +151,7 @@ defmodule DNS do
 
     with nss <- recurse_nss(msg, ctx, tstop),
          {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
-      response_handler(qry, msg, ctx, tstop, seen)
+      response_handler(qry, msg, ctx, tstop)
     else
       {:error, reason} -> {:error, {reason, msg}}
       other -> {:error, other}
@@ -434,8 +434,8 @@ defmodule DNS do
   end
 
   # [[ RESPONSES ]]
-  @spec response_handler(msg, msg, map, timeT, map) :: {:ok, msg} | {:error, {atom, msg}}
-  def response_handler(qry, msg, ctx, tstop, seen) do
+  @spec response_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
+  def response_handler(qry, msg, ctx, tstop) do
     type = hd(qry.question).type
     qname = hd(qry.question).name
 
@@ -447,7 +447,7 @@ defmodule DNS do
         # TODO: only recurse when ctx.rd == 1
         zone = hd(msg.authority).name
         log(true, "- #{qname} #{type} - got referral to #{zone}")
-        recurse(qry, msg, ctx, tstop, seen)
+        recurse(qry, msg, ctx, tstop)
 
       :cname ->
         case Enum.find(msg.answer, false, fn rr -> rr.type == :CNAME end) do
