@@ -19,9 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] add DNSSEC validation code
 - [x] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
       context (ctx) is more logical & storing additional stuff is less weird
-- [ ] caller sets RD=1, resolve sends RD=0 (!)
-      caller may set nameservers, we'll start there.
-      If caller sets RD=0 & nameservers => we'll send RD=1 to those NSs
+- [x] when caller sets nameservers: that's where we start
+      RD=1 determines whether DNS.resolve will iterate or not.
+      queries are sent out using ctx.rd as given by user, since we donot know
+      if query is aimed at a public recursive resolver: 1.1.1.1/9.9.9.9 will
+      servfail when rd=0, while 8.8.8.8 happily replies with an answer.
 - [x] dname_normalize should handle escaped chars, see RFC4343
 - [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
       or maybe check interfaces on machine we're running on

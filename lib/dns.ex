@@ -440,6 +440,17 @@ defmodule DNS do
 
   # [[ RESPONSES ]]
   @spec response_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
+  def response_handler(_qry, msg, %{rd: 0}, _tstop) do
+    case response_type(msg) do
+      :lame ->
+        {:error, {:lame, msg}}
+        |> IO.inspect(label: :response_handler)
+
+      _ ->
+        {:ok, msg}
+    end
+  end
+
   def response_handler(qry, msg, ctx, tstop) do
     qtn = hd(qry.question)
 
@@ -449,9 +460,13 @@ defmodule DNS do
 
       :referral ->
         # TODO: only recurse when ctx.rd == 1
-        zone = hd(msg.authority).name
-        log(true, "- #{qtn.name} #{qtn.type} - got referral to #{zone}")
-        recurse(qry, msg, ctx, tstop)
+        if ctx.rd == 1 do
+          zone = hd(msg.authority).name
+          log(true, "- #{qtn.name} #{qtn.type} - got referral to #{zone}")
+          recurse(qry, msg, ctx, tstop)
+        else
+          {:ok, msg}
+        end
 
       :cname ->
         case Enum.find(msg.answer, false, fn rr -> rr.type == :CNAME end) do
@@ -521,9 +536,13 @@ defmodule DNS do
     # - by now, the msg's question is same as that of the query
     # - a proper referral has no SOA and will have relevant NS's in AUTHORITY
     # - a proper answer has no SOA and relevant entries in ANSWER
-    #   Some regular authoritative NS's respond to qry for which they're note
-    #   authoritative with:
-    #   -> ANSWER w/ loopback IP for qname, AUTHORITY with SOA for "" (!) <- :LAME (!)
+    #   dig www.azure.com @ns1.cloudns.net -> DNS hijacking:
+    #   -> ANSWER w/ cloudns IP for site with ads, AUTHORITY with SOA for "" (!) <- :LAME (!)
+    #   dig www.example.com @ns1.cloudns.net -> weird SOA record
+    #   -> ANSWER 0, AUTHORITY SOA example.com is ns1.cloudns.net (?)
+    #   dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
+    #
+    #
     match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
 
     case aut do
@@ -595,7 +614,7 @@ defmodule DNS do
       maxtime: Keyword.get(opts, :maxtime, 5_000),
       nameservers: Keyword.get(opts, :nameservers, nss),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
-      rd: Keyword.get(opts, :rd, 0),
+      rd: Keyword.get(opts, :rd, 1),
       retry: Keyword.get(opts, :retry, 3),
       srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
       tcp: Keyword.get(opts, :tcp, false),
