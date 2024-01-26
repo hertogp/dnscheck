@@ -165,25 +165,22 @@ defmodule DNS do
 
   @spec recurse_nss(msg, map, timeT) :: [ns]
   def recurse_nss(msg, ctx, tstop) do
-    # referral may have glue records in additional section (or not)
-    # [ ] only try to resolve those NS names that are not in glue
-    # - ns might have A, AAAA, both or none (i.e. lame delegation)
+    # resolve non-glue NS in referral msg & return NSS, respecting maxtime
+    # glue NS A/AAAA RRs are already in the cache
     with :referral <- response_type(msg),
          zone <- hd(msg.authority).name,
-         nsrrs <- Enum.filter(msg.authority, fn rr -> rr.type == :NS end),
-         glue <- Enum.map(msg.additional, fn rr -> rr.name end),
-         nsnames <- Enum.map(nsrrs, fn rr -> rr.rdmap.name end),
+         rrs <- Enum.filter(msg.authority, fn rr -> rr.type == :NS end),
+         glue <- Enum.map(msg.additional, fn rr -> String.downcase(rr.name) end),
+         nsnames <- Enum.map(rrs, fn rr -> String.downcase(rr.rdmap.name) end),
          nsnames <- Enum.filter(nsnames, fn name -> name not in glue end) do
       log(true, "#{hd(msg.question).name}, following referral to #{zone}")
 
       log(true, "- glue ns: #{inspect(glue)}")
 
       for ns <- nsnames, type <- [:A, :AAAA] do
-        nss = Cache.nss(ns)
-
         ctx =
           ctx
-          |> Map.put(:nameservers, nss)
+          |> Map.put(:nameservers, nil)
           |> Map.put(:maxtime, timeout(tstop))
 
         case resolvep(ns, type, ctx) do
