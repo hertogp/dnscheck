@@ -521,7 +521,8 @@ defmodule DNS do
     # - by now, the msg's question is same as that of the query
     # - a proper referral has no SOA and will have relevant NS's in AUTHORITY
     # - a proper answer has no SOA and relevant entries in ANSWER
-    #   DNS.resolve("www.azure.com", :AAAA, nameservers: [{{185,136,96,82}, 53}])
+    #   Some regular authoritative NS's respond to qry for which they're note
+    #   authoritative with:
     #   -> ANSWER w/ loopback IP for qname, AUTHORITY with SOA for "" (!) <- :LAME (!)
     match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
 
