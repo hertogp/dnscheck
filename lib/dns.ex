@@ -485,6 +485,7 @@ defmodule DNS do
 
       :lame ->
         {:error, {:lame, msg}}
+        |> IO.inspect(label: :response_handler)
     end
   end
 
@@ -496,7 +497,8 @@ defmodule DNS do
     # - aa=0, since we're not an authoritative source
     # - ra=1, since we're answering and recursion is available
     # Note: individual RR's *will* have wdata if they are raw RR's
-    # Note: we need to deal with qtype=CNAME
+    # TODO: we need to deal with qtype=CNAME (i.e. add RR's for canon name if
+    # available)
     hdr = %{qry.header | anc: length(rrs), aa: 0, ra: 1, qr: 1, id: 0, wdata: ""}
     qtn = %{hd(qry.question) | wdata: ""}
 
@@ -515,8 +517,12 @@ defmodule DNS do
     # see also
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
-    # note that by now, the msg's question is same as that of the query and a
-    # proper referral has no SOA and will have relevant NS's in authority
+    # Notes:
+    # - by now, the msg's question is same as that of the query
+    # - a proper referral has no SOA and will have relevant NS's in AUTHORITY
+    # - a proper answer has no SOA and relevant entries in ANSWER
+    #   DNS.resolve("www.azure.com", :AAAA, nameservers: [{{185,136,96,82}, 53}])
+    #   -> ANSWER w/ loopback IP for qname, AUTHORITY with SOA for "" (!) <- :LAME (!)
     match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
 
     case aut do
