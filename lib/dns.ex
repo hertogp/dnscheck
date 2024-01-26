@@ -11,8 +11,6 @@ defmodule DNS do
   # - CACHEing negative answers (NXDOMAIN) is done by qname, qclass (i.e. for any type apparently)
   # - cdn.cloudflare.net :NS -> respons has only a SOA
 
-  @cache :dns_cache
-
   alias DNS.Msg
   import DNS.Utils
   alias DNS.Cache
@@ -178,6 +176,7 @@ defmodule DNS do
           ctx
           |> Map.put(:nameservers, nil)
           |> Map.put(:maxtime, timeout(tstop))
+          |> Map.put(:rd, 1)
 
         case resolvep(name, type, ctx) do
           {:ok, msg} -> msg.answer

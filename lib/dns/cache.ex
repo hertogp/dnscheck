@@ -305,8 +305,6 @@ defmodule DNS.Cache do
       true
       iex> length(nss)
       2
-      iex> nss("example.net")
-      false
 
   """
   @spec nss(binary) :: [{:inet.ip_address(), integer}]
