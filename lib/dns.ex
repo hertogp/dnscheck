@@ -150,10 +150,6 @@ defmodule DNS do
     #   mentions as glue available. Hence non-glue names are `resolve`d (a new,
     #   fresh iterative query, respecting overall tstop).
 
-    # FIXME: implement loop detection here: referral should:
-    # - bring us closer to qname
-    # - zone should not be seen before
-
     with nss <- recurse_nss(msg, ctx, tstop),
          {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
       response_handler(qry, msg, ctx, tstop)
@@ -177,15 +173,15 @@ defmodule DNS do
 
       log(true, "- glue ns: #{inspect(glue)}")
 
-      for ns <- nsnames, type <- [:A, :AAAA] do
+      for name <- nsnames, type <- [:A, :AAAA] do
         ctx =
           ctx
           |> Map.put(:nameservers, nil)
           |> Map.put(:maxtime, timeout(tstop))
 
-        case resolvep(ns, type, ctx) do
+        case resolvep(name, type, ctx) do
           {:ok, msg} -> msg.answer
-          _other -> [] |> IO.inspect(label: "- !! could not resolve ns #{ns} #{type}")
+          _other -> [] |> IO.inspect(label: "- !! could not resolve ns #{name} #{type}")
         end
       end
 
@@ -454,7 +450,7 @@ defmodule DNS do
         {:ok, msg}
 
       :referral ->
-        # TODO: only recurse when ctx.rd == 1
+        # TODO: loop detection for referrals goes here
         if ctx.rd == 1 do
           zone = hd(msg.authority).name
           log(true, "- #{qtn.name} #{qtn.type} - got referral to #{zone}")
@@ -464,6 +460,7 @@ defmodule DNS do
         end
 
       :cname ->
+        # TODO: loop detection for cnames goes here
         case Enum.find(msg.answer, false, fn rr -> rr.type == :CNAME end) do
           false ->
             {:error, {:lame, msg}}
