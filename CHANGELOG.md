@@ -19,11 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] add DNSSEC validation code
 - [x] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
       context (ctx) is more logical & storing additional stuff is less weird
-- [x] when caller sets nameservers: that's where we start
-      RD=1 determines whether DNS.resolve will iterate or not.
-      queries are sent out using ctx.rd as given by user, since we donot know
-      if query is aimed at a public recursive resolver: 1.1.1.1/9.9.9.9 will
-      servfail when rd=0, while 8.8.8.8 happily replies with an answer.
+- [o] when caller sets nameservers: DNS.resolve won't recurse and send the
+      query with RD bit as set by user (or using default RD=1).
+      Otherwise, when no nameservers are given by caller, recurse=true
+      and queries are sent with RD=0.
+      Note: if caller wants to query public, recursive, resolvers she should
+      set RD=1 since e.g. 1.1.1.1/9.9.9.9 will servfail when RD=0, while 8.8.8.8
+      happily replies with an answer.
+      See also: https://blog.cloudflare.com/black-lies/
 - [x] dname_normalize should handle escaped chars, see RFC4343
 - [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
       or maybe check interfaces on machine we're running on
@@ -127,8 +130,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### DNS.Cache
 - [!] DS does appear in msg.authority in case of a referral
-- [ ] msg.aut may contain: SOA, NS, DS, RRSIG, NSEC, NSEC3, NSEC3PARAM?
+- [ ] cache negative answers
 - [ ] use max for TTL if exceptionally large
+- [ ] msg.aut may contain: SOA, NS, DS, RRSIG, NSEC, NSEC3, NSEC3PARAM?
 - [x] also cache *relevant* add records when msg is referral
 - [ ] response answer-RRs from AA=1 response are preferred over cached RRs
      - means put(RR) probably should be a private func and user should
