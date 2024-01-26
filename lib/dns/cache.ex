@@ -1,6 +1,11 @@
 defmodule DNS.Cache do
-  @cache :dns_cache
+  # above moduledoc since it's enumerated in doc
   @uncacheable [:OPT, :ANY, :*, :MAILA, :MAILB, :AXFR, :IXFR]
+  @cache :dns_cache
+  # root hints
+  @priv :code.priv_dir(:dnscheck)
+  @fname_nss Path.join([@priv, "root.nss"])
+  @root_nss Code.eval_file(@fname_nss) |> elem(0)
 
   @moduledoc """
   A simple DNS cache for RR's, honouring their TTL's.
@@ -304,31 +309,28 @@ defmodule DNS.Cache do
       false
 
   """
-  @spec nss(binary) :: [{:inet.ip_address(), integer}] | false
+  @spec nss(binary) :: [{:inet.ip_address(), integer}]
   def nss(zone) when is_binary(zone) do
+    # TODO: log error if zone is illegal domain name
     with {:ok, labels} <- dname_normalize(zone, join: false) do
-      case do_nss(labels) do
-        [] -> false
-        nss -> nss
-      end
+      nssp(labels)
     else
-      _ -> false
+      _ -> []
     end
   end
 
   # return a list of :NS names or empty list
-  defp do_nss([]),
-    do: []
+  defp nssp([]),
+    do: Enum.shuffle(@root_nss)
 
-  defp do_nss([first | rest]) do
+  defp nssp([first | rest]) do
     zone = Enum.join([first | rest], ".")
 
     case get(zone, :IN, :NS) do
       [] ->
-        do_nss(rest)
+        nssp(rest)
 
       nss ->
-        # nss =
         nss
         |> Enum.map(fn rr -> rr.rdmap.name end)
         |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
@@ -336,13 +338,9 @@ defmodule DNS.Cache do
         |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
         |> Enum.shuffle()
         |> case do
-          [] -> do_nss(rest)
+          [] -> nssp(rest)
           nss -> nss
         end
-
-        # if nss == [],
-        #   do: do_nss(rest),
-        #   else: nss
     end
   end
 

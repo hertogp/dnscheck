@@ -26,7 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       Note: if caller wants to query public, recursive, resolvers she should
       set RD=1 since e.g. 1.1.1.1/9.9.9.9 will servfail when RD=0, while 8.8.8.8
       happily replies with an answer.
-      See also: https://blog.cloudflare.com/black-lies/
+      See also:
+      - https://blog.cloudflare.com/black-lies/
+      - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
+      - https://www.ietf.org/rfc/rfc4470.txt (white lies)
 - [x] dname_normalize should handle escaped chars, see RFC4343
 - [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
       or maybe check interfaces on machine we're running on

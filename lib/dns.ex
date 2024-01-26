@@ -11,9 +11,7 @@ defmodule DNS do
   # - CACHEing negative answers (NXDOMAIN) is done by qname, qclass (i.e. for any type apparently)
   # - cdn.cloudflare.net :NS -> respons has only a SOA
 
-  @priv :code.priv_dir(:dnscheck)
-  @fname_nss Path.join([@priv, "root.nss"])
-  @root_nss Code.eval_file(@fname_nss) |> elem(0)
+  @cache :dns_cache
 
   alias DNS.Msg
   import DNS.Utils
@@ -104,8 +102,8 @@ defmodule DNS do
 
       case cached do
         [] ->
-          nss = (ctx[:nameservers] || Cache.nss(qname) || @root_nss) |> Enum.shuffle()
-          log(true, "#{name} #{type} got #{length(nss)} nameservers")
+          nss = ctx[:nameservers] || Cache.nss(qname)
+          log(true, "- #{name} #{type} got #{length(nss)} nameservers")
           tstop = time(ctx.maxtime)
           log(true, "- time remaining #{timeout(tstop)}")
 
@@ -178,10 +176,10 @@ defmodule DNS do
          nsnames <- Enum.filter(nsnames, fn name -> name not in glue end) do
       log(true, "#{hd(msg.question).name}, following referral to #{zone}")
 
-      log(true, "glue ns: #{inspect(glue)}")
+      log(true, "- glue ns: #{inspect(glue)}")
 
       for ns <- nsnames, type <- [:A, :AAAA] do
-        nss = (Cache.nss(ns) || @root_nss) |> Enum.shuffle()
+        nss = Cache.nss(ns)
 
         ctx =
           ctx
@@ -190,7 +188,7 @@ defmodule DNS do
 
         case resolvep(ns, type, ctx) do
           {:ok, msg} -> msg.answer
-          _other -> [] |> IO.inspect(label: "!! could not resolve ns #{ns} #{type}")
+          _other -> [] |> IO.inspect(label: "- !! could not resolve ns #{ns} #{type}")
         end
       end
 
@@ -603,7 +601,7 @@ defmodule DNS do
     # - ctx is carried around while (possibly recursively) resolving a request
     # - decode class since validation checks if it's in a list of atoms could've
     #    used is_u16, but only :IN is supported along with a few RR's for :CH and :HS
-    nss = (Cache.nss(name) || @root_nss) |> Enum.shuffle()
+    nss = Cache.nss(name)
 
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
