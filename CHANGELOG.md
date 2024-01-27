@@ -105,7 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] accessor functions for `t:DNS.Msg.t/0` struct.
       Alternative to hd(msg.question).name etc ...
 - [ ] documentation
-- [ ] implement List.Chars.to_string
+- [ ] implement List.Chars.to_string (eh... why was that again?)
 - [ ] unit tests
 - [x] clean up lib/dns/msg.ex and move funcs to lib/dns.ex
 

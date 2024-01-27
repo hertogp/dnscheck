@@ -163,17 +163,25 @@ defmodule DNS do
 
   @spec recurse_nss(msg, map, timeT) :: [ns]
   def recurse_nss(msg, ctx, tstop) do
-    # resolve non-glue NS in referral msg & return NSS, respecting maxtime
-    # glue NS A/AAAA RRs are already in the cache
+    # - resolve non-glue NS in referral msg & return NSS, respecting maxtime
+    # - glue NS A/AAAA RRs are already in the cache
+    # - drop NS's that are subdomains of `zone` but not in glue records to avoid looping
     with :referral <- response_type(msg),
          zone <- hd(msg.authority).name,
          rrs <- Enum.filter(msg.authority, fn rr -> rr.type == :NS end),
          glue <- Enum.map(msg.additional, fn rr -> String.downcase(rr.name) end),
          nsnames <- Enum.map(rrs, fn rr -> String.downcase(rr.rdmap.name) end),
-         nsnames <- Enum.filter(nsnames, fn name -> name not in glue end) do
+         nsnames <- Enum.filter(nsnames, fn name -> name not in glue end),
+         nserror = Enum.filter(nsnames, fn name -> dname_subdomain?(name, zone) end) do
       log(true, "#{hd(msg.question).name}, following referral to #{zone}")
 
-      log(true, "- glue ns: #{inspect(glue)}")
+      if glue != [],
+        do: log(true, "- glue ns: #{inspect(glue)}")
+
+      if nserror != [],
+        do: log(true, "- dropping NSs due to missing glue #{inspect(nserror)}")
+
+      nsnames = nsnames -- nserror
 
       for name <- nsnames, type <- [:A, :AAAA] do
         ctx =
@@ -620,7 +628,9 @@ defmodule DNS do
       # house keeping
       name: name,
       type: type,
-      seen: %{}
+      #
+      referalls: %{},
+      cnames: %{}
     }
 
     cond do
