@@ -172,16 +172,16 @@ defmodule DNS do
          glue <- Enum.map(msg.additional, fn rr -> String.downcase(rr.name) end),
          nsnames <- Enum.map(rrs, fn rr -> String.downcase(rr.rdmap.name) end),
          nsnames <- Enum.filter(nsnames, fn name -> name not in glue end),
-         nserror = Enum.filter(nsnames, fn name -> dname_subdomain?(name, zone) end) do
+         unglued <- Enum.filter(nsnames, fn name -> dname_subdomain?(name, zone) end) do
       log(true, "#{hd(msg.question).name}, following referral to #{zone}")
 
       if glue != [],
         do: log(true, "- glue ns: #{inspect(glue)}")
 
-      if nserror != [],
-        do: log(true, "- dropping NSs due to missing glue #{inspect(nserror)}")
+      if unglued != [],
+        do: log(true, "- dropping NSs due to missing glue #{inspect(unglued)}")
 
-      nsnames = nsnames -- nserror
+      nsnames = nsnames -- unglued
 
       for name <- nsnames, type <- [:A, :AAAA] do
         ctx =
