@@ -19,13 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] add DNSSEC validation code
 - [x] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
       context (ctx) is more logical & storing additional stuff is less weird
-- [o] when caller sets nameservers: DNS.resolve won't recurse and send the
-      query with RD bit as set by user (or using default RD=1).
-      Otherwise, when no nameservers are given by caller, recurse=true
-      and queries are sent with RD=0.
-      Note: if caller wants to query public, recursive, resolvers she should
-      set RD=1 since e.g. 1.1.1.1/9.9.9.9 will servfail when RD=0, while 8.8.8.8
-      happily replies with an answer.
+- [o] RD-bit handling
+      1. caller supplies nameserver(s)
+         - recurse=false, query sent with RD-bit as set by caller
+      2. caller does not supply namerserver(s)
+         - recurse=true, DNS.resolve sends queries with RD=0
+      Note: RD defaults to 1, so if caller wants to query public, recursive,
+      resolvers RD is already 1.  If caller sets RD=0 in this case, she should
+      be aware that e.g. 1.1.1.1/9.9.9.9 will servfail, while 8.8.8.8 happily
+      recurses for her and supplies an answer.
       See also:
       - https://blog.cloudflare.com/black-lies/
       - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
@@ -135,6 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [!] DS does appear in msg.authority in case of a referral
 - [ ] cache negative answers
 - [ ] use max for TTL if exceptionally large
+- [ ] retrieval should support DO=1, if cache has no DNSSEC records,
+      then return cache miss, even if insecure record is available
 - [ ] msg.aut may contain: SOA, NS, DS, RRSIG, NSEC, NSEC3, NSEC3PARAM?
 - [x] also cache *relevant* add records when msg is referral
 - [ ] response answer-RRs from AA=1 response are preferred over cached RRs

@@ -523,12 +523,15 @@ defmodule DNS do
     # see also
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
+    # - https://blog.cloudflare.com/black-lies/
+    # - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
+    # - https://www.ietf.org/rfc/rfc4470.txt (white lies)
     # Notes:
     # - by now, the msg's question is same as that of the query
     # - a proper referral has no SOA and will have relevant NS's in AUTHORITY
     # - a proper answer has no SOA and relevant entries in ANSWER
     #   dig www.azure.com @ns1.cloudns.net -> DNS hijacking:
-    #   -> ANSWER w/ cloudns IP for site with ads, AUTHORITY with SOA for "" (!) <- :LAME (!)
+    #   -> ANSWER w/ cloudns IP for site with ads, AUTHORITY with SOA for "" (!) <- :lame (!)
     #   dig www.example.com @ns1.cloudns.net -> weird SOA record
     #   -> ANSWER 0, AUTHORITY SOA example.com is ns1.cloudns.net (?)
     #   dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
