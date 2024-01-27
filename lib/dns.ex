@@ -609,6 +609,8 @@ defmodule DNS do
     #    used is_u16, but only :IN is supported along with a few RR's for :CH and :HS
     # - when not recursing, get user's choice and default to 1 so it's easier to
     #   query public recursive resolvers like Cloudflare, Quad9 etc ...
+    # TODO: put limit on length of CNAME-chain, e.g. 10? -> :red_herring
+    # TODO: put limit on number of referrals to follow, e.g. 10? -> :red_kipper
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
