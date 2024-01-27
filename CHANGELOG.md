@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
       - https://www.ietf.org/rfc/rfc4470.txt (white lies)
 - [x] dname_normalize should handle escaped chars, see RFC4343
-- [ ] add an option for IPv4 only (may resolver is on an ipv4 only network)
+- [ ] add an option for IPv4 only (maybe resolver is on an ipv4 only network)
       or maybe check interfaces on machine we're running on
       :inet.getifaddrs/0 yields info on IP addresses in use on the machine
       `-> add :ip4/:ip6 capabilities & use that to select/filter NSs

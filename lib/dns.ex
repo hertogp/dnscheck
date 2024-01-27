@@ -79,8 +79,10 @@ defmodule DNS do
     # - module code must use resolvep
     # TODO: probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
+    # without any namerservers given, resolve will do iterative queries
+    recurse = opts[:nameservers] == nil
 
-    with {:ok, ctx} <- make_context(name, type, opts) do
+    with {:ok, ctx} <- make_context(name, type, recurse, opts) do
       resolvep(name, type, ctx)
     else
       e -> IO.inspect(e, label: :opts_error)
@@ -117,6 +119,8 @@ defmodule DNS do
                 true,
                 "- qry #{qname} #{type} -> reply (#{rsp_type}): #{xrcode}, ANSWERS #{anc}, AUTHORITY #{nsc}, ADDITIONAL #{arc}"
               )
+
+              IO.inspect(ctx.recurse, label: :recurse1)
 
               # try www.azure.com for a cname chain
               response_handler(qry, msg, ctx, tstop)
@@ -430,7 +434,7 @@ defmodule DNS do
 
   # [[ RESPONSES ]]
   @spec response_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
-  def response_handler(_qry, msg, %{rd: 0}, _tstop) do
+  def response_handler(_qry, msg, %{recurse: false}, _tstop) do
     case response_type(msg) do
       :lame ->
         {:error, {:lame, msg}}
@@ -444,19 +448,17 @@ defmodule DNS do
   def response_handler(qry, msg, ctx, tstop) do
     qtn = hd(qry.question)
 
+    IO.inspect(ctx.recurse, label: :recurse)
+
     case response_type(msg) do
       :answer ->
         {:ok, msg}
 
       :referral ->
         # TODO: loop detection for referrals goes here
-        if ctx.rd == 1 do
-          zone = hd(msg.authority).name
-          log(true, "- #{qtn.name} #{qtn.type} - got referral to #{zone}")
-          recurse(qry, msg, ctx, tstop)
-        else
-          {:ok, msg}
-        end
+        zone = hd(msg.authority).name
+        log(true, "- #{qtn.name} #{qtn.type} - got referral to #{zone}")
+        recurse(qry, msg, ctx, tstop)
 
       :cname ->
         # TODO: loop detection for cnames goes here
@@ -469,7 +471,7 @@ defmodule DNS do
               ctx
               |> Map.delete(:nameservers)
               |> Map.put(:maxtime, timeout(tstop))
-              |> Map.put(:rd, 1)
+              |> Map.put(:rd, 0)
 
             case resolvep(rr.rdmap.name, qtn.type, ctx) do
               {:ok, msg} ->
@@ -592,13 +594,13 @@ defmodule DNS do
 
   # [[ OPTIONS ]]
 
-  @spec make_context(binary, type, Keyword.t()) :: {:ok, map} | {:error, binary}
-  def make_context(name, type, opts \\ []) do
+  @spec make_context(binary, type, boolean, Keyword.t()) :: {:ok, map} | {:error, binary}
+  def make_context(name, type, recurse, opts \\ []) do
     # - ctx is carried around while (possibly recursively) resolving a request
     # - decode class since validation checks if it's in a list of atoms could've
     #    used is_u16, but only :IN is supported along with a few RR's for :CH and :HS
-    nss = Cache.nss(name)
-
+    # - when not recursing, get user's choice and default to 1 so it's easier to
+    #   query public recursive resolvers like Cloudflare, Quad9 etc ...
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
@@ -606,9 +608,10 @@ defmodule DNS do
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
       maxtime: Keyword.get(opts, :maxtime, 5_000),
-      nameservers: Keyword.get(opts, :nameservers, nss),
+      nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
-      rd: Keyword.get(opts, :rd, 1),
+      rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
+      recurse: recurse,
       retry: Keyword.get(opts, :retry, 3),
       srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
       tcp: Keyword.get(opts, :tcp, false),
