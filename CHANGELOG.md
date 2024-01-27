@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] add DNSSEC validation code
 - [x] in DNS.ex rename ctx to ctx, since ctx is limiting to options while
       context (ctx) is more logical & storing additional stuff is less weird
-- [o] RD-bit handling
+- [x] recurse or not to recurse?
       1. caller supplies nameserver(s)
          - recurse=false, query sent with RD-bit as set by caller
       2. caller does not supply namerserver(s)
@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### DNS.Msg
 - [ ] accessor functions for `t:DNS.Msg.t/0` struct.
+      Alternative to hd(msg.question).name etc ...
 - [ ] documentation
 - [ ] implement List.Chars.to_string
 - [ ] unit tests
