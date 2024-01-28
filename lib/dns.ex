@@ -98,7 +98,7 @@ defmodule DNS do
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, ctx.class, type) do
-      log(true, "resolving #{qname}, #{type}")
+      log(true, "Start iteration for #{qname}, #{type}")
 
       case cached do
         [] ->
@@ -119,8 +119,6 @@ defmodule DNS do
                 true,
                 "- qry #{qname} #{type} -> reply (#{rsp_type}): #{xrcode}, ANSWERS #{anc}, AUTHORITY #{nsc}, ADDITIONAL #{arc}"
               )
-
-              IO.inspect(ctx.recurse, label: :recurse1)
 
               # try www.azure.com for a cname chain
               response_handler(qry, msg, ctx, tstop)
@@ -455,8 +453,6 @@ defmodule DNS do
 
   def response_handler(qry, msg, ctx, tstop) do
     qtn = hd(qry.question)
-
-    IO.inspect(ctx.recurse, label: :recurse)
 
     case response_type(msg) do
       :answer ->
