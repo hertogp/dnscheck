@@ -15,6 +15,7 @@ defmodule DNS do
   import DNS.Utils
   alias DNS.Cache
   alias DNS.Msg.Terms
+  require Logger
 
   @typedoc "Type of RR, as atom or non negative integer"
   @type type :: atom | non_neg_integer
@@ -529,9 +530,10 @@ defmodule DNS do
     # see also
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
+    # - https://www.ietf.org/rfc/rfc4470.txt (white lies)
+    # - https://datatracker.ietf.org/doc/rfc9471/  (glue records)
     # - https://blog.cloudflare.com/black-lies/
     # - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
-    # - https://www.ietf.org/rfc/rfc4470.txt (white lies)
     # Notes:
     # - by now, the msg's question is same as that of the query
     # - a proper referral has no SOA and will have relevant NS's in AUTHORITY
@@ -543,10 +545,13 @@ defmodule DNS do
     #   dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
     #
     #
+    # acutally, should check is previous zone is parent to new zone, otherwise its bogus...
     match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
+    Logger.info("here we are at response_type")
 
     case aut do
       [] ->
+        # TODO: log error (nsc>0 and atu==[] is actually a formerr)
         :nodata
 
       _ ->

@@ -2,6 +2,8 @@ defmodule DNS.Cache do
   # above moduledoc since it's enumerated in doc
   @uncacheable [:OPT, :ANY, :*, :MAILA, :MAILB, :AXFR, :IXFR]
   @cache :dns_cache
+  # max ttl in cache is 1 days
+  @maxttl 86_400
   # root hints
   @priv :code.priv_dir(:dnscheck)
   @fname_nss Path.join([@priv, "root.nss"])
@@ -158,19 +160,25 @@ defmodule DNS.Cache do
   @spec put(DNS.Msg.RR.t() | DNS.Msg.t()) :: boolean
   def put(rr_or_msg)
 
+  # explicitly ignore RR's referencing root
+  def put(%DNS.Msg.RR{name: name}) when name in ["", "."],
+    do: false
+
   def put(%DNS.Msg.RR{} = rr) do
     # make_key before check on cacheable? so we get error not ignored
     # if one of the key components is illegal.
+    # - assumes rdmap hasn't been tampered/played with (i.e. org fields only)
     with true <- rr.ttl > 0,
          {:ok, key} <- make_key(rr.name, rr.class, rr.type),
          true <- cacheable?(rr),
+         maxttl <- min(@maxttl, rr.ttl),
          {:ok, crrs} <- lookup(key),
          crrs <- Enum.filter(crrs, &alive?/1),
          crrs <- Enum.filter(crrs, fn {_ttd, crr} -> crr.rdmap != rr.rdmap end) do
       rr =
         if rr.raw,
           do: rr,
-          else: %{rr | rdata: "", wdata: ""}
+          else: %{rr | ttl: maxttl, rdata: "", wdata: ""}
 
       # TODO: use Logger
       # IO.puts("- cached #{inspect(rr)}")
@@ -181,6 +189,9 @@ defmodule DNS.Cache do
   end
 
   def put(%DNS.Msg{answer: [_ | _]} = msg) do
+    # Msg has answer RR's
+    # - only take relevant RRs from answer section
+    # - ignore aut/add sections
     with true <- cacheable?(msg),
          qname <- hd(msg.question).name do
       msg.answer
@@ -367,6 +378,8 @@ defmodule DNS.Cache do
     # [ ] MUST never cache NS from root hints
     # [ ] SHOULD cache temporary failures (TTL order of minutes)
     # [ ] SHOULD cache negative responses
+    # [ ] never cache MSG when rcode=REFUSED, NOTIMPL
+    # [ ] never cache RRs from bogus/lame response_type
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
     # [x] do not cache RR's from a truncated response
     # [x] do not cache RR's from *inverse query* (QTYPE)
