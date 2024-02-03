@@ -4,17 +4,11 @@ defmodule DNS do
 
   """
 
-  # TODO:
-  # BEHAVIOUR:
-  # - NODATA -> msg w/ aa=1, anc=0, rcode NOERROR (name exists without data: empty non-terminal)
-  # - NXDOMAIN -> name does exist, nor anything below it.
-  # - CACHEing negative answers (NXDOMAIN) is done by qname, qclass (i.e. for any type apparently)
-  # - cdn.cloudflare.net :NS -> respons has only a SOA
-
-  alias DNS.Msg
   import DNS.Utils
+  alias DNS.Msg
   alias DNS.Cache
   alias DNS.Msg.Terms
+  alias Logger, as: Log
   require Logger
 
   @typedoc "Type of RR, as atom or non negative integer"
@@ -37,23 +31,10 @@ defmodule DNS do
   @typedoc "timeT is a, possibly future, absolute point in monolithic time"
   @type timeT :: integer
 
-  # [[ NOTES ]]
+  # [[ LINKS ]]
   # https://www.rfc-editor.org/rfc/rfc1034#section-5
   # https://www.rfc-editor.org/rfc/rfc1035#section-7
-  # - public-dns.info has lists of public nameservers
-  # - question section SHOULD contain only 1 question
-  # - A resolver MUST:
-  #   a. Ignore non-authoritative answers
-  #      - accept only answers to the question asked (ID, name, rrtype=as-asked or in DNSSEC)
-  #      - exception is glue records from parent zone
-  #   b. check that:
-  #      - IP src and Port are correct (IP stack does that)
-  #      - DNS ID field is correct
-  #   c. make cache poisining harder:
-  #      - randomize src Port
-  #      - randomize ID field
-  #   d. use DNSSEC validation to be safe from on-path villains
-  #   e. handle loops (NS, DS, CNAME, NAPTR, loops etc)
+  # https://public-dns.info/  (lists of public dns servers)
 
   # [[ RESOLVE ]]
 
@@ -75,13 +56,13 @@ defmodule DNS do
   """
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
   def resolve(name, type, opts \\ []) do
-    # notes:
-    # - entry point for caller only
-    # - module code must use resolvep
+    # this is the caller's entry point, module code must use resolvep
+
     # TODO: probably move this to dnscheck.ex at some point
     Cache.init(clear: false)
-    # without any namerservers given, resolve will do iterative queries
     recurse = opts[:nameservers] == nil
+
+    Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
 
     with {:ok, ctx} <- make_context(name, type, recurse, opts) do
       resolvep(name, type, ctx)
@@ -92,21 +73,20 @@ defmodule DNS do
 
   @spec resolvep(binary, type, map) :: {:ok, msg} | {:error, reason}
   defp resolvep(name, type, ctx) do
-    # notes:
-    # - called by resolve to answer caller's query (main use)
-    # - called by recurse_nss during referral, to resolve non-glue NS's
-    # - called by resolve_handler, to follow cnames
+    # resolvep called by:
+    # - resolve to answer caller's query
+    # - recurse_nss during referral, to resolve non-glue NS's
+    # - resolve_handler, to follow cnames
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, ctx.class, type) do
-      log(true, "Start iteration for #{qname}, #{type}")
+      Log.info("- iterative mode is #{ctx.recurse}")
 
       case cached do
         [] ->
           nss = ctx[:nameservers] || Cache.nss(qname)
-          log(true, "- #{name} #{type} got #{length(nss)} nameservers")
+          Log.info("- #{name} #{type} got #{length(nss)} nameservers")
           tstop = time(ctx.maxtime)
-          log(true, "- time remaining #{timeout(tstop)}")
 
           case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
             {:ok, msg} ->
@@ -116,8 +96,7 @@ defmodule DNS do
               arc = msg.header.arc
               rsp_type = response_type(msg)
 
-              log(
-                true,
+              Log.info(
                 "- qry #{qname} #{type} -> reply (#{rsp_type}): #{xrcode}, ANSWERS #{anc}, AUTHORITY #{nsc}, ADDITIONAL #{arc}"
               )
 
@@ -126,15 +105,14 @@ defmodule DNS do
 
             {:error, reason} ->
               {:error, reason}
-              |> IO.inspect(label: :query_nss_error)
           end
 
         rrs ->
-          log(true, "- using cached ANSWER's (#{length(rrs)}")
+          Log.info("- using #{length(rrs)} cached RR's")
           response_make(qry, rrs)
       end
     else
-      e -> IO.inspect(e, label: :resolve_error)
+      error -> error
     end
   end
 
@@ -172,13 +150,13 @@ defmodule DNS do
          nsnames <- Enum.map(rrs, fn rr -> String.downcase(rr.rdmap.name) end),
          nsnames <- Enum.filter(nsnames, fn name -> name not in glue end),
          unglued <- Enum.filter(nsnames, fn name -> dname_subdomain?(name, zone) end) do
-      log(true, "#{hd(msg.question).name}, following referral to #{zone}")
+      Log.info("#{hd(msg.question).name}, following referral to #{zone}")
 
       if glue != [],
-        do: log(true, "- glue ns: #{inspect(glue)}")
+        do: Log.info("- glue ns: #{inspect(glue)}")
 
       if unglued != [],
-        do: log(true, "- dropping NSs due to missing glue #{inspect(unglued)}")
+        do: Log.warning("- dropping NSs due to missing glue #{inspect(unglued)}")
 
       nsnames = nsnames -- unglued
 
@@ -206,31 +184,38 @@ defmodule DNS do
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
           {:ok, DNS.Msg.t()} | {:error, reason}
   def query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
-    do: {:error, :servfail}
+    do: {:error, :timeout}
 
-  def query_nss([] = _nss, qry, ctx, tstop, nth, failed),
-    do: query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
+  def query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
+    Log.warn("- retrying #{length(failed)} failed nameservers")
+    query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
+  end
 
   def query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
     # query_nss is responsible for getting 1 answer from NSS-list
+    Log.info("- time remaining #{timeout(tstop)}")
+
     cond do
       timeout(tstop) == 0 ->
+        Log.error("- global timeout for query reached")
         {:error, :timeout}
 
       ctx.retry < nth ->
+        Log.error("- maximum number of retries (#{nth}) reached")
         {:error, :timeout}
 
       true ->
         ns = unwrap(ns)
+        Log.info("- trying ns #{inspect(ns)}")
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
-            log(ctx.verbose, "- pushing #{inspect(ns)} onto failed list (:timeout)")
+            Log.warning("- pushing #{inspect(ns)} onto failed list (:timeout)")
             query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
           {:error, reason} ->
             # :system_limit | :not_owner | :inet.posix() | DNS.MsgError.t do not bode well for this ns
-            log(ctx.verbose, "- dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
+            Log.warning("- dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
             query_nss(nss, qry, ctx, tstop, nth, failed)
 
           {:ok, msg} ->
@@ -241,7 +226,7 @@ defmodule DNS do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
                 # ns either spoke in tongues or gave a somewhat hostile response, drop it & move on
-                log(ctx.verbose, "- dropping #{inspect(ns)}, due to RCODE: #{rcode}")
+                Log.warning("- dropping #{inspect(ns)}, due to RCODE: #{rcode}")
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
@@ -268,7 +253,7 @@ defmodule DNS do
 
       case query_udp(ns, qry, udp_timeout, bufsize) do
         {:ok, rsp} when rsp.header.tc == 1 ->
-          log(true, "- response truncated, switching to tcp")
+          Log.info("- response truncated, switching to tcp")
           query_tcp(ns, qry, timeout, tstop)
 
         result ->
@@ -298,7 +283,7 @@ defmodule DNS do
     else
       error ->
         :gen_udp.close(sock)
-        log(true, "- udp socket error #{inspect(ip)}, #{inspect(error)}")
+        Log.warning("- udp socket error #{inspect(ip)}, #{inspect(error)}")
         error
     end
   rescue
@@ -337,7 +322,7 @@ defmodule DNS do
     {:ok, {ip, p}} = :inet.peername(sock)
     # "#{Pfx.new(ip)}:#{p}/udp"
     ns = inspect({ip, p})
-    log(true, "- resolving #{hd(qry.question).name} at #{ns}, timeout #{timeout} ms")
+    Log.info("- resolving #{hd(qry.question).name} at #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
 
@@ -346,7 +331,7 @@ defmodule DNS do
          true <- reply?(qry, msg) do
       t = now() - tstart
       b = byte_size(msg.wdata)
-      log(true, "- received #{b} bytes in #{t} ms, from #{ns}")
+      Log.info("- received #{b} bytes in #{t} ms, from #{ns}")
 
       {:ok, msg}
     else
@@ -370,14 +355,14 @@ defmodule DNS do
          true <- reply?(qry, msg) do
       :gen_tcp.close(sock)
       t = now() - t0
-      log(true, "- received #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
+      Log.info("- received #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
       {:ok, msg}
     else
       false ->
         {:error, :noreply}
 
       {:error, e} ->
-        log(true, "- query_tcp error #{inspect(e)}")
+        Log.warning("- query_tcp error #{inspect(e)}")
         :gen_tcp.close(sock)
         {:error, e}
     end
@@ -389,7 +374,7 @@ defmodule DNS do
   @spec query_tcp_connect(ns, timeout, timeT) :: {:ok, :inet.socket()} | {:error, reason}
   def query_tcp_connect({ip, port}, timeout, tstop) do
     # avoid *exit* badarg by checking ip/port's validity
-    log(true, "- query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
+    Log.info("- query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
 
     iptype =
       case Pfx.type(ip) do
@@ -462,7 +447,7 @@ defmodule DNS do
       :referral ->
         # TODO: loop detection for referrals goes here
         zone = hd(msg.authority).name
-        log(true, "- #{qtn.name} #{qtn.type} - got referral to #{zone}")
+        Log.info("- #{qtn.name} #{qtn.type} - got referral to #{zone}")
         recurse(qry, msg, ctx, tstop)
 
       :cname ->
@@ -534,10 +519,7 @@ defmodule DNS do
     # - https://datatracker.ietf.org/doc/rfc9471/  (glue records)
     # - https://blog.cloudflare.com/black-lies/
     # - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
-    # Notes:
-    # - by now, the msg's question is same as that of the query
-    # - a proper referral has no SOA and will have relevant NS's in AUTHORITY
-    # - a proper answer has no SOA and relevant entries in ANSWER
+    # REVIEW: use-cases in the wild:
     #   dig www.azure.com @ns1.cloudns.net -> DNS hijacking:
     #   -> ANSWER w/ cloudns IP for site with ads, AUTHORITY with SOA for "" (!) <- :lame (!)
     #   dig www.example.com @ns1.cloudns.net -> weird SOA record
@@ -547,11 +529,10 @@ defmodule DNS do
     #
     # acutally, should check is previous zone is parent to new zone, otherwise its bogus...
     match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
-    Logger.info("here we are at response_type")
 
     case aut do
       [] ->
-        # TODO: log error (nsc>0 and atu==[] is actually a formerr)
+        # REVIEW: log error (nsc>0 and atu==[] is actually a formerr)
         :nodata
 
       _ ->
@@ -725,12 +706,6 @@ defmodule DNS do
 
     rcode
   end
-
-  defp log(false, _),
-    do: :ok
-
-  defp log(true, msg),
-    do: IO.puts(msg)
 
   defp unwrap({{_ip, _port} = ns, t}) do
     wait(timeout(t))
