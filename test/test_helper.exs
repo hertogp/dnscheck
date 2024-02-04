@@ -1,4 +1,5 @@
-ExUnit.start()
+ExUnit.start(capture_log: true)
+# alternatively: set it per test module with `@capture_log true`
 
 defmodule Drill do
   @moduledoc """

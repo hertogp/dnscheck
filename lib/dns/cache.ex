@@ -44,7 +44,7 @@ defmodule DNS.Cache do
 
       iex> init(clear: true)
       :dns_cache
-      iex> rr = DNS.Msg.RR.new(ttl: 10)
+      iex> rr = DNS.Msg.RR.new(name: "example.com", ttl: 10)
       iex> put(rr)
       true
       iex> size()
@@ -164,7 +164,7 @@ defmodule DNS.Cache do
 
   # explicitly ignore RR's referencing root
   def put(%DNS.Msg.RR{name: name} = rr) when name in ["", "."] do
-    Log.warning("ignoring #{rr}")
+    Log.warning("ignoring #{inspect(rr)}")
     false
   end
 
@@ -185,7 +185,7 @@ defmodule DNS.Cache do
           else: %{rr | ttl: maxttl, rdata: "", wdata: ""}
 
       # TODO: use Logger
-      # IO.puts("- cached #{inspect(rr)}")
+      Log.info("caching #{inspect(rr)}")
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
       _e -> false
@@ -196,7 +196,7 @@ defmodule DNS.Cache do
     # Msg has answer RR's
     # - only take relevant RRs from answer section
     # - ignore aut/add sections
-    Log.info("msg is #{msg}")
+    # Log.info("msg is #{msg}")
 
     with true <- cacheable?(msg),
          qname <- hd(msg.question).name do
@@ -216,7 +216,7 @@ defmodule DNS.Cache do
     # - ignores message if truncated, etc
     # - ignores aut-RR's unless it's a parent for qname
     # - checks add-RR's are listed in remaining aut-NSs
-    Log.info("msg offered is #{msg}")
+    # Log.info("msg offered is #{msg}")
 
     if cacheable?(msg) do
       qname = hd(msg.question).name
