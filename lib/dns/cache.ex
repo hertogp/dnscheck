@@ -32,6 +32,8 @@ defmodule DNS.Cache do
   """
 
   import DNS.Utils
+  alias Logger, as: Log
+  require Logger
 
   @doc """
   Creates and initializes to an empty cache.
@@ -161,8 +163,10 @@ defmodule DNS.Cache do
   def put(rr_or_msg)
 
   # explicitly ignore RR's referencing root
-  def put(%DNS.Msg.RR{name: name}) when name in ["", "."],
-    do: false
+  def put(%DNS.Msg.RR{name: name} = rr) when name in ["", "."] do
+    Log.warning("ignoring #{rr}")
+    false
+  end
 
   def put(%DNS.Msg.RR{} = rr) do
     # make_key before check on cacheable? so we get error not ignored
@@ -192,6 +196,8 @@ defmodule DNS.Cache do
     # Msg has answer RR's
     # - only take relevant RRs from answer section
     # - ignore aut/add sections
+    Log.info("msg is #{msg}")
+
     with true <- cacheable?(msg),
          qname <- hd(msg.question).name do
       msg.answer
@@ -210,6 +216,8 @@ defmodule DNS.Cache do
     # - ignores message if truncated, etc
     # - ignores aut-RR's unless it's a parent for qname
     # - checks add-RR's are listed in remaining aut-NSs
+    Log.info("msg offered is #{msg}")
+
     if cacheable?(msg) do
       qname = hd(msg.question).name
 
@@ -278,13 +286,14 @@ defmodule DNS.Cache do
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
-        # some died, so clean up cache
         if rrs == [],
           do: :ets.delete(@cache, key),
           else: :ets.insert(@cache, {key, rrs})
       end
 
-      Enum.map(rrs, &unwrap_ttd/1)
+      if crrs == [] and type != :CNAME,
+        do: get(name, class, :CNAME),
+        else: Enum.map(rrs, &unwrap_ttd/1)
     else
       _ -> []
     end
