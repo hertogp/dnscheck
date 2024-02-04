@@ -109,7 +109,9 @@ defmodule DNS do
 
         rrs ->
           Log.info("using #{length(rrs)} cached RR's")
-          response_make(qry, rrs)
+          {:ok, msg} = response_make(qry, rrs)
+          tstop = time(ctx.maxtime)
+          response_handler(qry, msg, ctx, tstop)
       end
     else
       error -> error
@@ -427,8 +429,9 @@ defmodule DNS do
   def response_handler(_qry, msg, %{recurse: false}, _tstop) do
     case response_type(msg) do
       :lame ->
+        Log.warning("lame response for #{msg.question}")
+        Log.debug("lame msg was #{msg}")
         {:error, {:lame, msg}}
-        |> IO.inspect(label: :response_handler)
 
       _ ->
         {:ok, msg}

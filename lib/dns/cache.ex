@@ -280,22 +280,27 @@ defmodule DNS.Cache do
       []
 
   """
-  @spec get(binary, atom | non_neg_integer, atom | non_neg_integer) :: [DNS.Msg.RR.t()]
-  def get(name, class, type) do
+  @spec get(binary, atom | non_neg_integer, atom | non_neg_integer, boolean) :: [DNS.Msg.RR.t()]
+  def get(name, class, type, strict \\ false) do
+    # REVIEW: maybe add opts for :strict, :stale (serve expired RR's ?)
     with {:ok, key} <- make_key(name, class, type),
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
+        Log.info("removing #{length(dead)} casulties")
+
         if rrs == [],
           do: :ets.delete(@cache, key),
           else: :ets.insert(@cache, {key, rrs})
       end
 
-      if crrs == [] and type != :CNAME,
-        do: get(name, class, :CNAME),
+      if crrs == [] and not strict and type != :CNAME,
+        do: get(name, class, :CNAME, true),
         else: Enum.map(rrs, &unwrap_ttd/1)
     else
-      _ -> []
+      _ ->
+        Log.error("failed to make key for #{inspect({name, class, type})}")
+        []
     end
   end
 
@@ -344,14 +349,16 @@ defmodule DNS.Cache do
   defp nssp([first | rest]) do
     zone = Enum.join([first | rest], ".")
 
-    case get(zone, :IN, :NS) do
+    case get(zone, :IN, :NS, true) do
       [] ->
         nssp(rest)
 
       nss ->
+        Log.info("zone #{zone} has #{length(nss)} nss")
+
         nss
         |> Enum.map(fn rr -> rr.rdmap.name end)
-        |> Enum.map(fn name -> [get(name, :IN, :A), get(name, :IN, :AAAA)] end)
+        |> Enum.map(fn name -> [get(name, :IN, :A, true), get(name, :IN, :AAAA, true)] end)
         |> List.flatten()
         |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
         |> Enum.shuffle()
@@ -423,6 +430,7 @@ defmodule DNS.Cache do
     end
   end
 
+  @spec make_key(binary, atom, atom) :: {:ok, tuple} | :error
   defp make_key(name, class, type) do
     ntype = DNS.Msg.Terms.encode_rr_type(type)
     nclass = DNS.Msg.Terms.encode_dns_class(class)
