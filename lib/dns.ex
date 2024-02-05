@@ -64,10 +64,65 @@ defmodule DNS do
 
     Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
 
-    with {:ok, ctx} <- make_context(name, type, recurse, opts) do
+    with {:ok, ctx} <- resolve_contextp(name, type, recurse, opts) do
       resolvep(name, type, ctx)
     else
       e -> IO.inspect(e, label: :opts_error)
+    end
+  end
+
+  @spec resolve_contextp(binary, type, boolean, Keyword.t()) :: {:ok, map} | {:error, binary}
+  defp resolve_contextp(name, type, recurse, opts) do
+    # only to be called by resolve/3, not by any other func in this module(!)
+    # `-> cname loop protection depends on it.
+    # - when not iterating, rd defaults to 1 (easier w/ public recursive resolvers)
+    # TODO: put limit on length of CNAME-chain, e.g. 10?
+    # TODO: put limit on number of referrals to follow, e.g. 10?
+    ctx = %{
+      bufsize: Keyword.get(opts, :bufsize, 1280),
+      cd: Keyword.get(opts, :cd, 0),
+      class: Keyword.get(opts, :class, :IN) |> Terms.decode_dns_class(),
+      do: Keyword.get(opts, :do, 0),
+      edns: opts[:do] == 1 or opts[:bufsize] != nil,
+      maxtime: Keyword.get(opts, :maxtime, 5_000),
+      nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
+      opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
+      rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
+      recurse: recurse,
+      retry: Keyword.get(opts, :retry, 3),
+      srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
+      tcp: Keyword.get(opts, :tcp, false),
+      timeout: Keyword.get(opts, :timeout, 2_000),
+      verbose: Keyword.get(opts, :verbose, false),
+      # house keeping
+      name: name,
+      type: type,
+      # referral loops are bounded by iterative query, so:
+      # - is (re)set each time a new iteration starts (via resolvep)
+      # - is updated by reply_handler when following referrals
+      zones: [""],
+      # cname loops cross the boundary of iterative queries, so:
+      # - is initialized for each new caller's query
+      # - is updated by reply_handler when following cname(s)
+      cnames: [name]
+    }
+
+    cond do
+      !is_u16(ctx.bufsize) -> {:error, "bufsize out of u16 range"}
+      !(ctx.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
+      !(ctx.class in [:IN, :CH, :HS]) -> {:error, "unknown DNS class: #{ctx.class}"}
+      !(ctx.do in 0..1) -> {:error, "do bit should be 0 or 1"}
+      !is_integer(ctx.maxtime) -> {:error, "maxtime should be positive integer"}
+      !(ctx.maxtime > 0) -> {:error, "maxtime should be positive integer"}
+      !check_nss(ctx.nameservers) -> {:error, "bad nameserver(s) #{inspect(ctx.nameservers)}"}
+      !(ctx.opcode in 0..15) -> {:error, "opcode not in 0..15"}
+      !(ctx.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
+      !(ctx.retry in 0..5) -> {:error, "retry not in range 0..5"}
+      !(ctx.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
+      !is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
+      !is_boolean(ctx.verbose) -> {:error, "verbose should be true of false"}
+      !(ctx.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
+      true -> {:ok, ctx}
     end
   end
 
@@ -76,7 +131,7 @@ defmodule DNS do
     # resolvep called by:
     # - resolve to answer caller's query
     # - recurse_nss during referral, to resolve non-glue NS's
-    # - resolve_handler, to follow cnames
+    # - resolve_handler, to follow cnames and/or referrals
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, ctx.class, type) do
@@ -118,18 +173,20 @@ defmodule DNS do
     end
   end
 
+  # [[ RECURSE ]]
+
   @spec recurse(msg, msg, map, timeT) :: {:ok, msg} | {:error, {reason, msg}}
-  def recurse(qry, msg, ctx, tstop) do
+  defp recurse(qry, msg, ctx, tstop) do
+    # only to be called by reply_handler when following referral
+    # - so same qry, different nameservers due to redirection
+    # - a referral does not necessarily have all addresses of the NS's it
+    #   mentions in authority as glue RR's in additional available.
+    #   Hence non-glue names are `resolve`d (a new, fresh iterative query,
+    #   respecting overall tstop and cname loop detection)
     # https://www.rfc-editor.org/rfc/rfc1035#section-7     - resolver implementation
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4   - using the cache
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
-    # NOTES
-    # - called by reply_handler only, when following referral
-    # - so same qry, different nameservers due to redirection
-    # - a referral does not necessarily have all addresses of the NS's it
-    #   mentions as glue available. Hence non-glue names are `resolve`d (a new,
-    #   fresh iterative query, respecting overall tstop).
 
     with nss <- recurse_nss(msg, ctx, tstop),
          {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
@@ -141,7 +198,7 @@ defmodule DNS do
   end
 
   @spec recurse_nss(msg, map, timeT) :: [ns]
-  def recurse_nss(msg, ctx, tstop) do
+  defp recurse_nss(msg, ctx, tstop) do
     # - resolve non-glue NS in referral msg & return NSS, respecting maxtime
     # - glue NS A/AAAA RRs are already in the cache
     # - drop NS's that are subdomains of `zone` but not in glue records to avoid looping
@@ -182,6 +239,8 @@ defmodule DNS do
   rescue
     _ -> []
   end
+
+  # [[ QUERY ]]
 
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
           {:ok, DNS.Msg.t()} | {:error, reason}
@@ -397,7 +456,7 @@ defmodule DNS do
 
   @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
   def make_query(name, type, ctx) do
-    # assumes ctx is safe (made by make_context and maybe updated on recursion)
+    # assumes ctx is safe (made by resolve_contextp and maybe updated on recursion)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
     name =
       if Pfx.valid?(name) do
@@ -430,7 +489,7 @@ defmodule DNS do
     case reply_type(msg) do
       :lame ->
         Log.warning("lame reply for #{msg.question}")
-        Log.debug("lame msg was #{msg}")
+        Log.debug("lame reply msg was #{msg}")
         {:error, {:lame, msg}}
 
       _ ->
@@ -456,7 +515,7 @@ defmodule DNS do
         {:ok, cname} = dname_normalize(rr.rdmap.name)
 
         if Enum.member?(ctx.cnames, cname) do
-          Log.info("cname loop detected for cname #{rr.name} CNAME  #{cname}")
+          Log.warning("cname loop detected for cname #{rr.name} CNAME  #{cname}")
           {:error, {:cname_loop, msg}}
         else
           ctx =
@@ -489,11 +548,12 @@ defmodule DNS do
         end
 
       :nodata ->
+        Log.info("got a NODATA reply to #{qry}")
         {:ok, msg}
 
       :lame ->
+        Log.warning("got a lame reply to #{qry}")
         {:error, {:lame, msg}}
-        |> IO.inspect(label: :reply_handler)
     end
   end
 
@@ -592,60 +652,7 @@ defmodule DNS do
   def reply_type(_),
     do: :answer
 
-  # [[ OPTIONS ]]
-
-  @spec make_context(binary, type, boolean, Keyword.t()) :: {:ok, map} | {:error, binary}
-  def make_context(name, type, recurse, opts \\ []) do
-    # - ctx is carried around while (possibly recursively) resolving a request
-    # - decode class since validation checks if it's in a list of atoms could've
-    #    used is_u16, but only :IN is supported along with a few RR's for :CH and :HS
-    # - when not recursing, get user's choice and default to 1 so it's easier to
-    #   query public recursive resolvers like Cloudflare, Quad9 etc ...
-    # TODO: put limit on length of CNAME-chain, e.g. 10? -> :red_herring
-    # TODO: put limit on number of referrals to follow, e.g. 10? -> :red_kipper
-    ctx = %{
-      bufsize: Keyword.get(opts, :bufsize, 1280),
-      cd: Keyword.get(opts, :cd, 0),
-      class: Keyword.get(opts, :class, :IN) |> Terms.decode_dns_class(),
-      do: Keyword.get(opts, :do, 0),
-      edns: opts[:do] == 1 or opts[:bufsize] != nil,
-      maxtime: Keyword.get(opts, :maxtime, 5_000),
-      nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
-      opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
-      rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
-      recurse: recurse,
-      retry: Keyword.get(opts, :retry, 3),
-      srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
-      tcp: Keyword.get(opts, :tcp, false),
-      timeout: Keyword.get(opts, :timeout, 2_000),
-      verbose: Keyword.get(opts, :verbose, false),
-      # house keeping
-      name: name,
-      type: type,
-      #
-      zones: [],
-      # list of cnames seen before, note: name cannot be target of a cname
-      cnames: [name]
-    }
-
-    cond do
-      !is_u16(ctx.bufsize) -> {:error, "bufsize out of u16 range"}
-      !(ctx.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
-      !(ctx.class in [:IN, :CH, :HS]) -> {:error, "unknown DNS class: #{ctx.class}"}
-      !(ctx.do in 0..1) -> {:error, "do bit should be 0 or 1"}
-      !is_integer(ctx.maxtime) -> {:error, "maxtime should be positive integer"}
-      !(ctx.maxtime > 0) -> {:error, "maxtime should be positive integer"}
-      !check_nss(ctx.nameservers) -> {:error, "bad nameserver(s) #{inspect(ctx.nameservers)}"}
-      !(ctx.opcode in 0..15) -> {:error, "opcode not in 0..15"}
-      !(ctx.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
-      !(ctx.retry in 0..5) -> {:error, "retry not in range 0..5"}
-      !(ctx.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
-      !is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
-      !is_boolean(ctx.verbose) -> {:error, "verbose should be true of false"}
-      !(ctx.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
-      true -> {:ok, ctx}
-    end
-  end
+  # [[ NSS helpers ]]
 
   defp check_nss([]),
     do: true

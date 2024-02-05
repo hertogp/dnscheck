@@ -67,13 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       than once when resolving NS records for their A/AAAA records!
       Note that zone<x> may come back in different cases
       Note that loop protection goes across recursion boundaries => ctx!
-- [ ] detect CNAME loops => ditto, need a working solution
-      q  -> NSS0 -> c1 [NSS + A/AAAA if possible]
-      c1 -> NSSx -> c2
-      c2 -> c1
-      So {q, c<x>} MUST only happen once!
-      Note that c<x> may come back in different cases
-      Note that loop protection goes across recursion boundaries => ctx!
+- [x] detect CNAME loops
+      note: CNAME loops are across iterative queries
 - [ ] responses must be better evaluated in query_nss
       - including extra validation rules for msg's (e.g. max 1 :OPT in additional, TSIG
         at the end, etc...)
