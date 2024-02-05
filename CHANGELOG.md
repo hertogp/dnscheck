@@ -136,8 +136,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### DNS.Cache
 - [!] DS does appear in msg.authority in case of a referral
+- [x] cache/retrieve cname chains properly
 - [ ] cache negative answers
-- [ ] use max for TTL if exceptionally large
+- [x] use max for TTL if exceptionally large
 - [ ] retrieval should support DO=1, if cache has no DNSSEC records,
       then return cache miss, even if insecure record is available
 - [ ] msg.aut may contain: SOA, NS, DS, RRSIG, NSEC, NSEC3, NSEC3PARAM?

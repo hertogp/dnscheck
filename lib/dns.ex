@@ -71,7 +71,7 @@ defmodule DNS do
     end
   end
 
-  @spec resolvep(binary, type, map) :: {:ok, msg} | {:error, reason}
+  @spec resolvep(binary, type, map) :: {:ok, msg} | {:error, reason} | {:error, {atom, msg}}
   defp resolvep(name, type, ctx) do
     # resolvep called by:
     # - resolve to answer caller's query
@@ -94,14 +94,14 @@ defmodule DNS do
               anc = msg.header.anc
               nsc = msg.header.nsc
               arc = msg.header.arc
-              rsp_type = response_type(msg)
+              rsp_type = reply_type(msg)
 
               Log.info(
                 "qry #{qname} #{type} -> reply (#{rsp_type}): #{xrcode}, ANSWERS #{anc}, AUTHORITY #{nsc}, ADDITIONAL #{arc}"
               )
 
               # try www.azure.com for a cname chain
-              response_handler(qry, msg, ctx, tstop)
+              reply_handler(qry, msg, ctx, tstop)
 
             {:error, reason} ->
               {:error, reason}
@@ -109,9 +109,9 @@ defmodule DNS do
 
         rrs ->
           Log.info("using #{length(rrs)} cached RR's")
-          {:ok, msg} = response_make(qry, rrs)
+          {:ok, msg} = reply_make(qry, rrs)
           tstop = time(ctx.maxtime)
-          response_handler(qry, msg, ctx, tstop)
+          reply_handler(qry, msg, ctx, tstop)
       end
     else
       error -> error
@@ -125,7 +125,7 @@ defmodule DNS do
     # https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2 - handle CNAMEs
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
     # NOTES
-    # - called by response_handler only, when following referral
+    # - called by reply_handler only, when following referral
     # - so same qry, different nameservers due to redirection
     # - a referral does not necessarily have all addresses of the NS's it
     #   mentions as glue available. Hence non-glue names are `resolve`d (a new,
@@ -133,7 +133,7 @@ defmodule DNS do
 
     with nss <- recurse_nss(msg, ctx, tstop),
          {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
-      response_handler(qry, msg, ctx, tstop)
+      reply_handler(qry, msg, ctx, tstop)
     else
       {:error, reason} -> {:error, {reason, msg}}
       other -> {:error, other}
@@ -145,7 +145,7 @@ defmodule DNS do
     # - resolve non-glue NS in referral msg & return NSS, respecting maxtime
     # - glue NS A/AAAA RRs are already in the cache
     # - drop NS's that are subdomains of `zone` but not in glue records to avoid looping
-    with :referral <- response_type(msg),
+    with :referral <- reply_type(msg),
          zone <- hd(msg.authority).name,
          rrs <- Enum.filter(msg.authority, fn rr -> rr.type == :NS end),
          glue <- Enum.map(msg.additional, fn rr -> String.downcase(rr.name) end),
@@ -254,7 +254,7 @@ defmodule DNS do
 
       case query_udp(ns, qry, udp_timeout, bufsize) do
         {:ok, rsp} when rsp.header.tc == 1 ->
-          Log.info("response truncated, switching to tcp")
+          Log.info("reply truncated, switching to tcp")
           query_tcp(ns, qry, timeout, tstop)
 
         result ->
@@ -278,7 +278,7 @@ defmodule DNS do
       # - query_udp_open uses random src port for each query
       # - :gen_udp.connect ensures incoming data arrived at our src IP & port
       # - query_udp_recv ensures qry/msg ID's are equal and msg's qr=1
-      # the higher ups will need to deal with how to handle the response
+      # the higher ups will need to deal with how to handle the reply
       :gen_udp.close(sock)
       {:ok, msg}
     else
@@ -424,12 +424,12 @@ defmodule DNS do
     end
   end
 
-  # [[ RESPONSES ]]
-  @spec response_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
-  def response_handler(_qry, msg, %{recurse: false}, _tstop) do
-    case response_type(msg) do
+  # [[ REPLIES ]]
+  @spec reply_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
+  def reply_handler(_qry, msg, %{recurse: false}, _tstop) do
+    case reply_type(msg) do
       :lame ->
-        Log.warning("lame response for #{msg.question}")
+        Log.warning("lame reply for #{msg.question}")
         Log.debug("lame msg was #{msg}")
         {:error, {:lame, msg}}
 
@@ -438,10 +438,10 @@ defmodule DNS do
     end
   end
 
-  def response_handler(qry, msg, ctx, tstop) do
+  def reply_handler(qry, msg, ctx, tstop) do
     qtn = hd(qry.question)
 
-    case response_type(msg) do
+    case reply_type(msg) do
       :answer ->
         {:ok, msg}
 
@@ -452,31 +452,40 @@ defmodule DNS do
         recurse(qry, msg, ctx, tstop)
 
       :cname ->
-        # TODO: loop detection for cnames goes here
-        case Enum.find(msg.answer, false, fn rr -> rr.type == :CNAME end) do
-          false ->
-            {:error, {:lame, msg}}
+        rr = Enum.find(msg.answer, fn rr -> rr.type == :CNAME end)
+        {:ok, cname} = dname_normalize(rr.rdmap.name)
 
-          rr ->
-            ctx =
-              ctx
-              |> Map.delete(:nameservers)
-              |> Map.put(:maxtime, timeout(tstop))
-              |> Map.put(:rd, 0)
+        if Enum.member?(ctx.cnames, cname) do
+          Log.info("cname loop detected for cname #{rr.name} CNAME  #{cname}")
+          {:error, {:cname_loop, msg}}
+        else
+          ctx =
+            %{ctx | cnames: [cname | ctx.cnames]}
+            |> Map.delete(:nameservers)
+            |> Map.put(:maxtime, timeout(tstop))
+            |> Map.put(:rd, 0)
 
-            case resolvep(rr.rdmap.name, qtn.type, ctx) do
-              {:ok, msg} ->
-                # Modify message: prepend cname-RR, restore original question
-                # (AA=0 since msg was modified)
-                header = %{msg.header | aa: 0, anc: msg.header.anc + 1, wdata: <<>>}
-                question = [%{qtn | wdata: <<>>}]
-                answer = [%{rr | wdata: <<>>} | msg.answer]
-                msg = %{msg | header: header, question: question, answer: answer}
-                {:ok, msg}
+          # use canonical name as-is to preserve case
+          case resolvep(rr.rdmap.name, qtn.type, ctx) do
+            {:ok, msg} ->
+              # Modify message: prepend cname-RR, restore original question
+              # (AA=0 since msg is synthesized)
+              question = [%{qtn | wdata: <<>>}]
+              answer = [%{rr | wdata: <<>>} | msg.answer]
+              header = %{msg.header | aa: 0, anc: length(answer), wdata: <<>>}
+              msg = %{msg | header: header, question: question, answer: answer}
+              {:ok, msg}
 
-              error ->
-                error
-            end
+            {:error, {:cname_loop, msg}} ->
+              header = %{msg.header | aa: 0, anc: msg.header.anc + 1, wdata: <<>>}
+              question = [%{qtn | wdata: <<>>}]
+              answer = [%{rr | wdata: <<>>} | msg.answer]
+              msg = %{msg | header: header, question: question, answer: answer}
+              {:error, {:cname_loop, msg}}
+
+            error ->
+              error
+          end
         end
 
       :nodata ->
@@ -484,12 +493,12 @@ defmodule DNS do
 
       :lame ->
         {:error, {:lame, msg}}
-        |> IO.inspect(label: :response_handler)
+        |> IO.inspect(label: :reply_handler)
     end
   end
 
-  @spec response_make(msg, [DNS.Msg.RR.t()]) :: {:ok, msg}
-  def response_make(qry, rrs) do
+  @spec reply_make(msg, [DNS.Msg.RR.t()]) :: {:ok, msg}
+  def reply_make(qry, rrs) do
     # a synthesized answer from cache:
     # - is created by copying & updating the vanilla qry msg
     # - has no wdata and id of 0
@@ -505,8 +514,8 @@ defmodule DNS do
     {:ok, rsp}
   end
 
-  @spec response_type(msg) :: :referral | :cname | :answer | :lame | :nodata
-  def response_type(%{
+  @spec reply_type(msg) :: :referral | :cname | :answer | :lame | :nodata
+  def reply_type(%{
         header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
         question: [%{name: qname}],
         answer: [],
@@ -533,7 +542,7 @@ defmodule DNS do
 
     case aut do
       [] ->
-        # REVIEW: log error (nsc>0 and atu==[] is actually a formerr)
+        # REVIEW: log error (nsc>0 and aut==[] is actually a formerr)
         :nodata
 
       _ ->
@@ -548,7 +557,7 @@ defmodule DNS do
     end
   end
 
-  def response_type(%{
+  def reply_type(%{
         header: %{anc: anc, qdc: 1, rcode: :NOERROR},
         question: [%{type: qtype}],
         answer: ans
@@ -559,7 +568,7 @@ defmodule DNS do
     # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-1
     # - https://datatracker.ietf.org/doc/html/rfc2181#section-10.1
-    # * if query was for :CNAME, always qualify response as :answer
+    # * if query was for :CNAME, always qualify reply as :answer
     # * if answer includes a :CNAME and some RR's of qtype, then we assume:
     #   - that ns is also authoritative for the cname, and
     #   - that the RR's with qtype are for the cname given
@@ -580,7 +589,7 @@ defmodule DNS do
     end
   end
 
-  def response_type(_),
+  def reply_type(_),
     do: :answer
 
   # [[ OPTIONS ]]
@@ -614,8 +623,9 @@ defmodule DNS do
       name: name,
       type: type,
       #
-      referalls: %{},
-      cnames: %{}
+      zones: [],
+      # list of cnames seen before, note: name cannot be target of a cname
+      cnames: [name]
     }
 
     cond do
@@ -674,7 +684,7 @@ defmodule DNS do
         # nowadays a question section with more than 1 question is unlikely,
         # still it is possible.  Direct wdata comparison is not possible:
         # - domain name compression might be present in the reply, or
-        # - domain name in response might have different case (?)
+        # - domain name in reply might have different case (?)
         # so qry/rsp names are normalized so both sort the same
         ql =
           qry.question

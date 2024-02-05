@@ -162,8 +162,8 @@ defmodule DNS.Cache do
   @spec put(DNS.Msg.RR.t() | DNS.Msg.t()) :: boolean
   def put(rr_or_msg)
 
-  # explicitly ignore RR's referencing root
   def put(%DNS.Msg.RR{name: name} = rr) when name in ["", "."] do
+    # explicitly ignore RR's referencing root
     Log.warning("ignoring #{inspect(rr)}")
     false
   end
@@ -172,6 +172,7 @@ defmodule DNS.Cache do
     # make_key before check on cacheable? so we get error not ignored
     # if one of the key components is illegal.
     # - assumes rdmap hasn't been tampered/played with (i.e. org fields only)
+    # TODO: keep cached rrs whose ttl > rr.ttl
     with true <- rr.ttl > 0,
          {:ok, key} <- make_key(rr.name, rr.class, rr.type),
          true <- cacheable?(rr),
@@ -184,7 +185,6 @@ defmodule DNS.Cache do
           do: rr,
           else: %{rr | ttl: maxttl, rdata: "", wdata: ""}
 
-      # TODO: use Logger
       Log.info("caching #{inspect(rr)}")
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
@@ -195,7 +195,8 @@ defmodule DNS.Cache do
   def put(%DNS.Msg{answer: [_ | _]} = msg) do
     # Msg has answer RR's
     # - only take relevant RRs from answer section
-    # - ignore aut/add sections
+    # REVIEW: donot ignore aut/add sections
+    # TODO: ignore answers that have a irrelevant SOA in aut-section
     # Log.info("msg is #{msg}")
 
     with true <- cacheable?(msg),
@@ -287,7 +288,7 @@ defmodule DNS.Cache do
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
-        Log.info("removing #{length(dead)} casulties")
+        Log.info("{#{name}, #{class}, #{type}} -> removing #{length(dead)} casulties")
 
         if rrs == [],
           do: :ets.delete(@cache, key),
@@ -334,11 +335,12 @@ defmodule DNS.Cache do
   """
   @spec nss(binary) :: [{:inet.ip_address(), integer}]
   def nss(zone) when is_binary(zone) do
-    # TODO: log error if zone is illegal domain name
     with {:ok, labels} <- dname_normalize(zone, join: false) do
       nssp(labels)
     else
-      _ -> []
+      _ ->
+        Log.error("illegal zone name #{inspect(zone)}")
+        []
     end
   end
 
@@ -351,6 +353,7 @@ defmodule DNS.Cache do
 
     case get(zone, :IN, :NS, true) do
       [] ->
+        Log.debug("zone #{zone} has no nss in cache")
         nssp(rest)
 
       nss ->
@@ -409,7 +412,7 @@ defmodule DNS.Cache do
     # [ ] cached data is not authoritative and the current msg is authoritative
     qname = hd(msg.question).name
     labels = dname_to_labels(qname)
-    wildcard = Enum.any?(labels, fn l -> l == "*" end)
+    wildcard = List.starts_with?(labels, ["*"])
 
     cond do
       wildcard -> false
