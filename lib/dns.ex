@@ -74,11 +74,10 @@ defmodule DNS do
   """
   @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
   def resolve(name, type, opts \\ []) do
-    # this is the caller's entry point, module code must use resolvep
-
-    # TODO: probably move this to dnscheck.ex at some point
+    # TODO: probably move Cache.init/1 to dnscheck.ex at some point
     Cache.init(clear: false)
     recurse = opts[:nameservers] == nil
+    Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
 
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
@@ -111,29 +110,28 @@ defmodule DNS do
     # TODO: put limit on length of CNAME-chain, e.g. 10?
     # TODO: put limit on number of referrals to follow, e.g. 10?
     cond do
-      not is_u16(ctx.bufsize) -> {:error, "bufsize out of u16 range"}
-      ctx.cd not in 0..1 -> {:error, "cd bit should be 0 or 1"}
-      ctx.class not in [:IN, :CH, :HS] -> {:error, "unknown DNS class: #{ctx.class}"}
-      ctx.do not in 0..1 -> {:error, "do bit should be 0 or 1"}
-      not is_integer(ctx.maxtime) -> {:error, "maxtime should be an integer"}
-      ctx.maxtime < 0 -> {:error, "maxtime should be positive integer"}
-      not check_nss(ctx.nameservers) -> {:error, "bad nameserver(s) #{inspect(ctx.nameservers)}"}
-      ctx.opcode not in 0..15 -> {:error, "opcode not in 0..15"}
-      ctx.rd not in 0..1 -> {:error, "rd bit should be 0 or 1"}
-      ctx.retry not in 0..5 -> {:error, "retry not in range 0..5"}
-      ctx.srvfail_wait not in 0..5000 -> {:error, "srvfail_wait not in 0..5000"}
-      not is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
-      ctx.timeout not in 0..5000 -> {:error, "timeout not in 0..5000"}
+      not is_u16(ctx.bufsize) -> "bufsize out of u16 range"
+      ctx.cd not in 0..1 -> "cd bit should be 0 or 1"
+      ctx.class not in [:IN, :CH, :HS] -> "unknown DNS class: #{ctx.class}"
+      ctx.do not in 0..1 -> "do bit should be 0 or 1"
+      not is_integer(ctx.maxtime) -> "maxtime should be an integer"
+      ctx.maxtime < 0 -> "maxtime should be positive integer"
+      not check_nss(ctx.nameservers) -> "bad nameserver(s) #{inspect(ctx.nameservers)}"
+      ctx.opcode not in 0..15 -> "opcode not in 0..15"
+      ctx.rd not in 0..1 -> "rd bit should be 0 or 1"
+      ctx.retry not in 0..5 -> "retry not in range 0..5"
+      ctx.srvfail_wait not in 0..5000 -> "srvfail_wait not in 0..5000"
+      not is_boolean(ctx.tcp) -> "tcp should be true of false"
+      ctx.timeout not in 0..5000 -> "timeout not in 0..5000"
       true -> {:ok, ctx}
     end
     |> case do
       {:ok, ctx} ->
-        Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
         resolvep(name, type, ctx)
 
-      {:error, reason} ->
-        Log.error("Option error: #{reason}")
-        {:error, {:option, reason}}
+      error ->
+        Log.error("Option error: #{error}")
+        {:error, {:option, error}}
     end
   end
 
@@ -255,15 +253,15 @@ defmodule DNS do
 
   @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
           {:ok, DNS.Msg.t()} | {:error, reason}
-  def query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
+  defp query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
     do: {:error, :timeout}
 
-  def query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
+  defp query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
     Log.warn("retrying #{length(failed)} failed nameservers")
     query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
   end
 
-  def query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
+  defp query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
     # query_nss is responsible for getting 1 answer from NSS-list
     Log.info("time remaining #{timeout(tstop)}")
 
@@ -310,7 +308,7 @@ defmodule DNS do
   end
 
   @spec query_ns(ns, msg, map, timeT, counter) :: {:ok, msg} | {:error, reason}
-  def query_ns(ns, qry, ctx, tstop, n) do
+  defp query_ns(ns, qry, ctx, tstop, n) do
     # responsible for getting 1 answer from 1 nameserver
     # [?] should we fallback to plain dns in case EDNS leads to BADVERS?
     bufsize = ctx.bufsize
@@ -334,10 +332,10 @@ defmodule DNS do
   end
 
   @spec query_udp(ns, msg, timeout, non_neg_integer) :: {:ok, msg} | {:error, reason}
-  def query_udp(_ns, _qry, 0, _bufsize),
+  defp query_udp(_ns, _qry, 0, _bufsize),
     do: {:error, :timeout}
 
-  def query_udp({ip, port}, qry, timeout, bufsize) do
+  defp query_udp({ip, port}, qry, timeout, bufsize) do
     # query_udp_open protects against a process *exit* with :badarg
     {:ok, sock} = query_udp_open(ip, port, bufsize)
 
@@ -364,7 +362,7 @@ defmodule DNS do
 
   @spec query_udp_open(:inet.ip_address(), non_neg_integer, non_neg_integer) ::
           {:ok, :gen_udp.socket()} | {:error, :system_limit | :badarg | :inet.posix()}
-  def query_udp_open(ip, port, bufsize) do
+  defp query_udp_open(ip, port, bufsize) do
     # avoid exit :badarg from gen_udp.open
     # gen_udp.open -> {ok, socket} | {:error, system_limit | :inet.posix()}
     # or {:error, :badarg}
@@ -384,10 +382,10 @@ defmodule DNS do
   end
 
   @spec query_udp_recv(:inet.socket(), msg, timeout) :: {:ok, msg} | {:error, reason}
-  def query_udp_recv(_sock, _qry, 0),
+  defp query_udp_recv(_sock, _qry, 0),
     do: {:error, :timeout}
 
-  def query_udp_recv(sock, qry, timeout) do
+  defp query_udp_recv(sock, qry, timeout) do
     # - if it's not an answer to the question, try again until timeout has passed
     # - sock is connected, so addr,port *should* be ok
     {:ok, {ip, p}} = :inet.peername(sock)
@@ -411,10 +409,10 @@ defmodule DNS do
   end
 
   @spec query_tcp(ns, msg, timeout, timeT) :: {:ok, msg} | {:error, reason}
-  def query_tcp(_ns, _qry, 0, _tstop),
+  defp query_tcp(_ns, _qry, 0, _tstop),
     do: {:error, :timeout}
 
-  def query_tcp({ip, port}, qry, timeout, tstop) do
+  defp query_tcp({ip, port}, qry, timeout, tstop) do
     # connect outside `with`-block, so we can always close the socket
     {:ok, sock} = query_tcp_connect({ip, port}, timeout, tstop)
     t0 = now()
@@ -442,7 +440,7 @@ defmodule DNS do
   end
 
   @spec query_tcp_connect(ns, timeout, timeT) :: {:ok, :inet.socket()} | {:error, reason}
-  def query_tcp_connect({ip, port}, timeout, tstop) do
+  defp query_tcp_connect({ip, port}, timeout, tstop) do
     # avoid *exit* badarg by checking ip/port's validity
     Log.info("query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
 
@@ -466,7 +464,7 @@ defmodule DNS do
   # [[ MAKE QRY/RSP MSG ]]
 
   @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
-  def make_query(name, type, ctx) do
+  defp make_query(name, type, ctx) do
     # assumes ctx is safe (made by resolve_contextp and maybe updated on recursion)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
     name =
@@ -496,7 +494,7 @@ defmodule DNS do
 
   # [[ REPLIES ]]
   @spec reply_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
-  def reply_handler(_qry, msg, %{recurse: false}, _tstop) do
+  defp reply_handler(_qry, msg, %{recurse: false}, _tstop) do
     case reply_type(msg) do
       :lame ->
         Log.warning("lame reply for #{msg.question}")
@@ -508,7 +506,7 @@ defmodule DNS do
     end
   end
 
-  def reply_handler(qry, msg, ctx, tstop) do
+  defp reply_handler(qry, msg, ctx, tstop) do
     qtn = hd(qry.question)
 
     case reply_type(msg) do
@@ -569,7 +567,7 @@ defmodule DNS do
   end
 
   @spec reply_make(msg, [DNS.Msg.RR.t()]) :: {:ok, msg}
-  def reply_make(qry, rrs) do
+  defp reply_make(qry, rrs) do
     # a synthesized answer from cache:
     # - is created by copying & updating the vanilla qry msg
     # - has no wdata and id of 0
@@ -586,13 +584,13 @@ defmodule DNS do
   end
 
   @spec reply_type(msg) :: :referral | :cname | :answer | :lame | :nodata
-  def reply_type(%{
-        header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
-        question: [%{name: qname}],
-        answer: [],
-        authority: aut
-      })
-      when nsc > 0 do
+  defp reply_type(%{
+         header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
+         question: [%{name: qname}],
+         answer: [],
+         authority: aut
+       })
+       when nsc > 0 do
     # see also
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.1 (NAME ERROR)
     # - https://datatracker.ietf.org/doc/html/rfc2308#section-2.2 (NODATA)
@@ -628,12 +626,12 @@ defmodule DNS do
     end
   end
 
-  def reply_type(%{
-        header: %{anc: anc, qdc: 1, rcode: :NOERROR},
-        question: [%{type: qtype}],
-        answer: answer
-      })
-      when anc > 0 do
+  defp reply_type(%{
+         header: %{anc: anc, qdc: 1, rcode: :NOERROR},
+         question: [%{type: qtype}],
+         answer: answer
+       })
+       when anc > 0 do
     # see also
     # - https://www.rfc-editor.org/rfc/rfc1034#section-3.6.2
     # - https://www.rfc-editor.org/rfc/rfc1034#section-4.3.2
@@ -660,7 +658,7 @@ defmodule DNS do
     end
   end
 
-  def reply_type(_),
+  defp reply_type(_),
     do: :answer
 
   # [[ NSS helpers ]]
@@ -677,7 +675,7 @@ defmodule DNS do
   # [[ HELPERS ]]
 
   @spec reply?(msg, msg) :: boolean
-  def reply?(qry, rsp) do
+  defp reply?(qry, rsp) do
     # https://datatracker.ietf.org/doc/html/rfc5452.html#section-9.1
     # - not named in rfc5452, but rsp.header.qr must be 1 (!)
     # - [?] also check the opcode's line up
