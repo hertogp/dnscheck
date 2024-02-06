@@ -39,7 +39,25 @@ defmodule DNS do
   # [[ RESOLVE ]]
 
   @doc """
-  Queries DNS for given `name` and `type`, returns `t:DNS.Msg.t/0`
+  Queries DNS for given `name` and `type`, returns either {:ok, `t:DNS.Msg.t/0`}
+  or `{:error, {reason, desc}}`.
+
+  TODO:
+  [ ] error returns are always {:error, {:some_reason, desc}}
+      where desc can be a binary of DNS.Msg (e.g. when rcode = NXDOMAIN)
+      or when :some_reason is :lame or :bogus, :cname_loop, :referral_loop etc..
+  [ ] ensure @spec is modified accordingly, e.g. define reason as series of tuples:
+      @type reason ::
+      {:timeout, desc}
+      {:servfail, desc}
+      {:nxdomain, DNS.Msg.t()}
+      {:lame, DNS.Msg.t()}
+      {:cname_loop, DNS.Msg.t()}
+      {:referral_loop, DNS.Msg.t()}
+      ...
+      {:encode, DNS.MsgError.t()}
+      {:decode, DNS.MsgError.t()}
+      etc ...
 
   Options include:
   - `rd`, defaults to 1 (recursion desired, true)
@@ -62,22 +80,6 @@ defmodule DNS do
     Cache.init(clear: false)
     recurse = opts[:nameservers] == nil
 
-    Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
-
-    with {:ok, ctx} <- resolve_contextp(name, type, recurse, opts) do
-      resolvep(name, type, ctx)
-    else
-      e -> IO.inspect(e, label: :opts_error)
-    end
-  end
-
-  @spec resolve_contextp(binary, type, boolean, Keyword.t()) :: {:ok, map} | {:error, binary}
-  defp resolve_contextp(name, type, recurse, opts) do
-    # only to be called by resolve/3, not by any other func in this module(!)
-    # `-> cname loop protection depends on it.
-    # - when not iterating, rd defaults to 1 (easier w/ public recursive resolvers)
-    # TODO: put limit on length of CNAME-chain, e.g. 10?
-    # TODO: put limit on number of referrals to follow, e.g. 10?
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
@@ -88,13 +90,12 @@ defmodule DNS do
       nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
       rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
-      recurse: recurse,
       retry: Keyword.get(opts, :retry, 3),
       srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
       tcp: Keyword.get(opts, :tcp, false),
       timeout: Keyword.get(opts, :timeout, 2_000),
-      verbose: Keyword.get(opts, :verbose, false),
       # house keeping
+      recurse: recurse,
       name: name,
       type: type,
       # referral loops are bounded by iterative query, so:
@@ -107,22 +108,32 @@ defmodule DNS do
       cnames: [name]
     }
 
+    # TODO: put limit on length of CNAME-chain, e.g. 10?
+    # TODO: put limit on number of referrals to follow, e.g. 10?
     cond do
-      !is_u16(ctx.bufsize) -> {:error, "bufsize out of u16 range"}
-      !(ctx.cd in 0..1) -> {:error, "cd bit should be 0 or 1"}
-      !(ctx.class in [:IN, :CH, :HS]) -> {:error, "unknown DNS class: #{ctx.class}"}
-      !(ctx.do in 0..1) -> {:error, "do bit should be 0 or 1"}
-      !is_integer(ctx.maxtime) -> {:error, "maxtime should be positive integer"}
-      !(ctx.maxtime > 0) -> {:error, "maxtime should be positive integer"}
-      !check_nss(ctx.nameservers) -> {:error, "bad nameserver(s) #{inspect(ctx.nameservers)}"}
-      !(ctx.opcode in 0..15) -> {:error, "opcode not in 0..15"}
-      !(ctx.rd in 0..1) -> {:error, "rd bit should be 0 or 1"}
-      !(ctx.retry in 0..5) -> {:error, "retry not in range 0..5"}
-      !(ctx.srvfail_wait in 0..5000) -> {:error, "srvfail_wait not in 0..5000"}
-      !is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
-      !is_boolean(ctx.verbose) -> {:error, "verbose should be true of false"}
-      !(ctx.timeout in 0..5000) -> {:error, "timeout not in 0..5000"}
+      not is_u16(ctx.bufsize) -> {:error, "bufsize out of u16 range"}
+      ctx.cd not in 0..1 -> {:error, "cd bit should be 0 or 1"}
+      ctx.class not in [:IN, :CH, :HS] -> {:error, "unknown DNS class: #{ctx.class}"}
+      ctx.do not in 0..1 -> {:error, "do bit should be 0 or 1"}
+      not is_integer(ctx.maxtime) -> {:error, "maxtime should be an integer"}
+      ctx.maxtime < 0 -> {:error, "maxtime should be positive integer"}
+      not check_nss(ctx.nameservers) -> {:error, "bad nameserver(s) #{inspect(ctx.nameservers)}"}
+      ctx.opcode not in 0..15 -> {:error, "opcode not in 0..15"}
+      ctx.rd not in 0..1 -> {:error, "rd bit should be 0 or 1"}
+      ctx.retry not in 0..5 -> {:error, "retry not in range 0..5"}
+      ctx.srvfail_wait not in 0..5000 -> {:error, "srvfail_wait not in 0..5000"}
+      not is_boolean(ctx.tcp) -> {:error, "tcp should be true of false"}
+      ctx.timeout not in 0..5000 -> {:error, "timeout not in 0..5000"}
       true -> {:ok, ctx}
+    end
+    |> case do
+      {:ok, ctx} ->
+        Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
+        resolvep(name, type, ctx)
+
+      {:error, reason} ->
+        Log.error("Option error: #{reason}")
+        {:error, {:option, reason}}
     end
   end
 
@@ -597,7 +608,7 @@ defmodule DNS do
     #   dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
     #
     #
-    # acutally, should check is previous zone is parent to new zone, otherwise its bogus...
+    # actually, should check is previous zone is parent to new zone, otherwise its bogus...
     match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
 
     case aut do
@@ -620,7 +631,7 @@ defmodule DNS do
   def reply_type(%{
         header: %{anc: anc, qdc: 1, rcode: :NOERROR},
         question: [%{type: qtype}],
-        answer: ans
+        answer: answer
       })
       when anc > 0 do
     # see also
@@ -638,8 +649,8 @@ defmodule DNS do
     # * if answer includes a :CNAME and no RR's of qtype, then
     #   nameserver is not authoritative for zone of canonical name
     #   and `resolve` will have to follow up on the canonical name
-    cname = Enum.any?(ans, fn rr -> rr.type == :CNAME end)
-    wants = Enum.any?(ans, fn rr -> rr.type == qtype end)
+    cname = Enum.any?(answer, fn rr -> rr.type == :CNAME end)
+    wants = Enum.any?(answer, fn rr -> rr.type == qtype end)
 
     cond do
       qtype == :CNAME -> :answer
@@ -670,7 +681,7 @@ defmodule DNS do
     # https://datatracker.ietf.org/doc/html/rfc5452.html#section-9.1
     # - not named in rfc5452, but rsp.header.qr must be 1 (!)
     # - [?] also check the opcode's line up
-    # - note: this says nothing about the contents of ans/aut/add sections
+    # - note: this says nothing about the contents of answer/aut/add sections
     #   some auth nameservers provide an actual reply with bogus content
     #   (e.g. aa=1, a=127.0.0.2, NS "" is localhost !, when asked for something
     #    they are not authoritative for ...)
