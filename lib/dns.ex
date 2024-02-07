@@ -219,6 +219,8 @@ defmodule DNS do
     #              do: [String.downcase(rr.rdmap.name) | acc],
     #             else: acc
     #             end)
+    # REVIEW: the rescue part is not necessary since a referral always has NS's..
+    #         just to be sure, maybe use List.first(nss)[:name] -> nil or binary
     with :referral <- reply_type(msg),
          glue <- Enum.filter(msg.additional, fn rr -> rr.type in [:A, :AAAA] end),
          glue <- Enum.map(glue, fn rr -> String.downcase(rr.name) end),
@@ -314,10 +316,14 @@ defmodule DNS do
             # https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1
             # https://datatracker.ietf.org/doc/rfc8914/ (extended DNS errors)
             # https://github.com/erlang/otp/blob/c55dc0d0a4a72fc59642aff186adde4621891cde/lib/kernel/src/inet_res.erl#L921
+            # REVIEW:
+            # try: aquiferadvies-nl.mail.protection.outlook.com, with do: 1
+            # -> FORMERROR apparently also mean EDNS is not supported
             case xrcode(msg) do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
                 Log.warning("dropping #{inspect(ns)}, due to (x)RCODE: #{rcode}")
+                Log.debug("msg was #{inspect(msg)}")
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
@@ -431,6 +437,9 @@ defmodule DNS do
     tstart = now()
     tstop = time(timeout)
 
+    # REVIEW: after decoding, rcode might indicate that's its no use retrying
+    # this server, e.g. FORMERR or NOTIMP or REFUSED.  In the case of FORMERR
+    # the rsp msg will have question/answer/authority/additional all empty (!)
     with {:ok, {_addr, _p, rsp}} <- :gen_udp.recv(sock, 0, timeout),
          {:ok, msg} <- Msg.decode(rsp),
          true <- reply?(qry, msg) do
@@ -440,9 +449,13 @@ defmodule DNS do
 
       {:ok, msg}
     else
-      false -> query_udp_recv(sock, qry, timeout(tstop))
+      false ->
+        Log.warning("retry udp_recv for #{inspect(qry.question)}")
+        query_udp_recv(sock, qry, timeout(tstop))
+
       # other is {:error, :not_owner | :timeout | :inet.posix | DNS.MsgError.t}
-      other -> other
+      other ->
+        other
     end
   end
 
@@ -641,11 +654,11 @@ defmodule DNS do
     # - https://blog.cloudflare.com/black-lies/
     # - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
     # REVIEW: use-cases in the wild:
-    #   dig www.azure.com @ns1.cloudns.net -> DNS hijacking:
+    # * dig www.azure.com @ns1.cloudns.net -> DNS hijacking:
     #   -> ANSWER w/ cloudns IP for site with ads, AUTHORITY with SOA for "" (!) <- :lame (!)
-    #   dig www.example.com @ns1.cloudns.net -> weird SOA record
+    # * dig www.example.com @ns1.cloudns.net -> weird SOA record
     #   -> ANSWER 0, AUTHORITY SOA example.com is ns1.cloudns.net (?)
-    #   dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
+    # * dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
     #
     #
     # actually, should check is previous zone is parent to new zone, otherwise its bogus...
@@ -719,31 +732,48 @@ defmodule DNS do
   @spec reply?(msg, msg) :: boolean
   defp reply?(qry, rsp) do
     # https://datatracker.ietf.org/doc/html/rfc5452.html#section-9.1
-    # - not named in rfc5452, but rsp.header.qr must be 1 (!)
-    # - [?] also check the opcode's line up
-    # - note: this says nothing about the contents of answer/aut/add sections
-    #   some auth nameservers provide an actual reply with bogus content
-    #   (e.g. aa=1, a=127.0.0.2, NS "" is localhost !, when asked for something
-    #    they are not authoritative for ...)
+    # `-> check srcIP, srcPort (see query_tcp/udp), ID, qname, qtype & qclass
+    # https://www.rfc-editor.org/rfc/rfc1035#section-4.1.1
+    # `-> rsp.header.qr must be set to 1 in a response
+    # `-> opcode set by originator and copied into response
+    # https://www.rfc-editor.org/rfc/rfc1035#section-7.3
+    # `-> match response (qtn) to current resolver requested info (qry.question)
+    # note:
+    # - a valid reply still might not be a useful answer
+    #   e.g. a :FORMERROR response usually has all sections (incl. qtn) empty
+    # - a msg with other RCODEs: qry.question and rsp.question should be same
     cond do
       qry.header.id != rsp.header.id ->
-        false
-
-      qry.header.opcode != rsp.header.opcode ->
+        Log.warning("ignoring reply: query ID does not match")
         false
 
       rsp.header.qr != 1 ->
+        Log.warning("ignoring reply: expected qr=1, got #{rsp.header.qr}")
         false
 
+      qry.header.opcode != rsp.header.opcode ->
+        Log.warning("ignoring reply: opcode #{qry.header.opcode} != #{rsp.header.opcode}")
+
+        false
+
+      rsp.header.opcode == :FORMERROR ->
+        true
+
+      # REVIEW: are there other RCODEs that might supersede the qry.qtn ==
+      # rsp.qtn check?
       length(qry.question) != length(rsp.question) ->
+        Log.warning("ignoring reply: question sections do not match")
+        Log.debug("- qry msg: #{inspect(qry)}")
+        Log.debug("- rsp msg: #{inspect(rsp)}")
+
         false
 
       true ->
-        # nowadays a question section with more than 1 question is unlikely,
-        # still it is possible.  Direct wdata comparison is not possible:
-        # - domain name compression might be present in the reply, or
-        # - domain name in reply might have different case (?)
-        # so qry/rsp names are normalized so both sort the same
+        # can't compare directly using question.wdata since:
+        # - there *could* be more than one question (unlikely though)
+        # - in which case name compression might be used in response
+        # - and character case might be different as well (also unlikely)
+        # - lastly, order of individual qtn's in question section may differ
         ql =
           qry.question
           |> Enum.map(fn q -> {elem(dname_normalize(q.name), 1), q.type, q.class} end)
