@@ -17,9 +17,10 @@ defmodule DNS do
   @type ns :: {:inet.ip_address(), non_neg_integer}
   @typedoc "A struct representing a nameserver message"
   @type msg :: DNS.Msg.t()
+  @type desc :: binary | DNS.ErrorMsg.t() | msg
   @typedoc "Reasons why resolving may fail"
   @type reason ::
-          :timeout
+          {:timeout, desc}
           | :servfail
           | DNS.MsgError.t()
           | :inet.posix()
@@ -208,36 +209,47 @@ defmodule DNS do
 
   @spec recurse_nss(msg, map, timeT) :: [ns]
   defp recurse_nss(msg, ctx, tstop) do
-    # - resolve non-glue NS in referral msg & return NSS, respecting maxtime
     # - glue NS A/AAAA RRs are already in the cache
     # - drop NS's that are subdomains of `zone` but not in glue records to avoid looping
+    # - then resolve remaining non-glued NS in referral msg & return NSS, respecting maxtime
+    # - be paranoid: accept only glue rrs with type  A/AAAA from additional
+    # FIXME: make stuff below simpler with Enum.reduce
+    #   glue = Enum.reduce(msg.additional, [], fn rr, acc ->
+    #            if rr.type in [:A, :AAAA],
+    #              do: [String.downcase(rr.rdmap.name) | acc],
+    #             else: acc
+    #             end)
     with :referral <- reply_type(msg),
-         zone <- hd(msg.authority).name,
-         rrs <- Enum.filter(msg.authority, fn rr -> rr.type == :NS end),
-         glue <- Enum.map(msg.additional, fn rr -> String.downcase(rr.name) end),
-         nsnames <- Enum.map(rrs, fn rr -> String.downcase(rr.rdmap.name) end),
+         glue <- Enum.filter(msg.additional, fn rr -> rr.type in [:A, :AAAA] end),
+         glue <- Enum.map(glue, fn rr -> String.downcase(rr.name) end),
+         nss <- Enum.filter(msg.authority, fn rr -> rr.type == :NS end),
+         zone <- hd(nss).name,
+         nsnames <- Enum.map(nss, fn rr -> String.downcase(rr.rdmap.name) end),
          nsnames <- Enum.filter(nsnames, fn name -> name not in glue end),
-         unglued <- Enum.filter(nsnames, fn name -> dname_subdomain?(name, zone) end) do
-      Log.info("#{hd(msg.question).name}, following referral to #{zone}")
-
+         missing <- Enum.filter(nsnames, fn name -> dname_subdomain?(name, zone) end),
+         nsnames <- nsnames -- missing do
       if glue != [],
         do: Log.info("glue ns: #{inspect(glue)}")
 
-      if unglued != [],
-        do: Log.warning("dropping NSs due to missing glue #{inspect(unglued)}")
+      if missing != [],
+        do: Log.warning("dropped NS's due to missing but required glue #{inspect(missing)}")
 
-      nsnames = nsnames -- unglued
+      # nsnames = nsnames -- unglued
 
       for name <- nsnames, type <- [:A, :AAAA] do
+        # resolvep NS names, so they end up in the cache
         ctx =
           ctx
           |> Map.put(:nameservers, nil)
+          |> Map.put(:recurse, true)
           |> Map.put(:maxtime, timeout(tstop))
-          |> Map.put(:rd, 1)
 
         case resolvep(name, type, ctx) do
-          {:ok, msg} -> msg.answer
-          _other -> [] |> IO.inspect(label: "!! could not resolve ns #{name} #{type}")
+          {:ok, msg} ->
+            msg.answer
+
+          _ ->
+            Log.error("could not resolve ns #{name} #{type}")
         end
       end
 
@@ -251,8 +263,18 @@ defmodule DNS do
 
   # [[ QUERY ]]
 
-  @spec query_nss([ns], DNS.Msg.t(), map, integer, non_neg_integer, [ns]) ::
-          {:ok, DNS.Msg.t()} | {:error, reason}
+  @spec query_nss([ns | {ns, integer}], DNS.Msg.t(), map, timeT, counter, [{ns, integer}]) ::
+          {:ok, msg}
+          | {:error,
+             :timeout
+             | :badarg
+             | :system_limit
+             | :not_owner
+             | :inet.posix()
+             | DNS.MsgError.t()
+             | :notreply
+             | {:timeout, binary}
+             | :closed}
   defp query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
     do: {:error, :timeout}
 
@@ -307,7 +329,18 @@ defmodule DNS do
     end
   end
 
-  @spec query_ns(ns, msg, map, timeT, counter) :: {:ok, msg} | {:error, reason}
+  @spec query_ns(ns, msg, map, timeT, counter) ::
+          {:ok, msg}
+          | {:error,
+             :timeout
+             | :badarg
+             | :system_limit
+             | :not_owner
+             | :inet.posix()
+             | DNS.MsgError.t()
+             | :notreply
+             | {:timeout, binary}
+             | :closed}
   defp query_ns(ns, qry, ctx, tstop, n) do
     # responsible for getting 1 answer from 1 nameserver
     # [?] should we fallback to plain dns in case EDNS leads to BADVERS?
@@ -331,13 +364,16 @@ defmodule DNS do
     end
   end
 
-  @spec query_udp(ns, msg, timeout, non_neg_integer) :: {:ok, msg} | {:error, reason}
+  @spec query_udp(ns, msg, timeout, non_neg_integer) ::
+          {:ok, msg}
+          | {:error,
+             :timeout | :badarg | :system_limit | :not_owner | :inet.posix() | DNS.MsgError.t()}
   defp query_udp(_ns, _qry, 0, _bufsize),
     do: {:error, :timeout}
 
   defp query_udp({ip, port}, qry, timeout, bufsize) do
     # query_udp_open protects against a process *exit* with :badarg
-    {:ok, sock} = query_udp_open(ip, port, bufsize)
+    {:ok, sock} = query_udp_open({ip, port}, bufsize)
 
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
@@ -360,12 +396,10 @@ defmodule DNS do
     e in MatchError -> e.term
   end
 
-  @spec query_udp_open(:inet.ip_address(), non_neg_integer, non_neg_integer) ::
-          {:ok, :gen_udp.socket()} | {:error, :system_limit | :badarg | :inet.posix()}
-  defp query_udp_open(ip, port, bufsize) do
+  @spec query_udp_open(ns, non_neg_integer) ::
+          {:ok, :gen_udp.socket()} | {:error, :badarg | :system_limit | :inet.posix()}
+  defp query_udp_open({ip, port}, bufsize) do
     # avoid exit :badarg from gen_udp.open
-    # gen_udp.open -> {ok, socket} | {:error, system_limit | :inet.posix()}
-    # or {:error, :badarg}
     iptype =
       case Pfx.type(ip) do
         :ip4 -> :inet
@@ -374,20 +408,23 @@ defmodule DNS do
 
     with true <- is_u16(port),
          true <- iptype in [:inet, :inet6] do
-      ctx = [:binary, iptype, active: false, recbuf: bufsize]
-      :gen_udp.open(0, ctx)
+      opts = [:binary, iptype, active: false, recbuf: bufsize]
+      :gen_udp.open(0, opts)
     else
       false -> {:error, :badarg}
     end
   end
 
-  @spec query_udp_recv(:inet.socket(), msg, timeout) :: {:ok, msg} | {:error, reason}
-  defp query_udp_recv(_sock, _qry, 0),
-    do: {:error, :timeout}
+  @spec query_udp_recv(:inet.socket(), msg, timeout) ::
+          {:ok, msg} | {:error, :not_owner | :timeout | :inet.posix() | DNS.MsgError.t()}
+  # reason: :not_owner, :timeout, :inet.posix
+  defp query_udp_recv(_sock, _qry, 0) do
+    {:error, :timeout}
+  end
 
   defp query_udp_recv(sock, qry, timeout) do
     # - if it's not an answer to the question, try again until timeout has passed
-    # - sock is connected, so addr,port *should* be ok
+    # - sock is connected, so `addr`,`port` *should* match `ip`,`p`
     {:ok, {ip, p}} = :inet.peername(sock)
     ns = inspect({ip, p})
     Log.info("resolving #{hd(qry.question).name} at #{ns}, timeout #{timeout} ms")
@@ -404,11 +441,15 @@ defmodule DNS do
       {:ok, msg}
     else
       false -> query_udp_recv(sock, qry, timeout(tstop))
+      # other is {:error, :not_owner | :timeout | :inet.posix | DNS.MsgError.t}
       other -> other
     end
   end
 
-  @spec query_tcp(ns, msg, timeout, timeT) :: {:ok, msg} | {:error, reason}
+  @spec query_tcp(ns, msg, timeout, timeT) ::
+          {:ok, msg}
+          | {:error,
+             :notreply | :timeout | {:timeout, binary} | :badarg | :closed | :inet.posix()}
   defp query_tcp(_ns, _qry, 0, _tstop),
     do: {:error, :timeout}
 
@@ -427,7 +468,7 @@ defmodule DNS do
       {:ok, msg}
     else
       false ->
-        {:error, :noreply}
+        {:error, :notreply}
 
       {:error, e} ->
         Log.warning("query_tcp error #{inspect(e)}")
@@ -435,11 +476,12 @@ defmodule DNS do
         {:error, e}
     end
   rescue
-    # when query_tcp_connect returns {:error, any}
+    # when query_tcp_connect returns {:error, ...} (see spec below)
     e in MatchError -> e.term
   end
 
-  @spec query_tcp_connect(ns, timeout, timeT) :: {:ok, :inet.socket()} | {:error, reason}
+  @spec query_tcp_connect(ns, timeout, timeT) ::
+          {:ok, :inet.socket()} | {:error, :badarg | :timeout | :inet.posix()}
   defp query_tcp_connect({ip, port}, timeout, tstop) do
     # avoid *exit* badarg by checking ip/port's validity
     Log.info("query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
@@ -751,7 +793,8 @@ defmodule DNS do
   end
 
   # wrap a nameserver with an absolute point in time,
-  # later on, when revisiting, we'll wait the remaining time
+  # later on, when `unwrap`ing, we'll wait the remaining time
+  @spec wrap(ns, non_neg_integer) :: {ns, integer}
   defp wrap(ns, timeout),
     do: {ns, time(timeout)}
 end
