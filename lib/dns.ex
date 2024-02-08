@@ -73,12 +73,19 @@ defmodule DNS do
   is added to the additional section of the `Msg`.
 
   """
-  @spec resolve(binary, type, Keyword.t()) :: {:ok, msg} | {:error, reason}
+  @spec resolve(binary, type, Keyword.t()) ::
+          {:ok, msg}
+          | {:error, {:option, binary}}
+          # resolvep
+          | {:error, {:query, binary}}
+          | {:error, {:timeout, binary}}
+          | {:error, {:retries, binary}}
+          # reply_handle (in resolvep)
+          | {:error, any}
   def resolve(name, type, opts \\ []) do
     # TODO: probably move Cache.init/1 to dnscheck.ex at some point
     Cache.init(clear: false)
     recurse = opts[:nameservers] == nil
-    Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
 
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
@@ -128,15 +135,30 @@ defmodule DNS do
     end
     |> case do
       {:ok, ctx} ->
+        Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
         resolvep(name, type, ctx)
 
-      error ->
-        Log.error("Option error: #{error}")
-        {:error, {:option, error}}
+      errmsg ->
+        # Log.error("Option error: #{errmsg}")
+        {:error, {:option, errmsg}}
     end
+  rescue
+    err in DNS.MsgError -> {:error, {:option, err.data}}
   end
 
-  @spec resolvep(binary, type, map) :: {:ok, msg} | {:error, reason} | {:error, {atom, msg}}
+  @spec resolvep(binary, type, map) ::
+          {:ok, msg}
+          # make_query
+          | {:error, {:query, binary}}
+          # query_nss
+          | {:error, {:timeout, binary}}
+          | {:error, {:retries, binary}}
+          # reply_handler
+          | {:error, {:lame, msg}}
+          | {:error, {:cname_loop, msg}}
+          # {:error, {:rzone_loop, msg}}
+          # catch all
+          | {:error, any}
   defp resolvep(name, type, ctx) do
     # resolvep called by:
     # - resolve to answer caller's query
@@ -168,8 +190,8 @@ defmodule DNS do
               # try www.azure.com for a cname chain
               reply_handler(qry, msg, ctx, tstop)
 
-            {:error, reason} ->
-              {:error, reason}
+            error ->
+              error
           end
 
         rrs ->
@@ -185,7 +207,17 @@ defmodule DNS do
 
   # [[ RECURSE ]]
 
-  @spec recurse(msg, msg, map, timeT) :: {:ok, msg} | {:error, {reason, msg}}
+  @spec recurse(msg, msg, map, timeT) ::
+          {:ok, msg}
+          # reply_handler
+          | {:error, {:cname_loop, msg}}
+          | {:error, {:lame, msg}}
+          | {:error, {:query, binary}}
+          # query_nss
+          | {:error, {:timeout, binary}}
+          | {:error, {:retries, binary}}
+          # catch all
+          | {:error, any}
   defp recurse(qry, msg, ctx, tstop) do
     # only to be called by reply_handler when following referral
     # - so same qry, different nameservers due to redirection
@@ -202,8 +234,12 @@ defmodule DNS do
          {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
       reply_handler(qry, msg, ctx, tstop)
     else
-      {:error, reason} -> {:error, {reason, msg}}
-      other -> {:error, other}
+      # was:
+      # {:error, reason} -> {:error, {reason, msg}}
+      # other -> {:error, other}
+      # REVIEW:
+      # - morph query_nss's {:error, {:timeout, binary}} to {:error, {:timeout, msg}} ???
+      error -> error
     end
   end
 
@@ -267,18 +303,11 @@ defmodule DNS do
 
   @spec query_nss([ns | {ns, integer}], DNS.Msg.t(), map, timeT, counter, [{ns, integer}]) ::
           {:ok, msg}
-          | {:error,
-             :timeout
-             | :badarg
-             | :system_limit
-             | :not_owner
-             | :inet.posix()
-             | DNS.MsgError.t()
-             | :notreply
-             | {:timeout, binary}
-             | :closed}
+          | {:error, {:timeout, binary}}
+          | {:error, {:retries, binary}}
+
   defp query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
-    do: {:error, :timeout}
+    do: {:error, {:timeout, "all nameservers failed to reply properly"}}
 
   defp query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
     Log.warn("retrying #{length(failed)} failed nameservers")
@@ -291,12 +320,10 @@ defmodule DNS do
 
     cond do
       timeout(tstop) == 0 ->
-        Log.error("global timeout for query reached")
-        {:error, :timeout}
+        {:error, {:timeout, "Query timeout for query reached"}}
 
       ctx.retry < nth ->
-        Log.error("maximum number of retries (#{nth}) reached")
-        {:error, :timeout}
+        {:error, {:retries, "Query max retries (#{nth}) reached"}}
 
       true ->
         ns = unwrap(ns)
@@ -308,7 +335,8 @@ defmodule DNS do
             query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
           {:error, reason} ->
-            # :system_limit | :not_owner | :inet.posix() | DNS.MsgError.t do not bode well for this ns
+            # REVIEW: some query_ns errors (e.g. :system_limit or :inet.posix()) might require a
+            # full stop here ...
             Log.warning("dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
             query_nss(nss, qry, ctx, tstop, nth, failed)
 
@@ -317,12 +345,11 @@ defmodule DNS do
             # https://datatracker.ietf.org/doc/rfc8914/ (extended DNS errors)
             # https://github.com/erlang/otp/blob/c55dc0d0a4a72fc59642aff186adde4621891cde/lib/kernel/src/inet_res.erl#L921
             # REVIEW:
-            # try: aquiferadvies-nl.mail.protection.outlook.com, with do: 1
-            # -> FORMERROR apparently also mean EDNS is not supported
+            # - a reply with FORMERROR may also mean EDNS is not supported by NS
             case xrcode(msg) do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
-                Log.warning("dropping #{inspect(ns)}, due to (x)RCODE: #{rcode}")
+                Log.warning("dropping ns #{inspect(ns)}: it replied with (x)RCODE: #{rcode}")
                 Log.debug("msg was #{inspect(msg)}")
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
@@ -518,7 +545,7 @@ defmodule DNS do
 
   # [[ MAKE QRY/RSP MSG ]]
 
-  @spec make_query(binary, type, map) :: {:ok, msg} | {:error, any}
+  @spec make_query(binary, type, map) :: {:ok, msg} | {:error, {:query, binary}}
   defp make_query(name, type, ctx) do
     # assumes ctx is safe (made by resolve_contextp and maybe updated on recursion)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
@@ -541,14 +568,30 @@ defmodule DNS do
     qtn_opts = [[name: name, type: type, class: ctx.class]]
     hdr_opts = [rd: ctx.rd, cd: ctx.cd, opcode: ctx.opcode, id: Enum.random(0..65535)]
 
-    case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
-      {:ok, qry} -> Msg.encode(qry)
-      {:error, e} -> {:error, e.data}
+    with {:ok, msg} <- Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts),
+         {:ok, qry} <- Msg.encode(msg) do
+      {:ok, qry}
+    else
+      {:error, dnsMsgErr} -> {:error, {:query, "#{inspect(dnsMsgErr.data)}"}}
     end
+
+    # case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
+    #   {:ok, qry} -> Msg.encode(qry)
+    #   error -> error
+    # end
   end
 
   # [[ REPLIES ]]
-  @spec reply_handler(msg, msg, map, timeT) :: {:ok, msg} | {:error, {atom, msg}}
+  @spec reply_handler(msg, msg, map, timeT) ::
+          {:ok, msg}
+          | {:error, {:lame, msg}}
+          | {:error, {:cname_loop, msg}}
+          # resolvep
+          | {:error, {:query, binary}}
+          | {:error, {:timeout, binary}}
+          | {:error, {:retries, binary}}
+          # recurse catch all
+          | {:error, any}
   defp reply_handler(_qry, msg, %{recurse: false}, _tstop) do
     case reply_type(msg) do
       :lame ->
@@ -576,10 +619,11 @@ defmodule DNS do
 
       :cname ->
         rr = Enum.find(msg.answer, fn rr -> rr.type == :CNAME end)
+        # REVIEW: handle a {:error, :eencode} return from dname_normalize
         {:ok, cname} = dname_normalize(rr.rdmap.name)
 
         if Enum.member?(ctx.cnames, cname) do
-          Log.warning("cname loop detected for cname #{rr.name} CNAME  #{cname}")
+          Log.warning("cname loop detected for cname #{rr.name} CNAME #{cname}")
           {:error, {:cname_loop, msg}}
         else
           ctx =

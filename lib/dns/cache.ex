@@ -35,6 +35,9 @@ defmodule DNS.Cache do
   alias Logger, as: Log
   require Logger
 
+  @type key :: {binary, non_neg_integer, non_neg_integer}
+  @type rr :: DNS.Msg.RR.t()
+
   @doc """
   Creates and initializes to an empty cache.
 
@@ -288,7 +291,7 @@ defmodule DNS.Cache do
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
-        Log.info("{#{name}, #{class}, #{type}} -> removing #{length(dead)} casulties")
+        Log.info("{#{name}, #{class}, #{type}} -> removing #{length(dead)} expired RR(s)")
 
         if rrs == [],
           do: :ets.delete(@cache, key),
@@ -425,8 +428,10 @@ defmodule DNS.Cache do
     _ -> false
   end
 
+  @spec lookup(key) :: {:ok, [rr]}
   defp lookup(key) do
     # an empty result list is :ok too (for put)
+    # REVIEW: @spec lookup(key) :: [rr], do not need {:ok, ...}
     case :ets.lookup(@cache, key) do
       [] -> {:ok, []}
       [{^key, rrs}] -> {:ok, rrs}
