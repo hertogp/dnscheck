@@ -275,7 +275,7 @@ defmodule DNS.Cache do
         rdata: "",
         wdata: ""}
       ]
-      iex> Process.sleep(1500)
+      iex> Process.sleep(1800)
       iex> DNS.Cache.get("example.com", :IN, :A)
       []
 

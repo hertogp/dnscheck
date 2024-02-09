@@ -80,8 +80,9 @@ defmodule DNS do
           | {:error, {:query, binary}}
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
-          # reply_handle (in resolvep)
-          | {:error, any}
+          | {:error, {:lame, msg}}
+          # {:error, {:rzone_loop, msg}}
+          | {:error, {:cname_loop, msg}}
   def resolve(name, type, opts \\ []) do
     # TODO: probably move Cache.init/1 to dnscheck.ex at some point
     Cache.init(clear: false)
@@ -108,7 +109,7 @@ defmodule DNS do
       # referral loops are bounded by iterative query, so:
       # - is (re)set each time a new iteration starts (via resolvep)
       # - is updated by reply_handler when following referrals
-      zones: [""],
+      zones: ["."],
       # cname loops cross the boundary of iterative queries, so:
       # - is initialized for each new caller's query
       # - is updated by reply_handler when following cname(s)
@@ -138,11 +139,11 @@ defmodule DNS do
         Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
         resolvep(name, type, ctx)
 
-      errmsg ->
-        # Log.error("Option error: #{errmsg}")
-        {:error, {:option, errmsg}}
+      erropt ->
+        {:error, {:option, erropt}}
     end
   rescue
+    # Terms.en/decode may raise an DNS.MsgError
     err in DNS.MsgError -> {:error, {:option, err.data}}
   end
 
@@ -155,10 +156,8 @@ defmodule DNS do
           | {:error, {:retries, binary}}
           # reply_handler
           | {:error, {:lame, msg}}
-          | {:error, {:cname_loop, msg}}
           # {:error, {:rzone_loop, msg}}
-          # catch all
-          | {:error, any}
+          | {:error, {:cname_loop, msg}}
   defp resolvep(name, type, ctx) do
     # resolvep called by:
     # - resolve to answer caller's query
@@ -210,14 +209,13 @@ defmodule DNS do
   @spec recurse(msg, msg, map, timeT) ::
           {:ok, msg}
           # reply_handler
+          # {:error, {:rzone_loop, msg}}
           | {:error, {:cname_loop, msg}}
           | {:error, {:lame, msg}}
           | {:error, {:query, binary}}
           # query_nss
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
-          # catch all
-          | {:error, any}
   defp recurse(qry, msg, ctx, tstop) do
     # only to be called by reply_handler when following referral
     # - so same qry, different nameservers due to redirection
@@ -307,7 +305,7 @@ defmodule DNS do
           | {:error, {:retries, binary}}
 
   defp query_nss([] = _nss, _qry, _ctx, _tstop, _nth, [] = _failed),
-    do: {:error, {:timeout, "all nameservers failed to reply properly"}}
+    do: {:error, {:timeout, "nameserver(s) failed to reply properly"}}
 
   defp query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
     Log.warn("retrying #{length(failed)} failed nameservers")
@@ -586,12 +584,11 @@ defmodule DNS do
           {:ok, msg}
           | {:error, {:lame, msg}}
           | {:error, {:cname_loop, msg}}
-          # resolvep
+          # {:error, {:rzone_loop, msg}}
+          # resolvep/recurse
           | {:error, {:query, binary}}
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
-          # recurse catch all
-          | {:error, any}
   defp reply_handler(_qry, msg, %{recurse: false}, _tstop) do
     case reply_type(msg) do
       :lame ->
