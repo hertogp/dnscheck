@@ -706,7 +706,6 @@ defmodule DNS do
     #
     #
     # actually, should check is previous zone is parent to new zone, otherwise its bogus...
-    match = fn zone -> dname_subdomain?(qname, zone) or dname_equal?(qname, zone) end
 
     case aut do
       [] ->
@@ -715,7 +714,7 @@ defmodule DNS do
 
       _ ->
         soa = Enum.any?(aut, fn rr -> rr.type == :SOA end)
-        nss = Enum.any?(aut, fn rr -> rr.type == :NS and match.(rr.name) end)
+        nss = Enum.any?(aut, fn rr -> rr.type == :NS and dname_indomain?(qname, rr.name) end)
 
         cond do
           soa -> :nodata
@@ -741,25 +740,15 @@ defmodule DNS do
     # * if answer includes a :CNAME and some RR's of qtype, then we assume:
     #   - that ns is also authoritative for the cname, and
     #   - that the RR's with qtype are for the cname given
-    #   otherwise the :answer would actually be :lame. For now that is
-    #   up to the caller to detect/decide
+    #   otherwise the :answer is actually :lame
     #   TODO: should we check those RR's of qtype are for the cname?
     # * if answer includes a :CNAME and no RR's of qtype, then
     #   nameserver is not authoritative for zone of canonical name
     #   and `resolve` will have to follow up on the canonical name
-    upward? = fn zone ->
-      cond do
-        zone == "" -> true
-        zone == "." -> true
-        dname_subdomain?(qname, zone) -> false
-        dname_equal?(qname, zone) -> false
-        true -> true
-      end
-    end
 
     cname = Enum.any?(answer, fn rr -> rr.type == :CNAME end)
     wants = Enum.any?(answer, fn rr -> rr.type == qtype end)
-    upref = Enum.any?(authority, fn rr -> rr.type == :NS and upward?.(rr.name) end)
+    upref = Enum.any?(authority, fn rr -> rr.type == :NS and upward?(qname, rr.name) end)
 
     cond do
       qtype == :CNAME -> :answer
@@ -772,6 +761,14 @@ defmodule DNS do
 
   defp reply_type(_),
     do: :answer
+
+  defp upward?(qname, zone) do
+    cond do
+      zone in ["", "."] -> true
+      dname_indomain?(qname, zone) -> false
+      true -> true
+    end
+  end
 
   # [[ NSS helpers ]]
 
