@@ -151,10 +151,9 @@ defmodule DNS do
           {:ok, msg}
           # make_query
           | {:error, {:query, binary}}
-          # query_nss
+          # query_nss/reply_handler
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
-          # reply_handler
           | {:error, {:lame, msg}}
           # {:error, {:rzone_loop, msg}}
           | {:error, {:cname_loop, msg}}
@@ -232,11 +231,6 @@ defmodule DNS do
          {:ok, msg} <- query_nss(nss, qry, ctx, tstop, 0, []) do
       reply_handler(qry, msg, ctx, tstop)
     else
-      # was:
-      # {:error, reason} -> {:error, {reason, msg}}
-      # other -> {:error, other}
-      # REVIEW:
-      # - morph query_nss's {:error, {:timeout, binary}} to {:error, {:timeout, msg}} ???
       error -> error
     end
   end
@@ -270,8 +264,10 @@ defmodule DNS do
       if missing != [],
         do: Log.warning("dropped NS's due to missing but required glue #{inspect(missing)}")
 
-      # nsnames = nsnames -- unglued
-
+      # TODO: put ns in nss as: {:inet.address, 53} or {fqdn} and only resolve
+      # fqdn when needed.  Requires different handling of Cache.nss's response
+      # Reason: we're pre-fetching nameservers that might never be used ...
+      # which takes time and slows down the processin of caller's query.
       for name <- nsnames, type <- [:A, :AAAA] do
         # resolvep NS names, so they end up in the cache
         ctx =
@@ -353,7 +349,9 @@ defmodule DNS do
 
               _ ->
                 # the only place where msg is offered to the cache
-                Cache.put(msg)
+                # TODO: move to reply_handler, we donot wat to cache RR's from
+                # e.g. :lame responses ..
+                # Cache.put(msg)
                 {:ok, msg}
             end
         end
@@ -592,11 +590,12 @@ defmodule DNS do
   defp reply_handler(_qry, msg, %{recurse: false}, _tstop) do
     case reply_type(msg) do
       :lame ->
-        Log.warning("lame reply for #{msg.question}")
+        Log.warning("lame reply for #{inspect(msg.question)}")
         Log.debug("lame reply msg was #{msg}")
         {:error, {:lame, msg}}
 
       _ ->
+        Cache.put(msg)
         {:ok, msg}
     end
   end
@@ -606,15 +605,18 @@ defmodule DNS do
 
     case reply_type(msg) do
       :answer ->
+        Cache.put(msg)
         {:ok, msg}
 
       :referral ->
         # TODO: loop detection for referrals goes here
         zone = hd(msg.authority).name
         Log.info("#{qtn.name} #{qtn.type} - got referral to #{zone}")
+        Cache.put(msg)
         recurse(qry, msg, ctx, tstop)
 
       :cname ->
+        Cache.put(msg)
         rr = Enum.find(msg.answer, fn rr -> rr.type == :CNAME end)
         # REVIEW: handle a {:error, :eencode} return from dname_normalize
         {:ok, cname} = dname_normalize(rr.rdmap.name)
@@ -654,6 +656,7 @@ defmodule DNS do
 
       :nodata ->
         Log.info("got a NODATA reply to #{qry}")
+        # Cache.put(msg)
         {:ok, msg}
 
       :lame ->
@@ -724,8 +727,9 @@ defmodule DNS do
 
   defp reply_type(%{
          header: %{anc: anc, qdc: 1, rcode: :NOERROR},
-         question: [%{type: qtype}],
-         answer: answer
+         question: [%{name: qname, type: qtype}],
+         answer: answer,
+         authority: authority
        })
        when anc > 0 do
     # see also
@@ -743,11 +747,23 @@ defmodule DNS do
     # * if answer includes a :CNAME and no RR's of qtype, then
     #   nameserver is not authoritative for zone of canonical name
     #   and `resolve` will have to follow up on the canonical name
+    upward? = fn zone ->
+      cond do
+        zone == "" -> true
+        zone == "." -> true
+        dname_subdomain?(qname, zone) -> false
+        dname_equal?(qname, zone) -> false
+        true -> true
+      end
+    end
+
     cname = Enum.any?(answer, fn rr -> rr.type == :CNAME end)
     wants = Enum.any?(answer, fn rr -> rr.type == qtype end)
+    upref = Enum.any?(authority, fn rr -> rr.type == :NS and upward?.(rr.name) end)
 
     cond do
       qtype == :CNAME -> :answer
+      upref -> :lame
       wants -> :answer
       cname -> :cname
       true -> :lame
@@ -800,8 +816,7 @@ defmodule DNS do
       rsp.header.opcode == :FORMERROR ->
         true
 
-      # REVIEW: are there other RCODEs that might supersede the qry.qtn ==
-      # rsp.qtn check?
+      # REVIEW: are there other RCODEs that might have qry.questions == []?
       length(qry.question) != length(rsp.question) ->
         Log.warning("ignoring reply: question sections do not match")
         Log.debug("- qry msg: #{inspect(qry)}")

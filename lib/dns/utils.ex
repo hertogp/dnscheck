@@ -394,7 +394,6 @@ defmodule DNS.Utils do
       iex> dname_subdomain?("example.com.", "net")
       false
 
-
   """
   @spec dname_subdomain?(binary, binary) :: boolean
   def dname_subdomain?(child, parent) do
@@ -404,6 +403,46 @@ defmodule DNS.Utils do
     if length(child) > length(parent),
       do: List.starts_with?(Enum.reverse(child), Enum.reverse(parent)),
       else: false
+  rescue
+    _ -> false
+  end
+
+  @doc """
+  Returns true is `child` is a subzone or same as the `ancestor`, false otherwise.
+
+  Also returns false if either child or ancestor has:
+  - a label longer than 63 octets
+  - an empty label
+
+  ## Examples
+
+      iex> dname_indomain?("example.COM", "com")
+      true
+
+      iex> dname_indomain?("host.example.com", "example.com")
+      true
+
+      iex> dname_indomain?("example.com.", "com")
+      true
+
+      iex> dname_indomain?("example.com.", "example.com")
+      true
+
+      iex> dname_indomain?("example.com.", "net")
+      false
+
+  """
+  # https://www.rfc-editor.org/rfc/rfc8499#section-7
+  @spec dname_indomain?(binary, binary) :: boolean
+  def dname_indomain?(child, ancestor) do
+    {:ok, child} = dname_normalize(child, join: false)
+    {:ok, ancestor} = dname_normalize(ancestor, join: false)
+    child = Enum.reverse(child)
+    ancestor = Enum.reverse(ancestor)
+
+    if length(child) < length(ancestor),
+      do: false,
+      else: List.starts_with?(child, ancestor)
   rescue
     _ -> false
   end
@@ -570,7 +609,7 @@ defmodule DNS.Utils do
     do: System.monotonic_time(:millisecond)
 
   @doc false
-  # create a (usually future), monotonic point in time
+  # create a (usually future), monotonic point in time, timeout ms from now
   def time(timeout),
     do: now() + timeout
 
@@ -592,9 +631,8 @@ defmodule DNS.Utils do
   def wait(0),
     do: :ok
 
-  # wait for `time` ms
+  # wait for `time` ms, don't match any messages
   def wait(time) do
-    # don't match any messages!
     receive do
     after
       time -> :ok
