@@ -116,9 +116,9 @@ defmodule DNS do
       timeout: Keyword.get(opts, :timeout, 2_000),
       # house keeping
       recurse: recurse,
-      name: name,
-      type: type,
-      zones: ["."],
+      # name: name,
+      # type: type,
+      rzones: ["."],
       cnames: [name]
     }
 
@@ -587,20 +587,20 @@ defmodule DNS do
         {:ok, msg}
 
       :referral ->
-        # TODO: loop detection for referrals goes here
+        # referral loop detection using ctx.zones
         zone = hd(msg.authority).name
         Log.info("#{qtn.name} #{qtn.type} - got referral to #{zone}")
-        seen = Enum.any?(ctx.zones, fn rzone -> dname_equal?(rzone, zone) end)
+        # seen = Enum.any?(ctx.zones, fn rzone -> dname_equal?(rzone, zone) end)
+        seen = Enum.any?(ctx.rzones, &dname_equal?(&1, zone))
 
         if seen do
-          Log.error("zone #{zone} seen before: #{inspect(ctx.zones)}")
+          Log.error("zone #{zone} seen before: #{inspect(ctx.rzones)}")
           {:error, {:rzone_loop, msg}}
         else
           Cache.put(msg)
-          # ctx = %{ctx | zones: [zone | ctx.zones]}
-          ctx = Map.put(ctx, :zones, [zone | ctx.zones])
-          info = "qname=#{qtn.name} -> zones seen are: #{inspect(ctx.zones)}"
-          Log.debug(info)
+          ctx = %{ctx | rzones: [zone | ctx.rzones]}
+          # ctx = Map.put(ctx, :zones, [zone | ctx.zones])
+          Log.debug("qname=#{qtn.name} -> zones seen are: #{inspect(ctx.rzones)}")
           recurse(qry, msg, ctx, tstop)
         end
 
@@ -610,8 +610,10 @@ defmodule DNS do
         # REVIEW: handle a {:error, :eencode} return from dname_normalize
         {:ok, cname} = dname_normalize(rr.rdmap.name)
 
+        # cname loop detection using ctx.cnames
         if Enum.member?(ctx.cnames, cname) do
           Log.warning("cname loop detected for cname #{rr.name} CNAME #{cname}")
+          Log.warning("cnames seen before: #{inspect(ctx.cnames)}")
           {:error, {:cname_loop, msg}}
         else
           ctx =
