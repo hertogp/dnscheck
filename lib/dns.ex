@@ -587,10 +587,9 @@ defmodule DNS do
         {:ok, msg}
 
       :referral ->
-        # referral loop detection using ctx.zones
+        # referral loop detection using ctx.rzones
         zone = hd(msg.authority).name
         Log.info("#{qtn.name} #{qtn.type} - got referral to #{zone}")
-        # seen = Enum.any?(ctx.zones, fn rzone -> dname_equal?(rzone, zone) end)
         seen = Enum.any?(ctx.rzones, &dname_equal?(&1, zone))
 
         if seen do
@@ -598,8 +597,11 @@ defmodule DNS do
           {:error, {:rzone_loop, msg}}
         else
           Cache.put(msg)
-          ctx = %{ctx | rzones: [zone | ctx.rzones]}
+          # these are fine:
+          # ctx = %{ctx | rzones: [zone | ctx[:rzones]]}
           # ctx = Map.put(ctx, :zones, [zone | ctx.zones])
+          # below yields complaint (when using "#{inspect(ctx.rzones)}"
+          ctx = %{ctx | rzones: [zone | ctx[:rzones]]}
           Log.debug("qname=#{qtn.name} -> zones seen are: #{inspect(ctx.rzones)}")
           recurse(qry, msg, ctx, tstop)
         end
@@ -612,12 +614,11 @@ defmodule DNS do
 
         # cname loop detection using ctx.cnames
         if Enum.member?(ctx.cnames, cname) do
-          Log.warning("cname loop detected for cname #{rr.name} CNAME #{cname}")
-          Log.warning("cnames seen before: #{inspect(ctx.cnames)}")
+          Log.error("cname #{cname} seen before: #{inspect(ctx.cnames)}")
           {:error, {:cname_loop, msg}}
         else
           ctx =
-            %{ctx | cnames: [cname | ctx.cnames]}
+            %{ctx | cnames: [cname | ctx[:cnames]]}
             |> Map.delete(:nameservers)
             |> Map.put(:maxtime, timeout(tstop))
             |> Map.put(:rd, 0)
