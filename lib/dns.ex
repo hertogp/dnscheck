@@ -81,12 +81,14 @@ defmodule DNS do
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
           | {:error, {:lame, msg}}
-          # {:error, {:rzone_loop, msg}}
+          | {:error, {:rzone_loop, msg}}
           | {:error, {:cname_loop, msg}}
+
   def resolve(name, type, opts \\ []) do
     # TODO: probably move Cache.init/1 to dnscheck.ex at some point
     Cache.init(clear: false)
     recurse = opts[:nameservers] == nil
+    Log.info("User query for #{name}, #{type}, recurse: #{recurse}.")
 
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
@@ -106,13 +108,13 @@ defmodule DNS do
       recurse: recurse,
       name: name,
       type: type,
-      # referral loops are bounded by iterative query, so:
-      # - is (re)set each time a new iteration starts (via resolvep)
-      # - is updated by reply_handler when following referrals
+      # ctx.zones is per iterative query
+      # - is (re)set each time a new iteration starts (in resolvep)
+      # - is updated when following referrals (by reply_handler)s
       zones: ["."],
-      # cname loops cross the boundary of iterative queries, so:
-      # - is initialized for each new caller's query
-      # - is updated by reply_handler when following cname(s)
+      # ctx.cnames spans across iterative queries
+      # - is initialized for each new caller's query (i.e. here)
+      # - is updated when following cnames (by reply_handler)
       cnames: [name]
     }
 
@@ -135,12 +137,8 @@ defmodule DNS do
       true -> {:ok, ctx}
     end
     |> case do
-      {:ok, ctx} ->
-        Log.info("Start user query for #{name}, #{type}, recurse: #{recurse}.")
-        resolvep(name, type, ctx)
-
-      erropt ->
-        {:error, {:option, erropt}}
+      {:ok, ctx} -> resolvep(name, type, ctx)
+      error -> {:error, {:option, error}}
     end
   rescue
     # Terms.en/decode may raise an DNS.MsgError
@@ -155,7 +153,7 @@ defmodule DNS do
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
           | {:error, {:lame, msg}}
-          # {:error, {:rzone_loop, msg}}
+          | {:error, {:rzone_loop, msg}}
           | {:error, {:cname_loop, msg}}
   defp resolvep(name, type, ctx) do
     # resolvep called by:
@@ -164,38 +162,23 @@ defmodule DNS do
     # - resolve_handler, to follow cnames and/or referrals
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
-         cached <- Cache.get(qname, ctx.class, type) do
+         cached <- Cache.get(qname, ctx.class, type),
+         tstop <- time(ctx.maxtime) do
       Log.info("iterative mode is #{ctx.recurse}")
 
       case cached do
         [] ->
           nss = ctx[:nameservers] || Cache.nss(qname)
           Log.info("#{name} #{type} got #{length(nss)} nameservers")
-          tstop = time(ctx.maxtime)
 
           case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
-            {:ok, msg} ->
-              xrcode = xrcode(msg)
-              anc = msg.header.anc
-              nsc = msg.header.nsc
-              arc = msg.header.arc
-              rsp_type = reply_type(msg)
-
-              Log.info(
-                "qry #{qname} #{type} -> reply (#{rsp_type}): #{xrcode}, ANSWERS #{anc}, AUTHORITY #{nsc}, ADDITIONAL #{arc}"
-              )
-
-              # try www.azure.com for a cname chain
-              reply_handler(qry, msg, ctx, tstop)
-
-            error ->
-              error
+            {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
+            error -> error
           end
 
         rrs ->
-          Log.info("using #{length(rrs)} cached RR's")
+          Log.info("answering from cache, using #{length(rrs)} RR's")
           {:ok, msg} = reply_make(qry, rrs)
-          tstop = time(ctx.maxtime)
           reply_handler(qry, msg, ctx, tstop)
       end
     else
@@ -208,7 +191,7 @@ defmodule DNS do
   @spec recurse(msg, msg, map, timeT) ::
           {:ok, msg}
           # reply_handler
-          # {:error, {:rzone_loop, msg}}
+          | {:error, {:rzone_loop, msg}}
           | {:error, {:cname_loop, msg}}
           | {:error, {:lame, msg}}
           | {:error, {:query, binary}}
@@ -344,7 +327,6 @@ defmodule DNS do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
                 Log.warning("dropping ns #{inspect(ns)}: it replied with (x)RCODE: #{rcode}")
-                Log.debug("msg was #{inspect(msg)}")
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
@@ -372,7 +354,7 @@ defmodule DNS do
              | :closed}
   defp query_ns(ns, qry, ctx, tstop, n) do
     # responsible for getting 1 answer from 1 nameserver
-    # [?] should we fallback to plain dns in case EDNS leads to BADVERS?
+    # REVIEW: perhaps fallback to plain dns when EDNS leads to BADVERS or FORMERROR ?
     bufsize = ctx.bufsize
     timeout = ctx.timeout
     payload = byte_size(qry.wdata)
@@ -401,17 +383,16 @@ defmodule DNS do
     do: {:error, :timeout}
 
   defp query_udp({ip, port}, qry, timeout, bufsize) do
-    # query_udp_open protects against a process *exit* with :badarg
+    # note that:
+    # - query_udp_open uses random src port for each query
+    # - :gen_udp.connect ensures incoming data arrived at our src IP:port
+    # - query_udp_recv ensures qry/msg ID's are equal and msg's qr=1
+    # the higher ups will need to decide on how to handle the reply
     {:ok, sock} = query_udp_open({ip, port}, bufsize)
 
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
          {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
-      # note that:
-      # - query_udp_open uses random src port for each query
-      # - :gen_udp.connect ensures incoming data arrived at our src IP & port
-      # - query_udp_recv ensures qry/msg ID's are equal and msg's qr=1
-      # the higher ups will need to deal with how to handle the reply
       :gen_udp.close(sock)
       {:ok, msg}
     else
@@ -428,7 +409,7 @@ defmodule DNS do
   @spec query_udp_open(ns, non_neg_integer) ::
           {:ok, :gen_udp.socket()} | {:error, :badarg | :system_limit | :inet.posix()}
   defp query_udp_open({ip, port}, bufsize) do
-    # avoid exit :badarg from gen_udp.open
+    # avoid *process exit* (!) with :badarg from :gen_udp.open
     iptype =
       case Pfx.type(ip) do
         :ip4 -> :inet
@@ -446,7 +427,7 @@ defmodule DNS do
 
   @spec query_udp_recv(:inet.socket(), msg, timeout) ::
           {:ok, msg} | {:error, :not_owner | :timeout | :inet.posix() | DNS.MsgError.t()}
-  # reason: :not_owner, :timeout, :inet.posix
+
   defp query_udp_recv(_sock, _qry, 0) do
     {:error, :timeout}
   end
@@ -570,11 +551,6 @@ defmodule DNS do
     else
       {:error, dnsMsgErr} -> {:error, {:query, "#{inspect(dnsMsgErr.data)}"}}
     end
-
-    # case Msg.new(hdr: hdr_opts, qtn: qtn_opts, add: edns_opts) do
-    #   {:ok, qry} -> Msg.encode(qry)
-    #   error -> error
-    # end
   end
 
   # [[ REPLIES ]]
@@ -582,7 +558,7 @@ defmodule DNS do
           {:ok, msg}
           | {:error, {:lame, msg}}
           | {:error, {:cname_loop, msg}}
-          # {:error, {:rzone_loop, msg}}
+          | {:error, {:rzone_loop, msg}}
           # resolvep/recurse
           | {:error, {:query, binary}}
           | {:error, {:timeout, binary}}
@@ -612,8 +588,19 @@ defmodule DNS do
         # TODO: loop detection for referrals goes here
         zone = hd(msg.authority).name
         Log.info("#{qtn.name} #{qtn.type} - got referral to #{zone}")
-        Cache.put(msg)
-        recurse(qry, msg, ctx, tstop)
+        seen = Enum.any?(ctx.zones, fn rzone -> dname_equal?(rzone, zone) end)
+
+        if seen do
+          Log.error("zone #{zone} seen before: #{inspect(ctx.zones)}")
+          {:error, {:rzone_loop, msg}}
+        else
+          Cache.put(msg)
+          # ctx = %{ctx | zones: [zone | ctx.zones]}
+          ctx = Map.put(ctx, :zones, [zone | ctx.zones])
+          info = "qname=#{qtn.name} -> zones seen are: #{inspect(ctx.zones)}"
+          Log.debug(info)
+          recurse(qry, msg, ctx, tstop)
+        end
 
       :cname ->
         Cache.put(msg)
@@ -697,14 +684,6 @@ defmodule DNS do
     # - https://datatracker.ietf.org/doc/rfc9471/  (glue records)
     # - https://blog.cloudflare.com/black-lies/
     # - https://datatracker.ietf.org/doc/html/draft-valsorda-dnsop-black-lies
-    # REVIEW: use-cases in the wild:
-    # * dig www.azure.com @ns1.cloudns.net -> DNS hijacking:
-    #   -> ANSWER w/ cloudns IP for site with ads, AUTHORITY with SOA for "" (!) <- :lame (!)
-    # * dig www.example.com @ns1.cloudns.net -> weird SOA record
-    #   -> ANSWER 0, AUTHORITY SOA example.com is ns1.cloudns.net (?)
-    # * dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
-    #
-    #
     # actually, should check is previous zone is parent to new zone, otherwise its bogus...
 
     case aut do
@@ -745,6 +724,12 @@ defmodule DNS do
     # * if answer includes a :CNAME and no RR's of qtype, then
     #   nameserver is not authoritative for zone of canonical name
     #   and `resolve` will have to follow up on the canonical name
+    # REVIEW: use-cases in the wild:
+    # * dig www.azure.com @ns1.cloudns.net -> DNS hijacking:
+    #   -> ANSWER w/ cloudns IP for site with ads, AUTHORITY with SOA for "" (!) <- :lame (!)
+    # * dig www.example.com @ns1.cloudns.net -> weird SOA record
+    #   -> AA=1, ANSWER 0, AUTHORITY SOA example.com is ns1.cloudns.net (?)
+    # * dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
 
     cname = Enum.any?(answer, fn rr -> rr.type == :CNAME end)
     wants = Enum.any?(answer, fn rr -> rr.type == qtype end)
