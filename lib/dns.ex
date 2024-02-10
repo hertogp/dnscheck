@@ -85,7 +85,17 @@ defmodule DNS do
           | {:error, {:cname_loop, msg}}
 
   def resolve(name, type, opts \\ []) do
-    # TODO: probably move Cache.init/1 to dnscheck.ex at some point
+    # notes
+    # ctx.zones -> detect referral loop (per iterative query)
+    # - is (re)set each time a new iteration starts (in resolvep)
+    # - is updated when following referrals (by reply_handler)s
+    # ctx.cnames -> detect cname loops (across iterative queries)
+    # - is initialized for each new caller's query (i.e. here)
+    # - is updated when following cnames (by reply_handler)
+    # TODO:
+    # [ ] put limit on length of CNAME-chain, e.g. 10?
+    # [ ] put limit on number of referrals to follow, e.g. 10?
+    # [ ] probably move Cache.init/1 to dnscheck.ex at some point
     Cache.init(clear: false)
     recurse = opts[:nameservers] == nil
     Log.info("User query for #{name}, #{type}, recurse: #{recurse}.")
@@ -108,18 +118,10 @@ defmodule DNS do
       recurse: recurse,
       name: name,
       type: type,
-      # ctx.zones is per iterative query
-      # - is (re)set each time a new iteration starts (in resolvep)
-      # - is updated when following referrals (by reply_handler)s
       zones: ["."],
-      # ctx.cnames spans across iterative queries
-      # - is initialized for each new caller's query (i.e. here)
-      # - is updated when following cnames (by reply_handler)
       cnames: [name]
     }
 
-    # TODO: put limit on length of CNAME-chain, e.g. 10?
-    # TODO: put limit on number of referrals to follow, e.g. 10?
     cond do
       not is_u16(ctx.bufsize) -> "bufsize out of u16 range"
       ctx.cd not in 0..1 -> "cd bit should be 0 or 1"
