@@ -251,8 +251,8 @@ defmodule DNS do
 
       # TODO: put ns in nss as: {:inet.address, 53} or {fqdn} and only resolve
       # fqdn when needed.  Requires different handling of Cache.nss's response
-      # Reason: we're pre-fetching nameservers that might never be used ...
-      # which takes time and slows down the processin of caller's query.
+      # Reason: we're pre-fetching/resolving nameservers that might never be used ...
+      # which takes time and slows down resolving caller's query.
       for name <- nsnames, type <- [:A, :AAAA] do
         # resolvep NS names, so they end up in the cache
         ctx =
@@ -674,6 +674,12 @@ defmodule DNS do
     {:ok, rsp}
   end
 
+  # Notes:
+  # - query type :* or :ANY has answers come out as lame, but actually, the
+  # anwer contains many diff RR-type, just not type ANY
+  #
+  #
+  # """
   @spec reply_type(msg) :: :referral | :cname | :answer | :lame | :nodata
   defp reply_type(%{
          header: %{anc: 0, nsc: nsc, rcode: :NOERROR},
@@ -737,11 +743,16 @@ defmodule DNS do
     # * dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
 
     cname = Enum.any?(answer, fn rr -> rr.type == :CNAME end)
+    # TODO: qtype :ANY or :* won't have answer rr's with rrtype==qtype (!)
+    # so now, these are labelled :lame, which is not correct!
+    # FIXME: also, query for type :* works, but type :ANY does not???
     wants = Enum.any?(answer, fn rr -> rr.type == qtype end)
     upref = Enum.any?(authority, fn rr -> rr.type == :NS and upward?(qname, rr.name) end)
 
     cond do
       qtype == :CNAME -> :answer
+      # qtype == :ANY -> :answer
+      qtype == :* -> :answer
       upref -> :lame
       wants -> :answer
       cname -> :cname
@@ -786,6 +797,16 @@ defmodule DNS do
     # - a valid reply still might not be a useful answer
     #   e.g. a :FORMERROR response usually has all sections (incl. qtn) empty
     # - a msg with other RCODEs: qry.question and rsp.question should be same
+    # FIXME: BUG: DNS.Msg.Terms.decode_rr_type(255) => :*, so if question has :ANY
+    # it won't match.  So compare encoded rr types rather than decoded rr types
+    # otherwise (as is the case now) an answer to an :ANY query won't match up
+    # with a :* query.
+    # REVIEW: this might be good cause to have Msg structs fields have the raw
+    # values (u16 etc..) rather than the decoded :ATOMs and only show the
+    # decoded ATOM's upon inspection.  Impacts the code base though in various
+    # places like DNS.Msg.xxx and DNS.Cache (!) that now treats :ANY specially
+    # but that never happens since decoding yields :* and never :ANY.
+    #
     cond do
       qry.header.id != rsp.header.id ->
         Log.warning("ignoring reply: query ID does not match")
@@ -827,7 +848,14 @@ defmodule DNS do
           |> Enum.map(fn r -> {elem(dname_normalize(r.name), 1), r.type, r.class} end)
           |> Enum.sort()
 
-        ql == rl
+        if ql == rl do
+          true
+        else
+          Log.warning("ignoring reply: question sections do not match")
+          Log.debug("- qry msg: #{inspect(qry)}")
+          Log.debug("- rsp msg: #{inspect(rsp)}")
+          false
+        end
     end
   end
 

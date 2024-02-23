@@ -344,7 +344,6 @@ defmodule DNS.Msg.Terms do
   # - https://www.rfc-editor.org/rfc/rfc6895.html#section-3
 
   @rr_types %{
-              *: 255,
               A: 1,
               AAAA: 28,
               AFSDB: 18,
