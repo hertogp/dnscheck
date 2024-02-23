@@ -797,16 +797,6 @@ defmodule DNS do
     # - a valid reply still might not be a useful answer
     #   e.g. a :FORMERROR response usually has all sections (incl. qtn) empty
     # - a msg with other RCODEs: qry.question and rsp.question should be same
-    # FIXME: BUG: DNS.Msg.Terms.decode_rr_type(255) => :*, so if question has :ANY
-    # it won't match.  So compare encoded rr types rather than decoded rr types
-    # otherwise (as is the case now) an answer to an :ANY query won't match up
-    # with a :* query.
-    # REVIEW: this might be good cause to have Msg structs fields have the raw
-    # values (u16 etc..) rather than the decoded :ATOMs and only show the
-    # decoded ATOM's upon inspection.  Impacts the code base though in various
-    # places like DNS.Msg.xxx and DNS.Cache (!) that now treats :ANY specially
-    # but that never happens since decoding yields :* and never :ANY.
-    #
     cond do
       qry.header.id != rsp.header.id ->
         Log.warning("ignoring reply: query ID does not match")
