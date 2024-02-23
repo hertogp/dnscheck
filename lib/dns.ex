@@ -743,16 +743,12 @@ defmodule DNS do
     # * dig ns example.com @ns1.cloudns.net -> list themselves in NSS (?)
 
     cname = Enum.any?(answer, fn rr -> rr.type == :CNAME end)
-    # TODO: qtype :ANY or :* won't have answer rr's with rrtype==qtype (!)
-    # so now, these are labelled :lame, which is not correct!
-    # FIXME: also, query for type :* works, but type :ANY does not???
     wants = Enum.any?(answer, fn rr -> rr.type == qtype end)
     upref = Enum.any?(authority, fn rr -> rr.type == :NS and upward?(qname, rr.name) end)
 
     cond do
       qtype == :CNAME -> :answer
-      # qtype == :ANY -> :answer
-      qtype == :* -> :answer
+      qtype == :ANY -> :answer
       upref -> :lame
       wants -> :answer
       cname -> :cname
