@@ -225,13 +225,13 @@ defmodule Mix.Tasks.Iana.Update do
 
   @spec hints_to_nss(String.t()) :: [{:inet.ip_adress(), 53}]
   defp hints_to_nss(body) do
-    # body might be "" so filter that out
+    # body might contain empty lines ("") so filter that out
     body
     |> String.split("\n")
     |> Enum.filter(fn s -> s != "" end)
     |> Enum.filter(fn s -> not String.starts_with?(s, [";", "."]) end)
     |> Enum.map(fn s -> String.split(s) end)
-    |> Enum.map(fn [_name, _ttl, _type, ip] -> {Pfx.to_tuple(ip, mask: false), 53} end)
+    |> Enum.map(fn [name, _ttl, _type, ip] -> {name, Pfx.to_tuple(ip, mask: false), 53} end)
   end
 
   defp ksk_digest(ksk, dtype) do

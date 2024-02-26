@@ -1,12 +1,13 @@
 defmodule DNS.Cache do
   # above moduledoc since it's enumerated in doc
-  @uncacheable [:OPT, :ANY, :*, :MAILA, :MAILB, :AXFR, :IXFR]
+  @uncacheable [:OPT, :ANY, :MAILA, :MAILB, :AXFR, :IXFR]
   @cache :dns_cache
   # max ttl in cache is 1 days
   @maxttl 86_400
   # root hints
   @priv :code.priv_dir(:dnscheck)
   @fname_nss Path.join([@priv, "root.nss"])
+  @external_resource @fname_nss
   @root_nss Code.eval_file(@fname_nss) |> elem(0)
 
   @moduledoc """
@@ -37,6 +38,7 @@ defmodule DNS.Cache do
 
   @type key :: {binary, non_neg_integer, non_neg_integer}
   @type rr :: DNS.Msg.RR.t()
+  @type ns :: DNS.ns()
 
   @doc """
   Creates and initializes to an empty cache.
@@ -336,7 +338,7 @@ defmodule DNS.Cache do
       2
 
   """
-  @spec nss(binary) :: [{:inet.ip_address(), integer}]
+  @spec nss(binary) :: [ns]
   def nss(zone) when is_binary(zone) do
     with {:ok, labels} <- dname_normalize(zone, join: false) do
       nssp(labels)
@@ -348,6 +350,7 @@ defmodule DNS.Cache do
   end
 
   # return a list of :NS names or empty list
+  @spec nssp([binary]) :: [ns]
   defp nssp([]),
     do: Enum.shuffle(@root_nss)
 
@@ -366,51 +369,12 @@ defmodule DNS.Cache do
         |> Enum.map(fn rr -> rr.rdmap.name end)
         |> Enum.map(fn name -> [get(name, :IN, :A, true), get(name, :IN, :AAAA, true)] end)
         |> List.flatten()
-        |> Enum.map(fn rr -> {Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+        |> Enum.map(fn rr -> {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
         |> Enum.shuffle()
         |> case do
           [] -> nssp(rest)
           nss -> nss
         end
-    end
-  end
-
-  # [[ NSS new style ]]
-  # return a list of {nsname, ip4 | ip6 | :A | :AAAA}, where:
-  # :A/:AAAA means cache-miss
-  # cache-misses are filtered out if nsname is indomain of zone
-  # REVIEW:
-  # - not all ns will have both :A and :AAAA records
-  # - sometimes address records expire for a NS
-  #   -> returned list of NS's is incomplete relative to what's out there
-  # - so cache-miss yields {name, type} that might not exist
-  #   -> indomain ns's are filtered out, but is that necessary?
-  #   -> expire one, expire all? and fallback to ancestor NSS?
-  # Forms of a nameserver specification
-  # user  -> name | {name, port} | addr | {addr, port} -> {name, addr, port}
-  # cache -> {name, addr, 53} | {name, type}           -> {name, addr, port}
-  # deleg -> {name, addr, 53}                          -> {name, addr, 53}
-
-  @spec nss2(binary) :: [{binary, :inet.ip_address(), integer}]
-  def nss2(zone) when is_binary(zone) do
-    with {:ok, labels} <- dname_normalize(zone, join: false) do
-      nssp2(labels)
-    else
-      _ ->
-        Log.error("illegal domain name #{inspect(zone)}")
-        []
-    end
-  end
-
-  defp nssp2([]),
-    do: Enum.map(@root_nss, fn ns -> {"root", elem(ns, 0)} end)
-
-  defp nssp2([first | rest]) do
-    zone = Enum.join([first | rest], ".")
-
-    case get(zone, :IN, :NS, true) do
-      [] -> nssp2(rest)
-      rrs -> Enum.map(rrs, fn rr -> rr.rdmap.name end)
     end
   end
 

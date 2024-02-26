@@ -13,8 +13,10 @@ defmodule DNS do
 
   @typedoc "Type of RR, as atom or non negative integer"
   @type type :: atom | non_neg_integer
-  @typedoc "Nameserver is tuple of IPv4/6 address-tuple and port number"
-  @type ns :: {:inet.ip_address(), non_neg_integer}
+  @type ip_port :: 0..65535
+  @type address :: :inet.ip_address() | binary
+  @typedoc "Nameserver is tuple of name, address (or address type) and port number"
+  @type ns :: {binary, :A | :AAAA | address, ip_port}
   @typedoc "A struct representing a nameserver message"
   @type msg :: DNS.Msg.t()
   @type desc :: binary | DNS.ErrorMsg.t() | msg
@@ -116,8 +118,6 @@ defmodule DNS do
       timeout: Keyword.get(opts, :timeout, 2_000),
       # house keeping
       recurse: recurse,
-      # name: name,
-      # type: type,
       rzones: ["."],
       cnames: [name]
     }
@@ -143,7 +143,7 @@ defmodule DNS do
       error -> {:error, {:option, error}}
     end
   rescue
-    # Terms.en/decode may raise an DNS.MsgError
+    # due to Terms.en/decode
     err in DNS.MsgError -> {:error, {:option, err.data}}
   end
 
@@ -181,6 +181,8 @@ defmodule DNS do
         rrs ->
           Log.info("answering from cache, using #{length(rrs)} RR's")
           {:ok, msg} = reply_make(qry, rrs)
+          # REVIEW: is it necessary to return reply_handler's result instead
+          # of reply_make's result?
           reply_handler(qry, msg, ctx, tstop)
       end
     else
@@ -234,6 +236,7 @@ defmodule DNS do
     #             end)
     # REVIEW: the rescue part is not necessary since a referral always has NS's..
     #         just to be sure, maybe use List.first(nss)[:name] -> nil or binary
+    #         or add `true <- length(nss) > 0` to the with statements
     with :referral <- reply_type(msg),
          glue <- Enum.filter(msg.additional, fn rr -> rr.type in [:A, :AAAA] end),
          glue <- Enum.map(glue, fn rr -> String.downcase(rr.name) end),
@@ -249,10 +252,6 @@ defmodule DNS do
       if missing != [],
         do: Log.warning("dropped NS's due to missing but required glue #{inspect(missing)}")
 
-      # TODO: put ns in nss as: {:inet.address, 53} or {fqdn} and only resolve
-      # fqdn when needed.  Requires different handling of Cache.nss's response
-      # Reason: we're pre-fetching/resolving nameservers that might never be used ...
-      # which takes time and slows down resolving caller's query.
       for name <- nsnames, type <- [:A, :AAAA] do
         # resolvep NS names, so they end up in the cache
         ctx =
@@ -280,7 +279,7 @@ defmodule DNS do
 
   # [[ QUERY ]]
 
-  @spec query_nss([ns | {ns, integer}], DNS.Msg.t(), map, timeT, counter, [{ns, integer}]) ::
+  @spec query_nss([ns | {ns, timeT}], DNS.Msg.t(), map, timeT, counter, [{ns, timeT}]) ::
           {:ok, msg}
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
@@ -384,23 +383,24 @@ defmodule DNS do
   defp query_udp(_ns, _qry, 0, _bufsize),
     do: {:error, :timeout}
 
-  defp query_udp({ip, port}, qry, timeout, bufsize) do
+  defp query_udp({name, ip, port} = ns, qry, timeout, bufsize) do
     # note that:
     # - query_udp_open uses random src port for each query
     # - :gen_udp.connect ensures incoming data arrived at our src IP:port
     # - query_udp_recv ensures qry/msg ID's are equal and msg's qr=1
     # the higher ups will need to decide on how to handle the reply
-    {:ok, sock} = query_udp_open({ip, port}, bufsize)
+    {:ok, sock} = query_udp_open(ns, bufsize)
 
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
          {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
+      Log.info("got #{byte_size(msg.wdata)} bytes from #{name} (#{Pfx.new(ip)}:#{port}/udp)")
       :gen_udp.close(sock)
       {:ok, msg}
     else
       error ->
         :gen_udp.close(sock)
-        Log.error("udp socket error #{inspect(ip)}, #{inspect(error)}")
+        Log.error("udp socket error for #{name} (#{inspect(ip)}), #{inspect(error)}")
         error
     end
   rescue
@@ -410,7 +410,7 @@ defmodule DNS do
 
   @spec query_udp_open(ns, non_neg_integer) ::
           {:ok, :gen_udp.socket()} | {:error, :badarg | :system_limit | :inet.posix()}
-  defp query_udp_open({ip, port}, bufsize) do
+  defp query_udp_open({_name, ip, port}, bufsize) do
     # avoid *process exit* (!) with :badarg from :gen_udp.open
     iptype =
       case Pfx.type(ip) do
@@ -472,9 +472,9 @@ defmodule DNS do
   defp query_tcp(_ns, _qry, 0, _tstop),
     do: {:error, :timeout}
 
-  defp query_tcp({ip, port}, qry, timeout, tstop) do
+  defp query_tcp({name, ip, port} = ns, qry, timeout, tstop) do
     # connect outside `with`-block, so we can always close the socket
-    {:ok, sock} = query_tcp_connect({ip, port}, timeout, tstop)
+    {:ok, sock} = query_tcp_connect(ns, timeout, tstop)
     t0 = now()
 
     with :ok <- :gen_tcp.send(sock, qry.wdata),
@@ -483,14 +483,16 @@ defmodule DNS do
          true <- reply?(qry, msg) do
       :gen_tcp.close(sock)
       t = now() - t0
-      Log.info("received #{byte_size(rsp)} bytes from #{Pfx.new(ip)}:#{port}/tcp in #{t} ms")
+
+      Log.info("got #{byte_size(rsp)} bytes from #{name} (#{Pfx.new(ip)}:#{port}/tcp) in #{t} ms")
+
       {:ok, msg}
     else
       false ->
         {:error, :notreply}
 
       {:error, e} ->
-        Log.warning("query_tcp error #{inspect(e)}")
+        Log.warning("query_tcp error for #{name} (#{Pfx.new(ip)}:#{port}/tcp):  #{inspect(e)}")
         :gen_tcp.close(sock)
         {:error, e}
     end
@@ -501,9 +503,9 @@ defmodule DNS do
 
   @spec query_tcp_connect(ns, timeout, timeT) ::
           {:ok, :inet.socket()} | {:error, :badarg | :timeout | :inet.posix()}
-  defp query_tcp_connect({ip, port}, timeout, tstop) do
+  defp query_tcp_connect({name, ip, port}, timeout, tstop) do
     # avoid *exit* badarg by checking ip/port's validity
-    Log.info("query tcp: #{inspect(ip)}, #{port}/tcp, timeout #{timeout}")
+    Log.info("query tcp: #{name} (#{inspect(ip)}:#{port}/tcp, timeout #{timeout}")
 
     iptype =
       case Pfx.type(ip) do
@@ -769,10 +771,11 @@ defmodule DNS do
 
   # [[ NSS helpers ]]
 
+  @spec check_nss([ns]) :: boolean
   defp check_nss([]),
     do: true
 
-  defp check_nss([{ip, port} | nss]) do
+  defp check_nss([{_name, ip, port} | nss]) do
     if Pfx.valid?(ip) and is_tuple(ip) and is_u16(port),
       do: check_nss(nss),
       else: false
@@ -862,7 +865,8 @@ defmodule DNS do
     rcode
   end
 
-  defp unwrap({{_ip, _port} = ns, t}) do
+  @spec unwrap({ns, integer}) :: ns
+  defp unwrap({ns, t}) do
     wait(timeout(t))
     ns
   end
@@ -870,6 +874,7 @@ defmodule DNS do
   defp unwrap(ns),
     do: ns
 
+  @spec udp_timeout(non_neg_integer, non_neg_integer, non_neg_integer, integer) :: non_neg_integer
   defp udp_timeout(timeout, retry, n, tstop) do
     tdelta = div(timeout * 2 ** n, retry)
 
