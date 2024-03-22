@@ -260,7 +260,7 @@ defmodule DNS do
           |> Map.put(:recurse, true)
           |> Map.put(:maxtime, timeout(tstop))
 
-        case resolvep(name, type, ctx) do
+        case(resolvep(name, type, ctx)) do
           {:ok, msg} ->
             msg.answer
 
@@ -269,12 +269,75 @@ defmodule DNS do
         end
       end
 
+      # -- experiment
+      referral_nss(msg)
+      |> IO.inspect(label: :referral_nss)
+      |> next_ns()
+      |> IO.inspect(label: :next_ns)
+
+      # -- experiment
+
       Cache.nss(zone)
+      |> IO.inspect(label: :nss_cache)
     else
       _ -> []
     end
   rescue
     _ -> []
+  end
+
+  # dig waws-prod-am2-429.sip.azurewebsites.windows.net +norecurse @e.gtld-servers.net
+  # -> add has A record for ns2-39.azure-dns.net, but not its AAAA record (!)
+  # -> cannot assume add always holds both A and AAAA of inzone nameserver
+  @spec referral_nss(msg) :: [ns]
+  def referral_nss(msg) do
+    normalize = fn name -> dname_normalize(name) |> elem(1) end
+
+    nsnames =
+      msg.authority
+      |> Enum.filter(fn rr -> rr.type == :NS end)
+      |> Enum.map(fn rr -> normalize.(rr.rdmap.name) end)
+
+    nss =
+      msg.additional
+      |> Enum.filter(fn rr -> rr.type in [:A, :AAAA] end)
+      |> Enum.map(fn rr -> {normalize.(rr.name), Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
+      |> Enum.filter(fn {name, _ip, _port} -> name in nsnames end)
+
+    zone = hd(msg.authority).name
+    noip = nsnames -- Enum.map(nss, fn {name, _, _} -> name end)
+    excl = Enum.filter(noip, fn name -> dname_indomain?(name, zone) end)
+
+    if length(excl) > 0,
+      do: Log.warning("referral for '#{zone}' is missing glue for '#{Enum.join(excl, ", ")}'")
+
+    (noip -- excl)
+    |> Enum.flat_map(fn name -> [{name, :A, 53}, {name, :AAAA, 53}] end)
+    |> Enum.concat(nss)
+    |> Enum.shuffle()
+  end
+
+  @spec next_ns([ns]) :: {ns | nil, [ns]}
+  def next_ns([]),
+    do: {nil, []}
+
+  def next_ns([ns | nss]) do
+    IO.inspect(ns, label: :next_ns)
+
+    case ns do
+      {name, type, _port} when type in [:A, :AAAA] ->
+        case resolve(name, type) do
+          {:ok, _msg} ->
+            Cache.get(name, :IN, type)
+
+          _ ->
+            Log.warning("could not resolve ns #{name}")
+            next_ns(nss)
+        end
+
+      ns ->
+        ns
+    end
   end
 
   # [[ QUERY ]]
