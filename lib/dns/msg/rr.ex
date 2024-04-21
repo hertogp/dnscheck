@@ -260,7 +260,6 @@ defmodule DNS.Msg.RR do
   #     dname_decode/encode, ip4_decode/encode, ip6_decode/encode,
   #     bitmap_decode/encode etc...
   # [x] move error func into DNS.MsgError, and use import DNS.MsgError, only: [error: 2]
-  # [ ] add logging (Logger?)
   # [ ] add RRs: Maybe add these (check out <type>.dns.netmeister.org
   #     [ ] NSEC3PARAM hash, see
   #         - https://www.netmeister.org/blog/dns-rrs.html

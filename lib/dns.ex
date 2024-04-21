@@ -122,6 +122,8 @@ defmodule DNS do
       cnames: [name]
     }
 
+    IO.inspect(ctx, label: :resolve_ctx)
+
     cond do
       not is_u16(ctx.bufsize) -> "bufsize out of u16 range"
       ctx.cd not in 0..1 -> "cd bit should be 0 or 1"
@@ -162,6 +164,8 @@ defmodule DNS do
     # - resolve to answer caller's query
     # - recurse_nss during referral, to resolve non-glue NS's
     # - resolve_handler, to follow cnames and/or referrals
+    IO.inspect(ctx, label: :resolvep_ctx)
+
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, ctx.class, type),

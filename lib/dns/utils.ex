@@ -602,6 +602,7 @@ defmodule DNS.Utils do
   end
 
   # [[ TIME ]]
+  #
 
   @doc false
   # current moment in monotonic time

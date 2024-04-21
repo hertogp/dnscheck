@@ -7,6 +7,7 @@ defmodule Dnscheck.MixProject do
   def project do
     [
       app: :dnscheck,
+      escript: [main_module: Dnscheck],
       version: @version,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,

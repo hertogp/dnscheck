@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## TODO for [v0.0.1]
 
 ### General items
-- [ ] use Logger throughout all modules
+- [ ] do not use Logger throughout all modules, use :telemetry instead
+
 
 ### DNS
 - [x] handle timeout & retries in Dns.resolve

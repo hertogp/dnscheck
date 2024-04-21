@@ -41,6 +41,11 @@ defmodule DNS.Msg.Terms do
     end
   end
 
+  defp do_encode(map, key, label, range) when is_binary(key) do
+    key = String.upcase(key) |> String.to_existing_atom()
+    do_encode(map, key, label, range)
+  end
+
   defp do_encode(_map, key, label, _range),
     do: error(:eencode, "#{label} expected an atom or non neg number, got: #{inspect(key)}")
 
@@ -61,6 +66,11 @@ defmodule DNS.Msg.Terms do
       nil -> key
       name -> name
     end
+  end
+
+  defp do_decode(map, key, label, range) when is_binary(key) do
+    key = String.upcase(key) |> String.to_existing_atom()
+    do_decode(map, key, label, range)
   end
 
   defp do_decode(_map, key, label, _range),

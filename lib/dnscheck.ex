@@ -6,12 +6,41 @@ defmodule Dnscheck do
   @doc """
 
   """
-  def resolve(name, type, opts \\ []) do
-    opts =
-      opts
-      |> Keyword.put(:nameservers, [{{8, 8, 8, 8}, 53}])
-      |> Keyword.put(:edns, 0)
+  def main(args) do
+    args |> parse |> run
+    IO.inspect(args, label: :main)
+  end
 
-    :inet_res.resolve(name, :in, type, opts)
+  def parse(args) do
+    {opts, host, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          proto: :boolean,
+          type: :string,
+          class: :string,
+          validate: :boolean,
+          trace: :boolean,
+          all: :boolean
+        ],
+        aliases: [p: :proto, t: :type, c: :class, v: :validate, T: :trace, a: :all]
+      )
+
+    if invalid != [],
+      do: IO.inspect(invalid, label: :ignoring)
+
+    {opts, host}
+  end
+
+  def run({opts, hosts}) do
+    IO.inspect(opts)
+
+    type =
+      Keyword.get(opts, :type, "A")
+      |> DNS.Msg.Terms.decode_rr_type()
+
+    for host <- hosts do
+      DNS.resolve(host, type)
+      |> IO.inspect(label: :result)
+    end
   end
 end
