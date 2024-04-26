@@ -27,6 +27,7 @@ defmodule Dnscheck.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:telemetry, "~> 1.0"},
       {:pfx, "~> 0.14"},
       {:jason, "~> 1.4"},
       {:x509, "~> 0.8"},

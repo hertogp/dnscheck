@@ -124,6 +124,12 @@ defmodule DNS do
 
     IO.inspect(ctx, label: :resolve_ctx)
 
+    :telemetry.execute(
+      [:dns, :query],
+      %{},
+      %{context: ctx}
+    )
+
     cond do
       not is_u16(ctx.bufsize) -> "bufsize out of u16 range"
       ctx.cd not in 0..1 -> "cd bit should be 0 or 1"
