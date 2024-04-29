@@ -49,19 +49,37 @@ defmodule DNS.Telemetry do
   require Logger
 
   def attach_default_logger() do
-    :telemetry.attach(
+    :telemetry.attach_many(
       "dnscheck-default-logger",
-      [:dns, :query],
+      [
+        [:dns, :query, :start],
+        [:dns, :query, :stop],
+        [:dns, :query, :exception]
+      ],
       &DNS.Telemetry.handle_event/4,
       nil
     )
   end
 
-  # def handle_event([:dns, :query, :context], _measurements, meta, _config) do
-  #   Logger.info("created context: #{inspect(meta.context)}")
-  # end
+  def handle_event([:dns, :query, event], metrics, meta, _config) do
+    qid = meta.ctx.qid
+    qnr = meta.ctx.qnr
+
+    case event do
+      :start ->
+        nil
+
+      :stop ->
+        ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+        Logger.info("#{qid}-#{qnr} #{ms} ms, #{inspect(meta)}")
+
+      :exception ->
+        Logger.error("#{qid}-#{qnr} #{inspect(meta)}")
+    end
+  end
 
   # catch all (remaining) events
-  def handle_event(event, metrics, meta, _config),
-    do: Logger.info("#{inspect(event)} #{inspect(metrics)} #{inspect(meta)}")
+  def handle_event(event, metrics, meta, _config) do
+    Logger.info("[....] #{inspect(event)} #{inspect(metrics)} #{inspect(meta)}")
+  end
 end

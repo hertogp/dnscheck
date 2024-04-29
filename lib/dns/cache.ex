@@ -169,7 +169,7 @@ defmodule DNS.Cache do
 
   def put(%DNS.Msg.RR{name: name} = rr) when name in ["", "."] do
     # explicitly ignore RR's referencing root
-    Log.warning("ignoring #{inspect(rr)}")
+    # Log.warning("ignoring #{inspect(rr)}")
     false
   end
 
@@ -190,7 +190,7 @@ defmodule DNS.Cache do
           do: rr,
           else: %{rr | ttl: maxttl, rdata: "", wdata: ""}
 
-      Log.info("caching #{inspect(rr)}")
+      # Log.info("caching #{inspect(rr)}")
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
       _e -> false
@@ -293,7 +293,7 @@ defmodule DNS.Cache do
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
-        Log.info("{#{name}, #{class}, #{type}} -> removing #{length(dead)} expired RR(s)")
+        #   Log.info("{#{name}, #{class}, #{type}} -> removing #{length(dead)} expired RR(s)")
 
         if rrs == [],
           do: :ets.delete(@cache, key),
@@ -362,18 +362,9 @@ defmodule DNS.Cache do
         Log.debug("zone #{zone} has no nss in cache")
         nssp(rest)
 
-      nss ->
-        Log.info("zone #{zone} has #{length(nss)} nss")
-
-        nss
-        |> Enum.map(fn rr -> rr.rdmap.name end)
-        |> Enum.map(fn name -> [get(name, :IN, :A, true), get(name, :IN, :AAAA, true)] end)
-        |> List.flatten()
-        |> Enum.map(fn rr -> {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53} end)
-        |> Enum.shuffle()
-        |> case do
-          [] -> nssp(rest)
-          nss -> nss
+      rrs ->
+        for rr <- rrs, type <- [:A, :AAAA] do
+          {rr.rdmap.name, type, 53}
         end
     end
   end
