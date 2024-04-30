@@ -172,10 +172,11 @@ defmodule DNS do
   defp resolvep(name, type, ctx) do
     # resolvep called by:
     # - resolve to answer caller's query
-    # - recurse_nss during referral, to resolve non-glue NS's
-    # - resolve_handler, to follow cnames and/or referrals
+    # - reply_handler, when following cnames
+    # - reply_handler, when following referral: recurse() > recurse_nss > next_ns
+    # - next_ns when first ns has not yet been resolved
 
-    ctx = Map.put(ctx, :sys_qid, :erlang.phash2({name, ctx.class, type}))
+    ctx = %{ctx | qnr: ctx.qnr + 1}
 
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
@@ -245,43 +246,68 @@ defmodule DNS do
   @spec recurse_nss(msg, map, timeT) :: [ns]
   defp recurse_nss(msg, ctx, tstop) do
     # - glue NS A/AAAA RRs are already in the cache
+    # - glue NS not guaranteed to have all its adresses (A vs AAAA) listed
     # - drop NS's that are subdomains of `zone` but not in glue records to avoid looping
-    # - then resolve remaining non-glued NS in referral msg & return NSS, respecting maxtime
-    # - be paranoid: accept only glue rrs with type  A/AAAA from additional
-    # FIXME: make stuff below simpler with Enum.reduce
-    #   glue = Enum.reduce(msg.additional, [], fn rr, acc ->
-    #            if rr.type in [:A, :AAAA],
-    #              do: [String.downcase(rr.rdmap.name) | acc],
-    #             else: acc
-    #             end)
+    # TODO:
+    # - take [ns] from glue (check validity of glue name) ++ nsnames -- missing
+    Log.info(
+      "#{ctx.qid}-#{ctx.qnr} recursing for #{hd(msg.question).name}, zones seen: #{inspect(ctx.rzones)}"
+    )
+
     with :referral <- reply_type(msg) do
-      for rr <- msg.authority, type <- [:A, :AAAA], rr.type == :NS do
-        {rr.rdmap.name, type, 53}
+      zone = Enum.find(msg.authority, fn rr -> rr.type == :NS end).name
+      nsnames = for rr <- msg.authority, rr.type == :NS, do: String.downcase(rr.rdmap.name)
+
+      glue =
+        for rr <- msg.additional, rr.type in [:A, :AAAA], uniq: true, do: String.downcase(rr.name)
+
+      missing = for name <- nsnames, name not in glue and dname_subdomain?(name, zone), do: name
+
+      glued =
+        for rr <- msg.additional,
+            rr.type in [:A, :AAAA] and String.downcase(rr.name) in nsnames,
+            do: {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
+
+      Log.info("following #{zone} with ns: #{Enum.join(nsnames, ", ")}")
+
+      if missing != [],
+        do: Log.info("no glue, dropping #{Enum.join(missing, ", ")}")
+
+      Log.info("glue ns: #{Enum.join(glue, ", ")}")
+
+      for name <- (nsnames -- missing) -- glue, type <- [:A, :AAAA] do
+        {name, type, 53}
       end
+      |> Enum.concat(glued)
       |> Enum.shuffle()
-      |> next_ns(ctx)
-      |> IO.inspect(label: :referral_nss)
+      |> next_ns(ctx, tstop)
     else
       _ -> []
     end
   rescue
-    _ -> []
+    err ->
+      Log.info("error: #{inspect(err)}")
+      []
   end
 
   # dig waws-prod-am2-429.sip.azurewebsites.windows.net +norecurse @e.gtld-servers.net
   # -> add has A record for ns2-39.azure-dns.net, but not its AAAA record (!)
   # -> cannot assume add always holds both A and AAAA of inzone nameserver
 
-  @spec next_ns([ns], map) :: [ns]
-  defp next_ns([], _ctx),
+  @spec next_ns([ns], map, timeT) :: [ns]
+  defp next_ns([], _ctx, _tstop),
     do: []
 
-  defp next_ns([ns | nss], ctx) do
+  defp next_ns([ns | nss], ctx, tstop) do
     # ensure next ns is {name, address,port} by resolvep'ing it if necessary
     # prepend all {name, addr, port} to nss and then return {ns, nss}, removing
     # the ns from nss.
+    # FIXME: need to unwrap(ns) here ...
     case ns do
       {name, type, _port} when type in [:A, :AAAA] ->
+        Log.info("resolving ns #{name}, #{type}")
+        ctx = %{ctx | nameservers: nil, recurse: true, maxtime: timeout(tstop)}
+
         case resolvep(name, type, ctx) do
           {:ok, msg} ->
             # Cache.get(name, :IN, type)
@@ -292,7 +318,7 @@ defmodule DNS do
 
           _ ->
             Log.warning("could not resolve ns #{name}")
-            next_ns(nss, ctx)
+            next_ns(nss, ctx, tstop)
         end
 
       _ns ->
@@ -318,13 +344,15 @@ defmodule DNS do
   defp query_nss([{_, type, _} | _] = nss, qry, ctx, tstop, nth, failed)
        when type in [:A, :AAAA] do
     nss
-    |> next_ns(ctx)
+    |> next_ns(ctx, tstop)
     |> query_nss(qry, ctx, tstop, nth, failed)
   end
 
   defp query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
     # query_nss is responsible for getting 1 answer from NSS-list
     # Log.info("time remaining #{timeout(tstop)}")
+
+    ctx = %{ctx | qnr: ctx.qnr + 1}
 
     cond do
       timeout(tstop) == 0 ->
@@ -336,6 +364,16 @@ defmodule DNS do
       true ->
         ns = unwrap(ns)
         # Log.info("trying ns #{inspect(ns)}")
+
+        # result =
+        #   :telemetry.span(
+        #     [:dns, :query],
+        #     %{ctx: ctx, qry: qry},
+        #     fn ->
+        #       resp = query_ns(ns, qry, ctx, tstop, nth)
+        #       {resp, %{ctx: ctx, resp: resp, qry: qry}}
+        #     end
+        #   )
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
@@ -621,7 +659,7 @@ defmodule DNS do
       :referral ->
         # referral loop detection using ctx.rzones
         zone = hd(msg.authority).name
-        # Log.info("#{qtn.name} #{qtn.type} - got referral to #{zone}")
+        Log.info("#{qtn.name} #{qtn.type} - got referral to #{zone}")
         seen = Enum.any?(ctx.rzones, &dname_equal?(&1, zone))
 
         if seen do
@@ -629,10 +667,6 @@ defmodule DNS do
           {:error, {:rzone_loop, msg}}
         else
           Cache.put(msg)
-          # these are fine:
-          # ctx = %{ctx | rzones: [zone | ctx[:rzones]]}
-          # ctx = Map.put(ctx, :zones, [zone | ctx.zones])
-          # below yields complaint (when using "#{inspect(ctx.rzones)}"
           ctx = %{ctx | rzones: [zone | ctx[:rzones]]}
           Log.debug("qname=#{qtn.name} -> zones seen are: #{inspect(ctx.rzones)}")
           recurse(qry, msg, ctx, tstop)
@@ -651,7 +685,7 @@ defmodule DNS do
         else
           ctx =
             %{ctx | cnames: [cname | ctx[:cnames]]}
-            |> Map.delete(:nameservers)
+            |> Map.put(:nameservers, nil)
             |> Map.put(:maxtime, timeout(tstop))
             |> Map.put(:rd, 0)
 
