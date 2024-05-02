@@ -48,22 +48,32 @@ defmodule DNS.Telemetry do
 
   require Logger
 
+  @handler_id "dns-default-logger"
+
+  # [[ DEFAULT LOGGER ]]
+
   def attach_default_logger() do
     :telemetry.attach_many(
-      "dnscheck-default-logger",
+      @handler_id,
       [
         [:dns, :query, :start],
         [:dns, :query, :stop],
-        [:dns, :query, :exception]
+        [:dns, :query, :exception],
+        [:dns, :cache, :hit]
       ],
       &DNS.Telemetry.handle_event/4,
       nil
     )
   end
 
+  def detach_default_handler() do
+    :telemetry.detach(@handler_id)
+  end
+
+  # [[ QUERY EVENTS ]]
+
   def handle_event([:dns, :query, event], metrics, meta, _config) do
-    qid = meta.ctx.qid
-    qnr = meta.ctx.qnr
+    id = format_id(meta.ctx)
 
     case event do
       :start ->
@@ -71,15 +81,57 @@ defmodule DNS.Telemetry do
 
       :stop ->
         ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-        Logger.info("#{qid}-#{qnr} #{ms} ms, #{inspect(meta)}")
+        resp = format_resp(meta.resp)
+        Logger.info("#{id} #{ms} ms #{resp}")
 
       :exception ->
-        Logger.error("#{qid}-#{qnr} #{inspect(meta)}")
+        Logger.error("#{id} #{inspect(meta)}")
     end
   end
 
-  # catch all (remaining) events
+  # [[ CACHE events ]]
+  def handle_event([:dns, :cache, :hit], _metrics, meta, _config) do
+    id = format_id(meta.ctx)
+    rrs = Enum.map(meta.rrs, fn rr -> "#{rr}" end) |> Enum.join(", ")
+    Logger.info("#{id} from cache: [#{rrs}]")
+  end
+
+  # catch all
   def handle_event(event, metrics, meta, _config) do
-    Logger.info("[....] #{inspect(event)} #{inspect(metrics)} #{inspect(meta)}")
+    Logger.info(
+      "** UNKNOWN QUERY EVENT ** #{inspect(event)} #{inspect(metrics)} #{inspect(meta)}"
+    )
+  end
+
+  # [[ HELPERS ]]
+  defp format_id(ctx),
+    do: "qry: #{ctx.qid}-#{ctx.qnr} (#{ctx.name}/#{ctx.class}/#{ctx.type})"
+
+  defp format_resp({:error, {reason, msg}}),
+    do: "ERROR #{reason} #{inspect(msg)}"
+
+  defp format_resp({:ok, %DNS.Msg{} = msg}) do
+    rcode = DNS.xrcode(msg)
+    qtn = format_qtn(msg)
+    "#{rcode} #{qtn}"
+  end
+
+  defp format_qtn(%DNS.Msg{question: qtns, header: hdr}) do
+    qtn =
+      Enum.map(qtns, fn rr -> "#{rr.name}/#{rr.class}/#{rr.type}" end)
+      |> Enum.join(",")
+
+    flags =
+      for key <- [:opcode, :rcode, :cd, :rd, :ra] do
+        "#{key}: #{Map.get(hdr, key)}"
+      end
+      |> Enum.join(", ")
+
+    "[#{qtn}] #{flags}"
+  end
+
+  defp format_rrs(rrs) do
+    Enum.map(rrs, fn rr -> "#{rr.name}/#{rr.class}/#{rr.type}: #{inspect(rr.rdmap)}" end)
+    |> Enum.join(", ")
   end
 end

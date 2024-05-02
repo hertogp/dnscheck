@@ -109,6 +109,7 @@ defmodule DNS do
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
       maxtime: Keyword.get(opts, :maxtime, 5_000),
+      name: name,
       nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
       rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
@@ -116,6 +117,7 @@ defmodule DNS do
       srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
       tcp: Keyword.get(opts, :tcp, false),
       timeout: Keyword.get(opts, :timeout, 2_000),
+      type: type,
       # house keeping
       recurse: recurse,
       rzones: ["."],
@@ -142,14 +144,7 @@ defmodule DNS do
     end
     |> case do
       {:ok, ctx} ->
-        :telemetry.span(
-          [:dns, :query],
-          %{ctx: ctx},
-          fn ->
-            resp = resolvep(name, type, ctx)
-            {resp, %{ctx: ctx, resp: resp}}
-          end
-        )
+        resolvep(name, type, ctx)
 
       error ->
         {:error, {:option, error}}
@@ -189,10 +184,15 @@ defmodule DNS do
           nss = ctx[:nameservers] || Cache.nss(qname)
           # Log.info("#{name} #{type} got #{length(nss)} nameservers")
 
-          case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
-            {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
-            error -> error
-          end
+          :telemetry.span([:dns, :query], %{ctx: ctx}, fn ->
+            resp =
+              case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
+                {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
+                error -> error
+              end
+
+            {resp, %{ctx: ctx, qry: qry, resp: resp}}
+          end)
 
         rrs ->
           :telemetry.execute(
@@ -919,7 +919,7 @@ defmodule DNS do
   end
 
   @spec xrcode(msg) :: atom | non_neg_integer
-  defp xrcode(msg) do
+  def xrcode(msg) do
     # calculate rcode (no TSIG's yet)
 
     xrcode =
