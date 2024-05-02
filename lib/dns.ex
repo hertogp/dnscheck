@@ -184,7 +184,7 @@ defmodule DNS do
           nss = ctx[:nameservers] || Cache.nss(qname)
           # Log.info("#{name} #{type} got #{length(nss)} nameservers")
 
-          :telemetry.span([:dns, :query], %{ctx: ctx}, fn ->
+          :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry}, fn ->
             resp =
               case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
                 {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
@@ -310,14 +310,14 @@ defmodule DNS do
 
         case resolvep(name, type, ctx) do
           {:ok, msg} ->
-            # Cache.get(name, :IN, type)
-            for rr <- msg.answer do
+            # TODO: handle NODATA replies as well
+            for rr <- msg.answer, rr.type in [:A, :AAAA] do
               {name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
             end
             |> Enum.concat(nss)
 
           _ ->
-            Log.warning("could not resolve ns #{name}")
+            Log.error("could not resolve ns #{name}")
             next_ns(nss, ctx, tstop)
         end
 

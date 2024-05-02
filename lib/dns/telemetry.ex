@@ -77,12 +77,12 @@ defmodule DNS.Telemetry do
 
     case event do
       :start ->
-        nil
+        Logger.info("#{id} #{inspect(meta.qry)}")
 
       :stop ->
         ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
         resp = format_resp(meta.resp)
-        Logger.info("#{id} #{ms} ms #{resp}")
+        Logger.info("#{id} #{ms} ms #{resp} #{inspect(meta.qry)}")
 
       :exception ->
         Logger.error("#{id} #{inspect(meta)}")
