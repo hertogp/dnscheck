@@ -303,7 +303,7 @@ defmodule DNS do
     # prepend all {name, addr, port} to nss and then return {ns, nss}, removing
     # the ns from nss.
     # FIXME: need to unwrap(ns) here ...
-    case ns do
+    case unwrap(ns) do
       {name, type, _port} when type in [:A, :AAAA] ->
         Log.info("resolving ns #{name}, #{type}")
         ctx = %{ctx | nameservers: nil, recurse: true, maxtime: timeout(tstop)}
@@ -311,10 +311,15 @@ defmodule DNS do
         case resolvep(name, type, ctx) do
           {:ok, msg} ->
             # TODO: handle NODATA replies as well
-            for rr <- msg.answer, rr.type in [:A, :AAAA] do
-              {name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
+            ns_rrs =
+              for rr <- msg.answer, rr.type in [:A, :AAAA] do
+                {name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
+              end
+
+            case ns_rrs do
+              [] -> next_ns(nss, ctx, tstop)
+              _ns_rrs -> Enum.concat(ns_rrs, nss)
             end
-            |> Enum.concat(nss)
 
           _ ->
             Log.error("could not resolve ns #{name}")
