@@ -59,7 +59,8 @@ defmodule DNS.Telemetry do
         [:dns, :query, :start],
         [:dns, :query, :stop],
         [:dns, :query, :exception],
-        [:dns, :cache, :hit]
+        [:dns, :cache, :hit],
+        [:dns, :cache, :miss]
       ],
       &DNS.Telemetry.handle_event/4,
       nil
@@ -74,26 +75,47 @@ defmodule DNS.Telemetry do
 
   def handle_event([:dns, :query, event], metrics, meta, _config) do
     id = format_id(meta.ctx)
+    qry = format_qtn(meta.qry)
 
     case event do
       :start ->
-        Logger.info("#{id} #{inspect(meta.qry)}")
+        hdr = format_hdr(meta.qry)
+        Logger.info("#{id} [query start] question:[#{qry}] header:#{hdr}")
 
       :stop ->
-        ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-        resp = format_resp(meta.resp)
-        Logger.info("#{id} #{ms} ms #{resp} #{inspect(meta.qry)}")
+        case meta.resp do
+          {:ok, msg} ->
+            ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+            hdr = format_hdr(msg)
+            resp = format_msg(msg)
+            rcode = DNS.xrcode(msg)
+
+            Logger.info(
+              "#{id} [query reply] #{ms} ms, #{rcode}, header:#{hdr}, answer:[#{resp}]}"
+            )
+
+          {:error, {reason, msg}} ->
+            ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+            Logger.info("#{id} [query error] #{ms} ms, #{reason} #{inspect(msg)}")
+        end
 
       :exception ->
-        Logger.error("#{id} #{inspect(meta)}")
+        Logger.error("#{id} EXCEPTION, #{inspect(meta)}")
     end
   end
 
   # [[ CACHE events ]]
   def handle_event([:dns, :cache, :hit], _metrics, meta, _config) do
     id = format_id(meta.ctx)
-    rrs = Enum.map(meta.rrs, fn rr -> "#{rr}" end) |> Enum.join(", ")
-    Logger.info("#{id} from cache: [#{rrs}]")
+    # Enum.map(meta.rrs, fn rr -> "#{rr}" end) |> Enum.join(", ")
+    rrs = format_rrs(meta.rrs)
+    Logger.info("#{id} [cache hit] RRs:[#{rrs}]")
+  end
+
+  def handle_event([:dns, :cache, :miss], _metrics, meta, _config) do
+    id = format_id(meta.ctx)
+    qtn = format_qtn(meta.qry)
+    Logger.info("#{id} [cache miss] query:[#{qtn}]")
   end
 
   # catch all
@@ -105,33 +127,28 @@ defmodule DNS.Telemetry do
 
   # [[ HELPERS ]]
   defp format_id(ctx),
-    do: "qry: #{ctx.qid}-#{ctx.qnr} (#{ctx.name}/#{ctx.class}/#{ctx.type})"
+    do: "DNS.#{ctx.qid}-#{ctx.qnr}"
 
-  defp format_resp({:error, {reason, msg}}),
-    do: "ERROR #{reason} #{inspect(msg)}"
-
-  defp format_resp({:ok, %DNS.Msg{} = msg}) do
-    rcode = DNS.xrcode(msg)
-    qtn = format_qtn(msg)
-    "#{rcode} #{qtn}"
+  defp format_hdr(%DNS.Msg{header: hdr}) do
+    hdr
+    |> Map.delete(:__struct__)
+    |> Map.delete(:wdata)
+    |> inspect()
   end
 
-  defp format_qtn(%DNS.Msg{question: qtns, header: hdr}) do
-    qtn =
-      Enum.map(qtns, fn rr -> "#{rr.name}/#{rr.class}/#{rr.type}" end)
-      |> Enum.join(",")
-
-    flags =
-      for key <- [:opcode, :rcode, :cd, :rd, :ra] do
-        "#{key}: #{Map.get(hdr, key)}"
-      end
-      |> Enum.join(", ")
-
-    "[#{qtn}] #{flags}"
+  defp format_qtn(%DNS.Msg{} = msg) do
+    msg.question
+    |> Enum.map(fn rr -> "(#{rr.name},#{rr.class},#{rr.type})" end)
+    |> Enum.join(",")
   end
+
+  # TODO: once level is added, also add auth/add-rrs for debug level
+  defp format_msg(%DNS.Msg{} = msg),
+    do: format_rrs(msg.answer)
 
   defp format_rrs(rrs) do
-    Enum.map(rrs, fn rr -> "#{rr.name}/#{rr.class}/#{rr.type}: #{inspect(rr.rdmap)}" end)
+    rrs
+    |> Enum.map(fn rr -> "(#{rr.name},#{rr.class},#{rr.type},#{inspect(rr.rdmap)})" end)
     |> Enum.join(", ")
   end
 end

@@ -122,7 +122,7 @@ defmodule DNS do
       recurse: recurse,
       rzones: ["."],
       cnames: [name],
-      qid: :erlang.phash2({name, class, type}),
+      qid: :erlang.phash2({name, class, type, System.monotonic_time()}),
       qnr: 0
     }
 
@@ -177,10 +177,9 @@ defmodule DNS do
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, ctx.class, type),
          tstop <- time(ctx.maxtime) do
-      # Log.info("iterative mode is #{ctx.recurse}")
-
       case cached do
         [] ->
+          :telemetry.execute([:dns, :cache, :miss], %{}, %{ctx: ctx, qry: qry})
           nss = ctx[:nameservers] || Cache.nss(qname)
           # Log.info("#{name} #{type} got #{length(nss)} nameservers")
 
