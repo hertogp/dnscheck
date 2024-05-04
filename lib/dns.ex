@@ -181,7 +181,6 @@ defmodule DNS do
         [] ->
           :telemetry.execute([:dns, :cache, :miss], %{}, %{ctx: ctx, qry: qry})
           nss = ctx[:nameservers] || Cache.nss(qname)
-          # Log.info("#{name} #{type} got #{length(nss)} nameservers")
 
           :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry}, fn ->
             resp =
@@ -194,15 +193,8 @@ defmodule DNS do
           end)
 
         rrs ->
-          :telemetry.execute(
-            [:dns, :cache, :hit],
-            %{},
-            %{ctx: ctx, rrs: rrs}
-          )
-
+          :telemetry.execute([:dns, :cache, :hit], %{}, %{ctx: ctx, qry: qry, rrs: rrs})
           {:ok, msg} = reply_make(qry, rrs)
-          # REVIEW: is it necessary to return reply_handler's result instead
-          # of reply_make's result?
           reply_handler(qry, msg, ctx, tstop)
       end
     else

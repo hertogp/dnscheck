@@ -71,7 +71,7 @@ defmodule DNS.Telemetry do
     :telemetry.detach(@handler_id)
   end
 
-  # [[ QUERY EVENTS ]]
+  # [[ QUERY events ]]
 
   def handle_event([:dns, :query, event], metrics, meta, _config) do
     id = format_id(meta.ctx)
@@ -80,7 +80,7 @@ defmodule DNS.Telemetry do
     case event do
       :start ->
         hdr = format_hdr(meta.qry)
-        Logger.info("#{id} [query start] question:[#{qry}] header:#{hdr}")
+        Logger.info("#{id} [query start] qry:[#{qry}] hdr:#{hdr}")
 
       :stop ->
         case meta.resp do
@@ -90,9 +90,7 @@ defmodule DNS.Telemetry do
             resp = format_msg(msg)
             rcode = DNS.xrcode(msg)
 
-            Logger.info(
-              "#{id} [query reply] #{ms} ms, #{rcode}, header:#{hdr}, answer:[#{resp}]}"
-            )
+            Logger.info("#{id} [query reply] #{ms} ms, #{rcode}, hdr:#{hdr}, ans:[#{resp}]}")
 
           {:error, {reason, msg}} ->
             ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
@@ -105,17 +103,19 @@ defmodule DNS.Telemetry do
   end
 
   # [[ CACHE events ]]
-  def handle_event([:dns, :cache, :hit], _metrics, meta, _config) do
-    id = format_id(meta.ctx)
-    # Enum.map(meta.rrs, fn rr -> "#{rr}" end) |> Enum.join(", ")
-    rrs = format_rrs(meta.rrs)
-    Logger.info("#{id} [cache hit] RRs:[#{rrs}]")
-  end
 
-  def handle_event([:dns, :cache, :miss], _metrics, meta, _config) do
+  def handle_event([:dns, :cache, event], _metrics, meta, _config) do
     id = format_id(meta.ctx)
-    qtn = format_qtn(meta.qry)
-    Logger.info("#{id} [cache miss] query:[#{qtn}]")
+
+    case event do
+      :miss ->
+        qry = format_qtn(meta.qry)
+        Logger.info("#{id} [cache miss] qry:[#{qry}]")
+
+      :hit ->
+        rrs = format_rrs(meta.rrs)
+        Logger.info("#{id} [cache hit] RRs:[#{rrs}]")
+    end
   end
 
   # catch all
