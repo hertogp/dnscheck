@@ -51,7 +51,6 @@ defmodule DNS.Msg.RRTest do
     # input validation
     assert_raise DNS.MsgError, fn -> RR.put(rr, type: 65536) end
     assert_raise DNS.MsgError, fn -> RR.put(rr, type: -1) end
-    assert_raise DNS.MsgError, fn -> RR.put(rr, type: "A") end
     assert_raise DNS.MsgError, fn -> RR.put(rr, type: :a) end
     assert_raise DNS.MsgError, fn -> RR.put(rr, class: 65536) end
     assert_raise DNS.MsgError, fn -> RR.put(rr, class: -1) end

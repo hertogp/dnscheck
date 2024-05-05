@@ -332,9 +332,9 @@ defmodule DNS.Cache do
       iex> size()
       3
       iex> nss = nss("host.example.com")
-      iex> {{10, 1, 1, 1}, 53} in nss
+      iex> {"ns1.example.com", {10, 1, 1, 1}, 53} in nss
       true
-      iex> {{10, 2, 1, 1}, 53} in nss
+      iex> {"ns2.example.net", {10, 2, 1, 1}, 53} in nss
       true
       iex> length(nss)
       2

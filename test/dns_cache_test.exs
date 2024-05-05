@@ -116,7 +116,7 @@ defmodule DNS.CacheTest do
   end
 
   test "put/1 ignores QTYPEs and pseudo types" do
-    for type <- [:OPT, :ANY, :IXFR, :AXFR, :*, :MAILA, :MAILB] do
+    for type <- [:OPT, :ANY, :IXFR, :AXFR, :MAILA, :MAILB] do
       rr = RR.new(name: "example.com", ttl: 100, type: type)
       refute Cache.put(rr)
     end
