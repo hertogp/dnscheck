@@ -59,8 +59,11 @@ defmodule DNS.Telemetry do
         [:dns, :query, :start],
         [:dns, :query, :stop],
         [:dns, :query, :exception],
+        [:dns, :query, :ns],
+        [:dns, :query, :reply],
         [:dns, :cache, :hit],
-        [:dns, :cache, :miss]
+        [:dns, :cache, :miss],
+        [:dns, :nss, :switch]
       ],
       &DNS.Telemetry.handle_event/4,
       nil
@@ -74,13 +77,15 @@ defmodule DNS.Telemetry do
   # [[ QUERY events ]]
 
   def handle_event([:dns, :query, event], metrics, meta, _config) do
-    id = format_id(meta.ctx)
+    evt = "#{format_id(meta.ctx)} query:#{event}"
     qry = format_qtn(meta.qry)
 
     case event do
       :start ->
         hdr = format_hdr(meta.qry)
-        Logger.info("#{id} [query start] qry:[#{qry}] hdr:#{hdr}")
+        nss = Enum.map(meta.nss, fn ns -> "#{inspect(ns)}" end) |> Enum.join(", ")
+        Logger.info("#{evt} qry:[#{qry}] hdr:#{hdr}")
+        Logger.info("#{evt} qry:[#{qry}] nss:#{nss}")
 
       :stop ->
         case meta.resp do
@@ -90,31 +95,61 @@ defmodule DNS.Telemetry do
             resp = format_msg(msg)
             rcode = DNS.xrcode(msg)
 
-            Logger.info("#{id} [query reply] #{ms} ms, #{rcode}, hdr:#{hdr}, ans:[#{resp}]}")
+            Logger.info("#{evt} #{ms}ms, #{rcode}, hdr:#{hdr}")
+            Logger.info("#{evt} ans:[#{resp}]}")
 
           {:error, {reason, msg}} ->
             ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-            Logger.info("#{id} [query error] #{ms} ms, #{reason} #{inspect(msg)}")
+            Logger.info("#{evt} #{ms}ms, #{reason} #{inspect(msg)}")
         end
 
       :exception ->
-        Logger.error("#{id} EXCEPTION, #{inspect(meta)}")
+        error = Exception.format_banner(meta.kind, meta.reason, meta.stacktrace)
+        Logger.error("#{evt} EXCEPTION, #{inspect(error)}")
+
+      :ns ->
+        {name, ip, port} = meta.ns
+        ip = Pfx.new(ip)
+        Logger.info("#{evt} qry:[#{qry}] ns:#{name} (#{ip}@#{port})")
+
+      :reply ->
+        Logger.info("#{evt} type:#{meta.type}")
     end
   end
 
   # [[ CACHE events ]]
 
   def handle_event([:dns, :cache, event], _metrics, meta, _config) do
-    id = format_id(meta.ctx)
+    evt = "#{format_id(meta.ctx)} cache:#{event}"
 
     case event do
       :miss ->
         qry = format_qtn(meta.qry)
-        Logger.info("#{id} [cache miss] qry:[#{qry}]")
+        Logger.info("#{evt} qry:[#{qry}]")
 
       :hit ->
         rrs = format_rrs(meta.rrs)
-        Logger.info("#{id} [cache hit] RRs:[#{rrs}]")
+        Logger.info("#{evt} RRs:[#{rrs}]")
+    end
+  end
+
+  # [[ NSS events ]]
+
+  def handle_event([:dns, :nss, event], _metrics, meta, _config) do
+    evt = "#{format_id(meta.ctx)} nss:#{event}"
+
+    case event do
+      :switch ->
+        zone = meta.zone
+        nss = Enum.join(meta.nss, ", ")
+        glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
+
+        Logger.info("#{evt} zone:#{zone}, glued:#{glued}, nss:[#{nss}]")
+
+        if meta.ex_glue != [] do
+          ex_glue = Enum.join(meta.ex_glue, ",")
+          Logger.warning("#{evt} zone:#{zone} no glue, dropped:[#{ex_glue}]")
+        end
     end
   end
 

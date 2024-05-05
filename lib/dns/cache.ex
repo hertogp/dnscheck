@@ -169,7 +169,7 @@ defmodule DNS.Cache do
 
   def put(%DNS.Msg.RR{name: name} = rr) when name in ["", "."] do
     # explicitly ignore RR's referencing root
-    # Log.warning("ignoring #{inspect(rr)}")
+    Log.warning("ignoring #{inspect(rr)}")
     false
   end
 
@@ -190,10 +190,12 @@ defmodule DNS.Cache do
           do: rr,
           else: %{rr | ttl: maxttl, rdata: "", wdata: ""}
 
-      # Log.info("caching #{inspect(rr)}")
+      Log.debug("caching #{inspect(rr)}")
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
-      _e -> false
+      _e ->
+        Log.error("not caching #{inspect(rr)}")
+        false
     end
   end
 
@@ -359,12 +361,14 @@ defmodule DNS.Cache do
 
     case get(zone, :IN, :NS, true) do
       [] ->
-        Log.debug("zone #{zone} has no nss in cache")
+        # Log.debug("zone #{zone} has no nss in cache")
         nssp(rest)
 
       rrs ->
-        for rr <- rrs, type <- [:A, :AAAA] do
-          {rr.rdmap.name, type, 53}
+        # NOTE:
+        # - only return actual address records
+        for rr <- rrs, type <- [:A, :AAAA], ar <- get(rr.rdmap.name, :IN, type) do
+          {rr.rdmap.name, Pfx.to_tuple(ar.rdmap.ip, mask: false), 53}
         end
     end
   end

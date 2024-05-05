@@ -173,6 +173,9 @@ defmodule DNS do
 
     ctx = %{ctx | qnr: ctx.qnr + 1}
 
+    if ctx.qnr > 10,
+      do: raise("this question runs too deep #{ctx.qnr}")
+
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, ctx.class, type),
@@ -182,14 +185,14 @@ defmodule DNS do
           :telemetry.execute([:dns, :cache, :miss], %{}, %{ctx: ctx, qry: qry})
           nss = ctx[:nameservers] || Cache.nss(qname)
 
-          :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry}, fn ->
+          :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry, nss: nss}, fn ->
             resp =
               case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
                 {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
                 error -> error
               end
 
-            {resp, %{ctx: ctx, qry: qry, resp: resp}}
+            {resp, %{ctx: ctx, qry: qry, nss: nss, resp: resp}}
           end)
 
         rrs ->
@@ -237,13 +240,8 @@ defmodule DNS do
   @spec recurse_nss(msg, map, timeT) :: [ns]
   defp recurse_nss(msg, ctx, tstop) do
     # - glue NS A/AAAA RRs are already in the cache
-    # - glue NS not guaranteed to have all its adresses (A vs AAAA) listed
+    # - glue NS not guaranteed to have all its addresses (A vs AAAA) listed
     # - drop NS's that are subdomains of `zone` but not in glue records to avoid looping
-    # TODO:
-    # - take [ns] from glue (check validity of glue name) ++ nsnames -- missing
-    Log.info(
-      "#{ctx.qid}-#{ctx.qnr} recursing for #{hd(msg.question).name}, zones seen: #{inspect(ctx.rzones)}"
-    )
 
     with :referral <- reply_type(msg) do
       zone = Enum.find(msg.authority, fn rr -> rr.type == :NS end).name
@@ -259,12 +257,13 @@ defmodule DNS do
             rr.type in [:A, :AAAA] and String.downcase(rr.name) in nsnames,
             do: {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
 
-      Log.info("following #{zone} with ns: #{Enum.join(nsnames, ", ")}")
-
-      if missing != [],
-        do: Log.info("no glue, dropping #{Enum.join(missing, ", ")}")
-
-      Log.info("glue ns: #{Enum.join(glue, ", ")}")
+      :telemetry.execute([:dns, :nss, :switch], %{}, %{
+        ctx: ctx,
+        zone: zone,
+        nss: nsnames,
+        ex_glue: missing,
+        in_glue: glue
+      })
 
       for name <- (nsnames -- missing) -- glue, type <- [:A, :AAAA] do
         {name, type, 53}
@@ -293,20 +292,18 @@ defmodule DNS do
     # ensure next ns is {name, address,port} by resolvep'ing it if necessary
     # prepend all {name, addr, port} to nss and then return {ns, nss}, removing
     # the ns from nss.
-    # FIXME: need to unwrap(ns) here ...
     case unwrap(ns) do
       {name, type, _port} when type in [:A, :AAAA] ->
-        Log.info("resolving ns #{name}, #{type}")
         ctx = %{ctx | nameservers: nil, recurse: true, maxtime: timeout(tstop)}
 
         case resolvep(name, type, ctx) do
           {:ok, msg} ->
-            # TODO: handle NODATA replies as well
             ns_rrs =
               for rr <- msg.answer, rr.type in [:A, :AAAA] do
                 {name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
               end
 
+            # ns_rrs may be empty (NODATA)
             case ns_rrs do
               [] -> next_ns(nss, ctx, tstop)
               _ns_rrs -> Enum.concat(ns_rrs, nss)
@@ -345,9 +342,7 @@ defmodule DNS do
   end
 
   defp query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
-    # query_nss is responsible for getting 1 answer from NSS-list
-    # Log.info("time remaining #{timeout(tstop)}")
-
+    # query a set of nameservers
     ctx = %{ctx | qnr: ctx.qnr + 1}
 
     cond do
@@ -359,17 +354,7 @@ defmodule DNS do
 
       true ->
         ns = unwrap(ns)
-        # Log.info("trying ns #{inspect(ns)}")
-
-        # result =
-        #   :telemetry.span(
-        #     [:dns, :query],
-        #     %{ctx: ctx, qry: qry},
-        #     fn ->
-        #       resp = query_ns(ns, qry, ctx, tstop, nth)
-        #       {resp, %{ctx: ctx, resp: resp, qry: qry}}
-        #     end
-        #   )
+        :telemetry.execute([:dns, :query, :ns], %{}, %{ctx: ctx, qry: qry, ns: ns})
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
@@ -388,6 +373,10 @@ defmodule DNS do
             # https://github.com/erlang/otp/blob/c55dc0d0a4a72fc59642aff186adde4621891cde/lib/kernel/src/inet_res.erl#L921
             # REVIEW:
             # - a reply with FORMERROR may also mean EDNS is not supported by NS
+            # if xrcode(msg) in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS],
+            #   do: query_nss(nss, qry, ctx, tstop, nth, failed),
+            #   else: {:ok, msg}
+
             case xrcode(msg) do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
@@ -395,10 +384,6 @@ defmodule DNS do
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
-                # the only place where msg is offered to the cache
-                # TODO: move to reply_handler, we donot wat to cache RR's from
-                # e.g. :lame responses ..
-                # Cache.put(msg)
                 {:ok, msg}
             end
         end
@@ -418,7 +403,7 @@ defmodule DNS do
              | {:timeout, binary}
              | :closed}
   defp query_ns(ns, qry, ctx, tstop, n) do
-    # responsible for getting 1 answer from 1 nameserver
+    # query a single nameserver
     # REVIEW: perhaps fallback to plain dns when EDNS leads to BADVERS or FORMERROR ?
     bufsize = ctx.bufsize
     timeout = ctx.timeout
@@ -646,6 +631,10 @@ defmodule DNS do
 
   defp reply_handler(qry, msg, ctx, tstop) do
     qtn = hd(qry.question)
+    # TODO: remove or keep
+    type = "#{reply_type(msg)}"
+    :telemetry.execute([:dns, :query, :reply], %{}, %{ctx: ctx, qry: qry, msg: msg, type: type})
+    # /TODO:
 
     case reply_type(msg) do
       :answer ->
@@ -655,11 +644,11 @@ defmodule DNS do
       :referral ->
         # referral loop detection using ctx.rzones
         zone = hd(msg.authority).name
-        Log.info("#{qtn.name} #{qtn.type} - got referral to #{zone}")
+        Log.debug("#{qtn.name} #{qtn.type} - got referral to #{zone}")
         seen = Enum.any?(ctx.rzones, &dname_equal?(&1, zone))
 
         if seen do
-          Log.error("zone #{zone} seen before: #{inspect(ctx.rzones)}")
+          Log.debug("zone #{zone} seen before: #{inspect(ctx.rzones)}")
           {:error, {:rzone_loop, msg}}
         else
           Cache.put(msg)
@@ -676,7 +665,7 @@ defmodule DNS do
 
         # cname loop detection using ctx.cnames
         if Enum.member?(ctx.cnames, cname) do
-          Log.error("cname #{cname} seen before: #{inspect(ctx.cnames)}")
+          Log.debug("cname #{cname} seen before: #{inspect(ctx.cnames)}")
           {:error, {:cname_loop, msg}}
         else
           ctx =
@@ -710,7 +699,6 @@ defmodule DNS do
 
       :nodata ->
         # Log.info("got a NODATA reply to #{qry}")
-        # Cache.put(msg)
         {:ok, msg}
 
       :lame ->
@@ -738,7 +726,7 @@ defmodule DNS do
 
   # Notes:
   # - query type :* or :ANY has answers come out as lame, but actually, the
-  # anwer contains many diff RR-type, just not type ANY
+  #   answer contains many diff RR-type, just not type ANY
   #
   #
   # """
