@@ -224,7 +224,6 @@ defmodule DNS.Cache do
     # - ignores message if truncated, etc
     # - ignores aut-RR's unless it's a parent for qname
     # - checks add-RR's are listed in remaining aut-NSs
-    # Log.info("msg offered is #{msg}")
 
     if cacheable?(msg) do
       qname = hd(msg.question).name
@@ -290,24 +289,34 @@ defmodule DNS.Cache do
   """
   @spec get(binary, atom | non_neg_integer, atom | non_neg_integer, boolean) :: [DNS.Msg.RR.t()]
   def get(name, class, type, strict \\ false) do
-    # REVIEW: maybe add opts for :strict, :stale (serve expired RR's ?)
+    # NOTE:
+    # - strict false allows for looking up :CNAME in case given `type` yields no results
     with {:ok, key} <- make_key(name, class, type),
          {:ok, crrs} <- lookup(key),
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
-        #   Log.info("{#{name}, #{class}, #{type}} -> removing #{length(dead)} expired RR(s)")
+        dead = Enum.map(dead, &unwrap_ttd/1)
+        :telemetry.execute([:dns, :cache, :expired], %{}, %{rrs: dead})
 
+        # remove the dead by re-inserting the live ones (with current timer)
         if rrs == [],
           do: :ets.delete(@cache, key),
           else: :ets.insert(@cache, {key, rrs})
       end
 
-      if crrs == [] and not strict and type != :CNAME,
-        do: get(name, class, :CNAME, true),
-        else: Enum.map(rrs, &unwrap_ttd/1)
+      if crrs == [] and not strict and type != :CNAME do
+        get(name, class, :CNAME, true)
+      else
+        rrs = Enum.map(rrs, &unwrap_ttd/1)
+
+        if rrs != [],
+          do: :telemetry.execute([:dns, :cache, :hit], %{}, %{rrs: rrs})
+
+        rrs
+      end
     else
-      _ ->
-        Log.error("failed to make key for #{inspect({name, class, type})}")
+      {:error, reason} ->
+        :telemetry.execute([:dns, :cache, :error], %{}, %{reason: reason})
         []
     end
   end
@@ -346,7 +355,10 @@ defmodule DNS.Cache do
       nssp(labels)
     else
       _ ->
-        Log.error("illegal zone name #{inspect(zone)}")
+        :telemetry.execute([:dns, :cache, :error], %{}, %{
+          desc: "illegal zone name #{inspect(zone)}"
+        })
+
         []
     end
   end
@@ -361,14 +373,19 @@ defmodule DNS.Cache do
 
     case get(zone, :IN, :NS, true) do
       [] ->
-        # Log.debug("zone #{zone} has no nss in cache")
         nssp(rest)
 
-      rrs ->
+      nss ->
         # NOTE:
-        # - only return actual address records
-        for rr <- rrs, type <- [:A, :AAAA], ar <- get(rr.rdmap.name, :IN, type) do
-          {rr.rdmap.name, Pfx.to_tuple(ar.rdmap.ip, mask: false), 53}
+        # - only return actual address records from cache (referrals are not
+        #   guaranteed to be complete: some A or AAAA-rrs may be missing)
+        # - they may have all expired, so check for non-empty list as result
+        for ns <- nss, type <- [:A, :AAAA], rr <- get(ns.rdmap.name, :IN, type) do
+          {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
+        end
+        |> case do
+          [] -> nssp(rest)
+          nss -> nss
         end
     end
   end
@@ -401,10 +418,10 @@ defmodule DNS.Cache do
     # [ ] never cache MSG when rcode=REFUSED, NOTIMPL
     # [ ] never cache RRs from bogus/lame response_type
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - Using the cache
-    # [x] do not cache RR's from a truncated response
-    # [x] do not cache RR's from *inverse query* (QTYPE)
-    # [x] do not cache results that have QNAME with a wildcard label  (*.xyz.tld, or xyz.*.tld)
-    # [?] do not RR's of responses of dubious reliability, but how to determine that?
+    # [x] don't cache RR's from a truncated response
+    # [x] don't cache RR's from *inverse query* (QTYPE)
+    # [x] don't cache results that have QNAME with a wildcard label  (*.xyz.tld, or xyz.*.tld)
+    # [?] don't cache RR's of responses of dubious reliability, but how to determine that?
     # [?] should responses from e.g. 9.9.9.9 be cached? (their TTL's for
     #     NXDOMAIN are all over the place.. i.e. non-authoritative answers.
     # [x] unsollicited responses or RR DATA that was not requested (resolver MUST check this)
@@ -443,7 +460,8 @@ defmodule DNS.Cache do
     {:ok, name} = dname_normalize(name)
     {:ok, {name, nclass, ntype}}
   rescue
-    _ -> :error
+    _ ->
+      {:error, "key creation failed for #{inspect({name, class, type})}"}
   end
 
   # (un)wrap time to die

@@ -63,6 +63,7 @@ defmodule DNS.Telemetry do
         [:dns, :query, :reply],
         [:dns, :cache, :hit],
         [:dns, :cache, :miss],
+        [:dns, :cache, :expired],
         [:dns, :nss, :switch]
       ],
       &DNS.Telemetry.handle_event/4,
@@ -120,16 +121,25 @@ defmodule DNS.Telemetry do
   # [[ CACHE events ]]
 
   def handle_event([:dns, :cache, event], _metrics, meta, _config) do
-    evt = "#{format_id(meta.ctx)} cache:#{event}"
+    evt = "cache:#{event}"
 
     case event do
       :miss ->
-        qry = format_qtn(meta.qry)
-        Logger.info("#{evt} qry:[#{qry}]")
+        Logger.info("#{evt} qry:[(#{meta.qry})]")
 
       :hit ->
         rrs = format_rrs(meta.rrs)
         Logger.info("#{evt} RRs:[#{rrs}]")
+
+      :expired ->
+        rrs = format_rrs(meta.rrs)
+        Logger.info("#{evt} RRs:[#{rrs}]")
+
+      :error ->
+        Logger.error("#{evt} #{meta.reason}")
+
+      _ ->
+        Logger.error("#{evt} not handled, meta:#{inspect(meta)}")
     end
   end
 

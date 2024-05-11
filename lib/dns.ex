@@ -182,7 +182,6 @@ defmodule DNS do
          tstop <- time(ctx.maxtime) do
       case cached do
         [] ->
-          :telemetry.execute([:dns, :cache, :miss], %{}, %{ctx: ctx, qry: qry})
           nss = ctx[:nameservers] || Cache.nss(qname)
 
           :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry, nss: nss}, fn ->
@@ -196,7 +195,6 @@ defmodule DNS do
           end)
 
         rrs ->
-          :telemetry.execute([:dns, :cache, :hit], %{}, %{ctx: ctx, qry: qry, rrs: rrs})
           {:ok, msg} = reply_make(qry, rrs)
           reply_handler(qry, msg, ctx, tstop)
       end
@@ -579,6 +577,7 @@ defmodule DNS do
   defp make_query(name, type, ctx) do
     # assumes ctx is safe (made by resolve_contextp and maybe updated on recursion)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
+    # TODO: optionally randomize case to help detect unsollicited replies
     name =
       if Pfx.valid?(name) do
         Pfx.dns_ptr(name)
