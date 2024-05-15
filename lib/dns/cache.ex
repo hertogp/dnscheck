@@ -83,6 +83,33 @@ defmodule DNS.Cache do
   end
 
   @doc """
+  Returns all known RRs for given zone in a flat list.
+
+  Optionally, specify `stale: true` if expired RRs are
+  to be included in the result.  Any expired RRs are not
+  deleted from the cache when using this function.
+
+  In the absence of any RRs, an empty list is returned.
+
+  """
+  @spec rrs(binary) :: [rr]
+  def rrs(zone, opts \\ []) do
+    stale = Keyword.get(opts, :stale, false)
+
+    case :ets.whereis(@cache) do
+      :undefined ->
+        []
+
+      _ ->
+        @cache
+        |> :ets.select([{{{zone, :_, :_}, :"$1"}, [], [:"$1"]}])
+        |> List.flatten()
+        |> Enum.map(&unwrap_ttd/1)
+        |> Enum.filter(fn rr -> stale or rr.ttl > 0 end)
+    end
+  end
+
+  @doc """
   Returns the number of entries in the DNS cache
 
   If the cache hasn't been created yet, it returns :undefined
@@ -387,6 +414,7 @@ defmodule DNS.Cache do
           [] -> nssp(rest)
           nss -> nss
         end
+        |> Enum.shuffle()
     end
   end
 
