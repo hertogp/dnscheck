@@ -27,7 +27,35 @@ defmodule DNS.Telemetry do
 
 
 
-  ## Eevents
+  ## Events
+
+  When iterating down the DNS tree, the resolver generates a number of events
+  in different contexts:
+  - `ns`, events related to an individual nameserver
+  - `nss`, events related to dealing with a (changing) nameserver set
+  - `query`, events related to questions posed and answers given (or not)
+  - `cache`, events related to the (simple) DNS cache
+
+  All events are emitted as `[:dns, context, event]`.
+
+  ### Events in the `:ns` context
+
+  Emitted as `[:dns, :ns, event]`, where event includes:
+  - `:query`, a query was sent
+  - `:reply`, a reply was received
+  - `:warning`, interaction with a nameserver gave raise to a warning
+  - `:timeout`, a nameserver did not respond in a timely fashion
+
+  ### Events in the `:nss` context
+
+  These include:
+  - `:switch`, the resolver switched to a new set of nameservers after a referral
+  - `:drop`, a nameserver was dropped from the nameserver set
+  - `:fail`, a nameserver was added to the failed list for (possibly) later use
+  - `:rotate`, the failed nss was selected as the new nss
+
+
+
 
   metadata:
   - uqid = hash of qname, proto, qtype of original user query

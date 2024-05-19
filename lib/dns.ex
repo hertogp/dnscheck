@@ -381,7 +381,6 @@ defmodule DNS do
             case xrcode(msg) do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
-                # Log.warning("dropping ns #{inspect(ns)}: it replied with (x)RCODE: #{rcode}")
                 emit([:nss, :drop], %{}, ctx: ctx, ns: ns, error: rcode)
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
