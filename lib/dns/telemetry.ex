@@ -88,35 +88,46 @@ defmodule DNS.Telemetry do
   # [[ QUERY events ]]
 
   def handle_event([:dns, :query, event], metrics, meta, cfg) do
-    evt = [logid(meta.ctx), " query:#{event} "]
     lvl = level(cfg, [event, :query])
 
-    case event do
-      :start ->
-        log(lvl, [evt, " QRY:", to_str(meta.qry), " NSS:", to_str(meta.nss)])
+    Logger.log(lvl, fn ->
+      evt = [logid(meta.ctx), " query:#{event} "]
 
-      :stop ->
-        case meta.resp do
-          {:ok, msg} ->
-            ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+      case event do
+        :start ->
+          [evt, "QRY:", to_iodata(meta.qry), " NSS:", to_str(meta.nss)]
 
-            log(lvl, [evt, "TIME:#{ms}ms ", "REPLY:", to_str(msg)])
+        :stop ->
+          case meta.resp do
+            {:ok, msg} ->
+              ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+              [evt, "TIME:#{ms}ms", " REPLY:", to_iodata(msg)]
 
-          {:error, {reason, msg}} ->
-            ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-            Logger.info("#{evt} #{ms}ms, #{reason} #{inspect(msg)}")
-        end
+            {:error, {reason, msg}} ->
+              ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+              [evt, "#{ms}ms", " #{reason}", " #{inspect(msg)}"]
+          end
 
-      :exception ->
-        error = Exception.format_banner(meta.kind, meta.reason, meta.stacktrace)
-        Logger.error("#{evt} EXCEPTION, #{inspect(error)}")
+        :exception ->
+          error = Exception.format_banner(meta.kind, meta.reason, meta.stacktrace)
+          [evt, "EXCEPTION", "#{inspect(error)}"]
 
-      :ns ->
-        log(lvl, [evt, "QRY:", to_str(meta.qry), "NS:", to_str(meta.ns)])
+        :ns ->
+          [evt, "QRY:", to_iodata(meta.qry), " NS:", to_str(meta.ns)]
 
-      :reply ->
-        log(lvl, [evt, "type:#{meta.type}"])
-    end
+        :reply ->
+          IO.inspect(meta, label: :nss)
+
+          [
+            evt,
+            "type:#{meta.type}",
+            " QTN:",
+            to_str(meta.qry.question),
+            " REPLY:",
+            to_iodata(meta.msg)
+          ]
+      end
+    end)
   end
 
   # [[ CACHE events ]]
@@ -185,7 +196,7 @@ defmodule DNS.Telemetry do
 
   def to_iodata(%DNS.Msg{} = msg) do
     [
-      "HDR:",
+      "[HDR:",
       to_str(msg.header),
       " QTN:",
       to_str(msg.question),
@@ -194,7 +205,8 @@ defmodule DNS.Telemetry do
       " ANS:",
       to_str(msg.answer),
       " ADD:",
-      to_str(msg.additional)
+      to_str(msg.additional),
+      "]"
     ]
   end
 
@@ -246,7 +258,4 @@ defmodule DNS.Telemetry do
       level -> level
     end
   end
-
-  defp log(level, iodata),
-    do: Logger.log(level, IO.iodata_to_binary(iodata))
 end
