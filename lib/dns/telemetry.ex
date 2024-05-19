@@ -161,7 +161,6 @@ defmodule DNS.Telemetry do
 
   def handle_event([:dns, :nss, event], _metrics, meta, cfg) do
     lvl = level(cfg, [event, :nss])
-    IO.inspect(meta, label: :nss_switch)
 
     Logger.log(lvl, fn ->
       evt = "#{logid(meta.ctx)} nss:#{event} "
@@ -169,7 +168,16 @@ defmodule DNS.Telemetry do
       case event do
         :switch ->
           glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
-          iodata = [evt, "ZONE:#{meta.zone}", " GLUED:#{glued}", " NSS:", to_str(meta.nss)]
+
+          iodata = [
+            evt,
+            "NS:",
+            meta.ns,
+            " ZONE:#{meta.zone}",
+            " GLUED:#{glued}",
+            " NSS:",
+            to_str(meta.nss)
+          ]
 
           if meta.ex_glue != [],
             do: [iodata, [evt, "ZONE:#{meta.zone}", " DROP:", to_str(meta.ex_glue)]],

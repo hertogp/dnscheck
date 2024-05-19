@@ -259,6 +259,7 @@ defmodule DNS do
             do: {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
 
       :telemetry.execute([:dns, :nss, :switch], %{}, %{
+        ns: msg.xdata.ns,
         ctx: ctx,
         zone: zone,
         nss: nsnames,
@@ -439,12 +440,26 @@ defmodule DNS do
     # the higher ups will need to decide on how to handle the reply
     {:ok, sock} = query_udp_open(ns, bufsize)
 
+    t0 = now()
+
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
          {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
       # Log.info("got #{byte_size(msg.wdata)} bytes from #{name} (#{Pfx.new(ip)}:#{port}/udp)")
       :gen_udp.close(sock)
-      {:ok, msg}
+      span = now() - t0
+
+      xdata = %{
+        ns: name,
+        ip: "#{Pfx.new(ip)}",
+        port: port,
+        proto: "udp",
+        time: span,
+        sent: byte_size(qry.wdata),
+        revcd: byte_size(msg.wdata)
+      }
+
+      {:ok, %{msg | xdata: xdata}}
     else
       error ->
         :gen_udp.close(sock)
@@ -485,28 +500,15 @@ defmodule DNS do
   defp query_udp_recv(sock, qry, timeout) do
     # - if it's not an answer to the question, try again until timeout has passed
     # - sock is connected, so `addr`,`port` *should* match `ip`,`p`
-    tstart = now()
     tstop = time(timeout)
 
     # REVIEW: after decoding, rcode might indicate that's its no use retrying
     # this server, e.g. FORMERR or NOTIMP or REFUSED.  In the case of FORMERR
     # the rsp msg will have question/answer/authority/additional all empty (!)
-    with {:ok, {addr, port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
+    with {:ok, {_addr, _port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
          {:ok, msg} <- Msg.decode(rsp),
          true <- reply?(qry, msg) do
-      span = now() - tstart
-      size = byte_size(msg.wdata)
-
-      xdata = %{
-        ip: "#{Pfx.new(addr)}",
-        port: port,
-        proto: "udp",
-        time: span,
-        sent: byte_size(qry.wdata),
-        recvd: size
-      }
-
-      {:ok, %{msg | xdata: xdata}}
+      {:ok, msg}
     else
       false ->
         Log.warning("retry udp_recv for #{inspect(qry.question)}")
@@ -538,6 +540,7 @@ defmodule DNS do
       span = now() - t0
 
       xdata = %{
+        ns: name,
         ip: "#{Pfx.new(ip)}",
         port: port,
         proto: "tcp",
