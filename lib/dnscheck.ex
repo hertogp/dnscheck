@@ -34,7 +34,7 @@ defmodule Dnscheck do
   def run({opts, hosts}) do
     IO.inspect(opts)
 
-    :ok = DNS.Telemetry.attach_default_logger()
+    :ok = DNS.Telemetry.attach_default_logger(%{})
 
     type =
       Keyword.get(opts, :type, "A")

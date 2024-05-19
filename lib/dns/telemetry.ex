@@ -52,7 +52,16 @@ defmodule DNS.Telemetry do
 
   # [[ DEFAULT LOGGER ]]
 
-  def attach_default_logger() do
+  def attach_default_logger(opts) do
+    opts =
+      opts
+      |> Map.put_new([:query], :info)
+      |> Map.put_new([:cache], :debug)
+      |> Map.put_new([:expired, :cache], :info)
+      |> Map.put_new([:nss], :info)
+
+    :telemetry.detach(@handler_id)
+
     :telemetry.attach_many(
       @handler_id,
       [
@@ -64,10 +73,11 @@ defmodule DNS.Telemetry do
         [:dns, :cache, :hit],
         [:dns, :cache, :miss],
         [:dns, :cache, :expired],
+        [:dns, :cache, :insert],
         [:dns, :nss, :switch]
       ],
       &DNS.Telemetry.handle_event/4,
-      nil
+      opts
     )
   end
 
@@ -77,27 +87,20 @@ defmodule DNS.Telemetry do
 
   # [[ QUERY events ]]
 
-  def handle_event([:dns, :query, event], metrics, meta, _config) do
-    evt = "#{format_id(meta.ctx)} query:#{event}"
-    qry = format_qtn(meta.qry)
+  def handle_event([:dns, :query, event], metrics, meta, cfg) do
+    evt = [logid(meta.ctx), " query:#{event} "]
+    lvl = level(cfg, [event, :query])
 
     case event do
       :start ->
-        hdr = format_hdr(meta.qry)
-        nss = Enum.map(meta.nss, fn ns -> "#{inspect(ns)}" end) |> Enum.join(", ")
-        Logger.info("#{evt} qry:[#{qry}] hdr:#{hdr}")
-        Logger.info("#{evt} qry:[#{qry}] nss:#{nss}")
+        log(lvl, [evt, " QRY:", to_str(meta.qry), " NSS:", to_str(meta.nss)])
 
       :stop ->
         case meta.resp do
           {:ok, msg} ->
             ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-            hdr = format_hdr(msg)
-            resp = format_msg(msg)
-            rcode = DNS.xrcode(msg)
 
-            Logger.info("#{evt} #{ms}ms, #{rcode}, hdr:#{hdr}")
-            Logger.info("#{evt} ans:[#{resp}]}")
+            log(lvl, [evt, "TIME:#{ms}ms ", "REPLY:", to_str(msg)])
 
           {:error, {reason, msg}} ->
             ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
@@ -109,58 +112,60 @@ defmodule DNS.Telemetry do
         Logger.error("#{evt} EXCEPTION, #{inspect(error)}")
 
       :ns ->
-        {name, ip, port} = meta.ns
-        ip = Pfx.new(ip)
-        Logger.info("#{evt} qry:[#{qry}] ns:#{name} (#{ip}@#{port})")
+        log(lvl, [evt, "QRY:", to_str(meta.qry), "NS:", to_str(meta.ns)])
 
       :reply ->
-        Logger.info("#{evt} type:#{meta.type}")
+        log(lvl, [evt, "type:#{meta.type}"])
     end
   end
 
   # [[ CACHE events ]]
 
-  def handle_event([:dns, :cache, event], _metrics, meta, _config) do
-    evt = "cache:#{event}"
+  def handle_event([:dns, :cache, event], _metrics, meta, cfg) do
+    evt = "cache:#{event} "
+    lvl = level(cfg, [event, :cache])
 
-    case event do
-      :miss ->
-        Logger.info("#{evt} qry:[(#{meta.qry})]")
+    Logger.log(lvl, fn ->
+      case event do
+        :miss ->
+          [evt, "KEY:", to_str(meta.key)]
 
-      :hit ->
-        rrs = format_rrs(meta.rrs)
-        Logger.info("#{evt} RRs:[#{rrs}]")
+        :hit ->
+          [evt, "KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-      :expired ->
-        rrs = format_rrs(meta.rrs)
-        Logger.info("#{evt} RRs:[#{rrs}]")
+        :expired ->
+          [evt, "KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-      :error ->
-        Logger.error("#{evt} #{meta.reason}")
+        :insert ->
+          [evt, "KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-      _ ->
-        Logger.error("#{evt} not handled, meta:#{inspect(meta)}")
-    end
+        :error ->
+          ["#{evt} ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
+
+        _ ->
+          ["#{evt} ERROR not handled, meta:#{inspect(meta)}"]
+      end
+    end)
   end
 
   # [[ NSS events ]]
 
-  def handle_event([:dns, :nss, event], _metrics, meta, _config) do
-    evt = "#{format_id(meta.ctx)} nss:#{event}"
+  def handle_event([:dns, :nss, event], _metrics, meta, cfg) do
+    lvl = level(cfg, [event, :nss])
 
-    case event do
-      :switch ->
-        zone = meta.zone
-        nss = Enum.join(meta.nss, ", ")
-        glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
+    Logger.log(lvl, fn ->
+      evt = "#{logid(meta.ctx)} nss:#{event} "
 
-        Logger.info("#{evt} zone:#{zone}, glued:#{glued}, nss:[#{nss}]")
+      case event do
+        :switch ->
+          glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
+          iodata = [evt, "ZONE:#{meta.zone}", " GLUED:#{glued}", " NSS:", to_str(meta.nss)]
 
-        if meta.ex_glue != [] do
-          ex_glue = Enum.join(meta.ex_glue, ",")
-          Logger.warning("#{evt} zone:#{zone} no glue, dropped:[#{ex_glue}]")
-        end
-    end
+          if meta.ex_glue != [],
+            do: [iodata, [evt, "ZONE:#{meta.zone}", " DROP:", to_str(meta.ex_glue)]],
+            else: iodata
+      end
+    end)
   end
 
   # catch all
@@ -170,30 +175,78 @@ defmodule DNS.Telemetry do
     )
   end
 
+  def set_level(level) do
+    Logger.put_module_level(__MODULE__, level)
+  end
+
   # [[ HELPERS ]]
-  defp format_id(ctx),
-    do: "DNS.#{ctx.qid}-#{ctx.qnr}"
+  defp logid(ctx),
+    do: ["DNS:", "#{ctx.qid}-#{ctx.qnr}"]
 
-  defp format_hdr(%DNS.Msg{header: hdr}) do
-    hdr
-    |> Map.delete(:__struct__)
-    |> Map.delete(:wdata)
-    |> inspect()
+  def to_iodata(%DNS.Msg{} = msg) do
+    [
+      "HDR:",
+      to_str(msg.header),
+      " QTN:",
+      to_str(msg.question),
+      " AUT:",
+      to_str(msg.authority),
+      " ANS:",
+      to_str(msg.answer),
+      " ADD:",
+      to_str(msg.additional)
+    ]
   end
 
-  defp format_qtn(%DNS.Msg{} = msg) do
-    msg.question
-    |> Enum.map(fn rr -> "(#{rr.name},#{rr.class},#{rr.type})" end)
-    |> Enum.join(",")
+  def to_str(m) when is_map(m) do
+    m
+    |> Map.drop([:__struct__, :rdata, :wdata])
+    |> Map.to_list()
+    |> to_str()
   end
 
-  # TODO: once level is added, also add auth/add-rrs for debug level
-  defp format_msg(%DNS.Msg{} = msg),
-    do: format_rrs(msg.answer)
-
-  defp format_rrs(rrs) do
-    rrs
-    |> Enum.map(fn rr -> "(#{rr.name},#{rr.class},#{rr.type},#{inspect(rr.rdmap)})" end)
-    |> Enum.join(", ")
+  def to_str(l) when is_list(l) do
+    [
+      "[",
+      l
+      |> Enum.map(&to_str/1)
+      |> Enum.intersperse(", "),
+      "]"
+    ]
   end
+
+  def to_str(a) when is_atom(a),
+    do: Atom.to_string(a)
+
+  def to_str(b) when is_binary(b) do
+    if String.printable?(b),
+      do: b,
+      else: inspect(b, limit: :infinity)
+  end
+
+  def to_str({k, v}) do
+    [to_str(k), ":", to_str(v)]
+  end
+
+  def to_str(n) when is_number(n),
+    do: "#{n}"
+
+  def to_str(other) do
+    [inspect(other)]
+  end
+
+  # [[ log ]]
+
+  def level(_cfg, []),
+    do: :info
+
+  def level(cfg, [_ | rest] = event) do
+    case cfg[event] do
+      nil -> level(cfg, rest)
+      level -> level
+    end
+  end
+
+  defp log(level, iodata),
+    do: Logger.log(level, IO.iodata_to_binary(iodata))
 end

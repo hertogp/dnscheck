@@ -22,7 +22,6 @@ defmodule DNS.Cache do
   Upon retrieval, those that expired are excluded from the results and those
   that remain have their TTL's reduced by the amount of time they spent in the
   cache.
-
   The cache is *not* wrapped in a genserver and hence it is not periodically
   purged of old entries.  Those only get removed once an attempt is made to
   retrieve them after their time to live has ended.
@@ -96,16 +95,20 @@ defmodule DNS.Cache do
   def rrs(zone, opts \\ []) do
     stale = Keyword.get(opts, :stale, false)
 
-    case :ets.whereis(@cache) do
-      :undefined ->
-        []
+    with {:ok, zone} <- dname_normalize(zone) do
+      case :ets.whereis(@cache) do
+        :undefined ->
+          []
 
-      _ ->
-        @cache
-        |> :ets.select([{{{zone, :_, :_}, :"$1"}, [], [:"$1"]}])
-        |> List.flatten()
-        |> Enum.map(&unwrap_ttd/1)
-        |> Enum.filter(fn rr -> stale or rr.ttl > 0 end)
+        _ ->
+          @cache
+          |> :ets.select([{{{zone, :_, :_}, :"$1"}, [], [:"$1"]}])
+          |> List.flatten()
+          |> Enum.map(&unwrap_ttd/1)
+          |> Enum.filter(fn rr -> stale or rr.ttl > 0 end)
+      end
+    else
+      _ -> []
     end
   end
 
@@ -217,7 +220,7 @@ defmodule DNS.Cache do
           do: rr,
           else: %{rr | ttl: maxttl, rdata: "", wdata: ""}
 
-      Log.debug("caching #{inspect(rr)}")
+      :telemetry.execute([:dns, :cache, :insert], %{}, %{key: key, rrs: rr})
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
       _e ->
@@ -323,7 +326,7 @@ defmodule DNS.Cache do
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
         dead = Enum.map(dead, &unwrap_ttd/1)
-        :telemetry.execute([:dns, :cache, :expired], %{}, %{rrs: dead})
+        :telemetry.execute([:dns, :cache, :expired], %{}, %{key: key, rrs: dead})
 
         # remove the dead by re-inserting the live ones (with current timer)
         if rrs == [],
@@ -335,15 +338,18 @@ defmodule DNS.Cache do
         get(name, class, :CNAME, true)
       else
         rrs = Enum.map(rrs, &unwrap_ttd/1)
-
-        if rrs != [],
-          do: :telemetry.execute([:dns, :cache, :hit], %{}, %{rrs: rrs})
+        event = if rrs == [], do: :miss, else: :hit
+        :telemetry.execute([:dns, :cache, event], %{}, %{key: key, rrs: rrs})
 
         rrs
       end
     else
       {:error, reason} ->
-        :telemetry.execute([:dns, :cache, :error], %{}, %{reason: reason})
+        :telemetry.execute([:dns, :cache, :error], %{}, %{
+          key: {name, class, type},
+          reason: reason
+        })
+
         []
     end
   end

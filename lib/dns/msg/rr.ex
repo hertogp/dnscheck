@@ -2012,7 +2012,6 @@ defimpl String.Chars, for: DNS.Msg.RR do
         else: Base.encode16(m.salt, case: :lower, padding: false)
 
     next = Base.hex_encode32(m.next_name, case: :lower)
-    IO.inspect({m.next_name, next})
     "#{m.algo} #{m.flags} #{m.iterations} #{salt} #{next} #{rrs}"
   end
 
