@@ -258,14 +258,14 @@ defmodule DNS do
             rr.type in [:A, :AAAA] and String.downcase(rr.name) in nsnames,
             do: {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
 
-      :telemetry.execute([:dns, :nss, :switch], %{}, %{
+      emit([:nss, :switch], %{},
         ns: msg.xdata.ns,
         ctx: ctx,
         zone: zone,
         nss: nsnames,
         ex_glue: missing,
         in_glue: glue
-      })
+      )
 
       for name <- (nsnames -- missing) -- glue, type <- [:A, :AAAA] do
         {name, type, 53}
@@ -277,8 +277,9 @@ defmodule DNS do
       _ -> []
     end
   rescue
+    # TODO: rescue clause no longer needed?
     err ->
-      Log.info("error: #{inspect(err)}")
+      Log.error("error: #{inspect(err)}")
       []
   end
 
@@ -306,11 +307,11 @@ defmodule DNS do
             # ns_rrs may be empty (NODATA)
             case ns_ips do
               [] -> next_ns(nss, ctx, tstop)
-              _ns_rrs -> Enum.concat(ns_ips, nss)
+              _ns_ips -> Enum.concat(ns_ips, nss)
             end
 
-          _ ->
-            Log.error("could not resolve ns #{name}")
+          {:error, {reason, info}} ->
+            emit([:nss, :error], %{}, ctx: ctx, reason: reason, info: info)
             next_ns(nss, ctx, tstop)
         end
 
@@ -330,7 +331,7 @@ defmodule DNS do
     do: {:error, {:timeout, "nameserver(s) failed to reply properly"}}
 
   defp query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
-    Log.warn("retrying #{length(failed)} failed nameservers")
+    emit([:nss, :rotate], %{}, ctx: ctx, failed: failed)
     query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
   end
 
@@ -354,17 +355,17 @@ defmodule DNS do
 
       true ->
         ns = unwrap(ns)
-        :telemetry.execute([:dns, :query, :ns], %{}, %{ctx: ctx, qry: qry, ns: ns})
+        emit([:query, :ns], %{}, ctx: ctx, qry: qry, ns: ns)
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
-            # Log.warning("pushing #{inspect(ns)} onto failed list (:timeout)")
+            emit([:nss, :push], %{}, ctx: ctx, error: :timeout, ns: ns)
             query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
-          {:error, _reason} ->
+          {:error, reason} ->
             # REVIEW: some query_ns errors (e.g. :system_limit or :inet.posix()) might require a
             # full stop here ...
-            # Log.warning("dropping #{inspect(ns)}, due to error: #{inspect(reason)}")
+            emit([:nss, :drop], %{}, ctx: ctx, ns: ns, error: reason)
             query_nss(nss, qry, ctx, tstop, nth, failed)
 
           {:ok, msg} ->
@@ -381,6 +382,7 @@ defmodule DNS do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
                 # Log.warning("dropping ns #{inspect(ns)}: it replied with (x)RCODE: #{rcode}")
+                emit([:nss, :drop], %{}, ctx: ctx, ns: ns, error: rcode)
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
@@ -650,7 +652,7 @@ defmodule DNS do
     qtn = hd(qry.question)
     # TODO: remove or keep
     type = "#{reply_type(msg)}"
-    :telemetry.execute([:dns, :query, :reply], %{}, %{ctx: ctx, qry: qry, msg: msg, type: type})
+    emit([:query, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: type)
     # /TODO:
 
     case reply_type(msg) do
@@ -853,6 +855,10 @@ defmodule DNS do
   end
 
   # [[ HELPERS ]]
+
+  defp emit(event, measurements, meta) do
+    :telemetry.execute([:dns | event], measurements, Enum.into(meta, %{}))
+  end
 
   @spec reply?(msg, msg) :: boolean
   defp reply?(qry, rsp) do

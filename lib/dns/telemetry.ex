@@ -70,11 +70,15 @@ defmodule DNS.Telemetry do
         [:dns, :query, :exception],
         [:dns, :query, :ns],
         [:dns, :query, :reply],
+        #
         [:dns, :cache, :hit],
         [:dns, :cache, :miss],
         [:dns, :cache, :expired],
         [:dns, :cache, :insert],
-        [:dns, :nss, :switch]
+        #
+        [:dns, :nss, :switch],
+        [:dns, :nss, :error],
+        [:dns, :nss, :drop]
       ],
       &DNS.Telemetry.handle_event/4,
       opts
@@ -182,6 +186,12 @@ defmodule DNS.Telemetry do
           if meta.ex_glue != [],
             do: [iodata, [evt, "ZONE:#{meta.zone}", " DROP:", to_str(meta.ex_glue)]],
             else: iodata
+
+        :drop ->
+          [evt, "NS:", to_str(meta.ns), " ERROR:", to_str(meta.error)]
+
+        other ->
+          [evt, "-------------------> TODO - ", inspect(other), inspect(meta)]
       end
     end)
   end
