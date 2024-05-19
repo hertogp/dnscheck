@@ -173,6 +173,8 @@ defmodule DNS do
 
     ctx = %{ctx | qnr: ctx.qnr + 1}
 
+    # TODO: return error tuple instead of raising {:error, {:query, "max recursion exceeded"}
+    # add true <- ctx.qnr < ctx.max_depth as with clause and add a false-clause to else block
     if ctx.qnr > 10,
       do: raise("this question runs too deep #{ctx.qnr}")
 
@@ -237,6 +239,7 @@ defmodule DNS do
 
   @spec recurse_nss(msg, map, timeT) :: [ns]
   defp recurse_nss(msg, ctx, tstop) do
+    # Returns a valid nss-list, dropping unglued, inzone nameservers
     # - glue NS A/AAAA RRs are already in the cache
     # - glue NS not guaranteed to have all its addresses (A vs AAAA) listed
     # - drop NS's that are subdomains of `zone` but not in glue records to avoid looping
@@ -287,24 +290,22 @@ defmodule DNS do
     do: []
 
   defp next_ns([ns | nss], ctx, tstop) do
-    # ensure next ns is {name, address,port} by resolvep'ing it if necessary
-    # prepend all {name, addr, port} to nss and then return {ns, nss}, removing
-    # the ns from nss.
+    # Returns a nss list whose 1st element is garanteed to have an address
     case unwrap(ns) do
       {name, type, _port} when type in [:A, :AAAA] ->
         ctx = %{ctx | nameservers: nil, recurse: true, maxtime: timeout(tstop)}
 
         case resolvep(name, type, ctx) do
           {:ok, msg} ->
-            ns_rrs =
+            ns_ips =
               for rr <- msg.answer, rr.type in [:A, :AAAA] do
                 {name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
               end
 
             # ns_rrs may be empty (NODATA)
-            case ns_rrs do
+            case ns_ips do
               [] -> next_ns(nss, ctx, tstop)
-              _ns_rrs -> Enum.concat(ns_rrs, nss)
+              _ns_rrs -> Enum.concat(ns_ips, nss)
             end
 
           _ ->
@@ -484,8 +485,8 @@ defmodule DNS do
   defp query_udp_recv(sock, qry, timeout) do
     # - if it's not an answer to the question, try again until timeout has passed
     # - sock is connected, so `addr`,`port` *should* match `ip`,`p`
-    {:ok, {ip, p}} = :inet.peername(sock)
-    ns = inspect({ip, p})
+    # {:ok, {ip, p}} = :inet.peername(sock)
+    # ns = inspect({ip, p})
     # Log.info("resolving #{hd(qry.question).name} at #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
@@ -493,13 +494,24 @@ defmodule DNS do
     # REVIEW: after decoding, rcode might indicate that's its no use retrying
     # this server, e.g. FORMERR or NOTIMP or REFUSED.  In the case of FORMERR
     # the rsp msg will have question/answer/authority/additional all empty (!)
-    with {:ok, {_addr, _p, rsp}} <- :gen_udp.recv(sock, 0, timeout),
+    with {:ok, {addr, p, rsp}} <- :gen_udp.recv(sock, 0, timeout),
          {:ok, msg} <- Msg.decode(rsp),
          true <- reply?(qry, msg) do
       span = now() - tstart
       size = byte_size(msg.wdata)
-      # Log.info("received #{size} bytes in #{span} ms, from #{ns}")
+      Log.info("received #{size} bytes in #{span} ms, from addr #{inspect(addr)} sport=#{p}")
 
+      # TODO
+      # xdata = %{
+      #   ip: "#{Pfx.new(addr)}",
+      #   port: p,
+      #   proto: "udp",
+      #   time: span,
+      #   sent: byte_size(qry.wdata),
+      #   recvd: size
+      # }
+      #
+      # {:ok, Map.put(msg, :xdata, xdata)}
       {:ok, msg}
     else
       false ->

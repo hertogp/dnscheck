@@ -105,7 +105,7 @@ defmodule DNS.Telemetry do
 
             {:error, {reason, msg}} ->
               ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-              [evt, "#{ms}ms", " #{reason}", " #{inspect(msg)}"]
+              [evt, "TIME:#{ms}ms", "ERROR:[#{reason}]", "DESC:[#{inspect(msg)}]"]
           end
 
         :exception ->
@@ -116,11 +116,9 @@ defmodule DNS.Telemetry do
           [evt, "QRY:", to_iodata(meta.qry), " NS:", to_str(meta.ns)]
 
         :reply ->
-          IO.inspect(meta, label: :nss)
-
           [
             evt,
-            "type:#{meta.type}",
+            "TYPE:#{meta.type}",
             " QTN:",
             to_str(meta.qry.question),
             " REPLY:",
@@ -163,6 +161,7 @@ defmodule DNS.Telemetry do
 
   def handle_event([:dns, :nss, event], _metrics, meta, cfg) do
     lvl = level(cfg, [event, :nss])
+    IO.inspect(meta, label: :nss_switch)
 
     Logger.log(lvl, fn ->
       evt = "#{logid(meta.ctx)} nss:#{event} "
