@@ -45,7 +45,13 @@ defmodule DNS.Msg do
   alias DNS.Msg.Qtn
   alias DNS.Msg.RR
 
-  defstruct header: nil, question: [], answer: [], authority: [], additional: [], wdata: <<>>
+  defstruct header: nil,
+            question: [],
+            answer: [],
+            authority: [],
+            additional: [],
+            wdata: <<>>,
+            xdata: %{}
 
   @typedoc """
   A struct that represents a DNS message.
@@ -55,6 +61,7 @@ defmodule DNS.Msg do
   - a list of `t:DNS.Msg.Qtn.t/0` for the question section
   - a list of `t:DNS.Msg.RR.t/0` for the answer, authority and/or additional sections
   - `wdata`, a binary that holds the wire formatted data of the DNS message.
+  - `xdata`, a map with details on the nameserver that replied (empty if msg is from cache)
 
 
   """
@@ -64,7 +71,8 @@ defmodule DNS.Msg do
           answer: [RR.t()],
           authority: [RR.t()],
           additional: [RR.t()],
-          wdata: binary
+          wdata: binary,
+          xdata: map
         }
 
   @doc ~S"""

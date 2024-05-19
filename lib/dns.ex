@@ -485,34 +485,28 @@ defmodule DNS do
   defp query_udp_recv(sock, qry, timeout) do
     # - if it's not an answer to the question, try again until timeout has passed
     # - sock is connected, so `addr`,`port` *should* match `ip`,`p`
-    # {:ok, {ip, p}} = :inet.peername(sock)
-    # ns = inspect({ip, p})
-    # Log.info("resolving #{hd(qry.question).name} at #{ns}, timeout #{timeout} ms")
     tstart = now()
     tstop = time(timeout)
 
     # REVIEW: after decoding, rcode might indicate that's its no use retrying
     # this server, e.g. FORMERR or NOTIMP or REFUSED.  In the case of FORMERR
     # the rsp msg will have question/answer/authority/additional all empty (!)
-    with {:ok, {addr, p, rsp}} <- :gen_udp.recv(sock, 0, timeout),
+    with {:ok, {addr, port, rsp}} <- :gen_udp.recv(sock, 0, timeout),
          {:ok, msg} <- Msg.decode(rsp),
          true <- reply?(qry, msg) do
       span = now() - tstart
       size = byte_size(msg.wdata)
-      Log.info("received #{size} bytes in #{span} ms, from addr #{inspect(addr)} sport=#{p}")
 
-      # TODO
-      # xdata = %{
-      #   ip: "#{Pfx.new(addr)}",
-      #   port: p,
-      #   proto: "udp",
-      #   time: span,
-      #   sent: byte_size(qry.wdata),
-      #   recvd: size
-      # }
-      #
-      # {:ok, Map.put(msg, :xdata, xdata)}
-      {:ok, msg}
+      xdata = %{
+        ip: "#{Pfx.new(addr)}",
+        port: port,
+        proto: "udp",
+        time: span,
+        sent: byte_size(qry.wdata),
+        recvd: size
+      }
+
+      {:ok, %{msg | xdata: xdata}}
     else
       false ->
         Log.warning("retry udp_recv for #{inspect(qry.question)}")
@@ -541,11 +535,20 @@ defmodule DNS do
          {:ok, msg} <- Msg.decode(rsp),
          true <- reply?(qry, msg) do
       :gen_tcp.close(sock)
-      t = now() - t0
+      span = now() - t0
+
+      xdata = %{
+        ip: "#{Pfx.new(ip)}",
+        port: port,
+        proto: "tcp",
+        time: span,
+        sent: byte_size(qry.wdata),
+        revcd: byte_size(msg.wdata)
+      }
 
       # Log.info("got #{byte_size(rsp)} bytes from #{name} (#{Pfx.new(ip)}:#{port}/tcp) in #{t} ms")
 
-      {:ok, msg}
+      {:ok, %{msg | xdata: xdata}}
     else
       false ->
         {:error, :notreply}
