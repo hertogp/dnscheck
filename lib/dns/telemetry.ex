@@ -213,6 +213,8 @@ defmodule DNS.Telemetry do
       to_str(msg.answer),
       " ADD:",
       to_str(msg.additional),
+      " XDATA:",
+      to_str(msg.xdata),
       "]"
     ]
   end
