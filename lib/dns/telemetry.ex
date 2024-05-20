@@ -38,7 +38,7 @@ defmodule DNS.Telemetry do
 
   All events are emitted as `[:dns, context, event]`.
 
-  ### Events in the `:ns` context
+  ### `:ns` events
 
   Emitted as `[:dns, :ns, event]`, where event includes:
   - `:query`, a query was sent
@@ -46,7 +46,7 @@ defmodule DNS.Telemetry do
   - `:warning`, interaction with a nameserver gave raise to a warning
   - `:timeout`, a nameserver did not respond in a timely fashion
 
-  ### Events in the `:nss` context
+  ### `:nss` events
 
   These include:
   - `:switch`, the resolver switched to a new set of nameservers after a referral
@@ -54,23 +54,21 @@ defmodule DNS.Telemetry do
   - `:fail`, a nameserver was added to the failed list for (possibly) later use
   - `:rotate`, the failed nss was selected as the new nss
 
+  ### `cache` events
+
+  Emitted as `[:dns, :cache, event]`, where `event` is one of:
+  - `:hit`, cache has RRs for given query
+  - `:miss`, cache has no RRs for given query
+  - `:expired`, one or more RRs were removed due to TTL
+  - `:error`, a cache request encountered an error
 
 
+  ### `query` span events
 
-  metadata:
-  - uqid = hash of qname, proto, qtype of original user query
-  - cqid = hash of current qname, proto, qtype
-
-  :dns, :query, :sent      %{type: :user|:system, src,sport,dst,dport,proto}
-  :dns, :query, :resolved  %{type: :user|:system, ,,}
-  :dns, :query, :failed    %{type, :user|:system, ,,}
-
-  :dns, :reply, :received  %{type: :referral|:lame|:answer..}
-  :dns, :reply, :unsollicited %{type: ...}
-
-  :dns, :socket, :created
-  ...
-
+  Emitted as `[:dns, :query, event]` where event is one of:
+  - `:start`, a query was started by the resolver
+  - `:stop`, a query was concluded by the resolver
+  - `:exception`, a query resulted in an raised execption
 
   """
 
