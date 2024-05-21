@@ -43,16 +43,25 @@ defmodule DNS.Telemetry do
   Emitted as `[:dns, :ns, event]`, where event includes:
   - `:query`, a query was sent
   - `:reply`, a reply was received
-  - `:warning`, interaction with a nameserver gave raise to a warning
-  - `:timeout`, a nameserver did not respond in a timely fashion
+  - `:error`, a error occurred while talking to a nameserver
+  - `:lame`, a lame reply was received
+  - `:loop`, reply leads to cname or zone loop
 
   ### `:nss` events
 
   These include:
+  - `:select`, a name server was selected
   - `:switch`, the resolver switched to a new set of nameservers after a referral
   - `:drop`, a nameserver was dropped from the nameserver set
   - `:fail`, a nameserver was added to the failed list for (possibly) later use
   - `:rotate`, the failed nss was selected as the new nss
+
+  ### `query` span events
+
+  Emitted as `[:dns, :query, event]` where event is one of:
+  - `:start`, a query was started by the resolver
+  - `:stop`, a query was concluded by the resolver
+  - `:exception`, a query resulted in an raised execption
 
   ### `cache` events
 
@@ -62,53 +71,60 @@ defmodule DNS.Telemetry do
   - `:expired`, one or more RRs were removed due to TTL
   - `:error`, a cache request encountered an error
 
-
-  ### `query` span events
-
-  Emitted as `[:dns, :query, event]` where event is one of:
-  - `:start`, a query was started by the resolver
-  - `:stop`, a query was concluded by the resolver
-  - `:exception`, a query resulted in an raised execption
-
   """
 
   require Logger
 
   @handler_id "dns-default-logger"
 
+  @events [
+    [:dns, :query, :start],
+    [:dns, :query, :stop],
+    [:dns, :query, :exception],
+    [:dns, :query, :ns],
+    [:dns, :query, :reply],
+    #
+    [:dns, :cache, :hit],
+    [:dns, :cache, :miss],
+    [:dns, :cache, :expired],
+    [:dns, :cache, :insert],
+    #
+    [:dns, :nss, :switch],
+    [:dns, :nss, :fail],
+    [:dns, :nss, :drop],
+    [:dns, :nss, :error],
+    #
+    [:dns, :ns, :query],
+    [:dns, :ns, :reply],
+    [:dns, :ns, :loop],
+    [:dns, :ns, :lame]
+  ]
+
   # [[ DEFAULT LOGGER ]]
 
-  def attach_default_logger(opts) do
-    opts =
-      opts
-      |> Map.put_new([:query], :info)
-      |> Map.put_new([:cache], :debug)
-      |> Map.put_new([:expired, :cache], :info)
-      |> Map.put_new([:nss], :info)
+  defp do_opts(opts) when map_size(opts) == 0 do
+    do_opts(%{[:dns] => :info, [:dns, :cache] => :debug})
+  end
 
+  defp do_opts(opts) do
+    sorted =
+      opts
+      |> Map.to_list()
+      |> Enum.sort()
+
+    # replace possible short keys with all longer instances
+    for {k, v} <- sorted do
+      Enum.filter(@events, fn evt -> List.starts_with?(evt, k) end)
+      |> Enum.map(fn k -> {k, v} end)
+    end
+    |> List.flatten()
+    |> Enum.into(%{})
+  end
+
+  def(attach_default_logger(opts \\ %{})) do
+    opts = do_opts(opts)
     :telemetry.detach(@handler_id)
-
-    :telemetry.attach_many(
-      @handler_id,
-      [
-        [:dns, :query, :start],
-        [:dns, :query, :stop],
-        [:dns, :query, :exception],
-        [:dns, :query, :ns],
-        [:dns, :query, :reply],
-        #
-        [:dns, :cache, :hit],
-        [:dns, :cache, :miss],
-        [:dns, :cache, :expired],
-        [:dns, :cache, :insert],
-        #
-        [:dns, :nss, :switch],
-        [:dns, :nss, :error],
-        [:dns, :nss, :drop]
-      ],
-      &DNS.Telemetry.handle_event/4,
-      opts
-    )
+    :telemetry.attach_many(@handler_id, Map.keys(opts), &DNS.Telemetry.handle_event/4, opts)
   end
 
   def detach_default_handler() do
@@ -117,108 +133,135 @@ defmodule DNS.Telemetry do
 
   # [[ QUERY events ]]
 
-  def handle_event([:dns, :query, event], metrics, meta, cfg) do
-    lvl = level(cfg, [event, :query])
+  def handle_event([:dns, :query, topic] = event, metrics, meta, cfg) do
+    lvl = level(cfg, event)
 
     Logger.log(lvl, fn ->
-      evt = [logid(meta.ctx), " query:#{event} "]
+      details =
+        case topic do
+          :start ->
+            ["QRY:", to_str(Map.take(meta.qry, [:header, :question])), " NSS:", to_str(meta.nss)]
 
-      case event do
-        :start ->
-          [evt, "QRY:", to_iodata(meta.qry), " NSS:", to_str(meta.nss)]
+          :stop ->
+            case meta.resp do
+              {:ok, msg} ->
+                ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+                ["TIME:#{ms}ms", " REPLY:", to_iodata(msg)]
 
-        :stop ->
-          case meta.resp do
-            {:ok, msg} ->
-              ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-              [evt, "TIME:#{ms}ms", " REPLY:", to_iodata(msg)]
+              {:error, {reason, msg}} ->
+                ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
+                ["TIME:#{ms}ms", "ERROR:[#{reason}]", "DESC:[#{inspect(msg)}]"]
+            end
 
-            {:error, {reason, msg}} ->
-              ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-              [evt, "TIME:#{ms}ms", "ERROR:[#{reason}]", "DESC:[#{inspect(msg)}]"]
-          end
+          :exception ->
+            error = Exception.format_banner(meta.kind, meta.reason, meta.stacktrace)
+            ["EXCEPTION", error]
 
-        :exception ->
-          error = Exception.format_banner(meta.kind, meta.reason, meta.stacktrace)
-          [evt, "EXCEPTION", "#{inspect(error)}"]
+          :ns ->
+            ["QRY:", to_iodata(meta.qry), " NS:", to_str(meta.ns)]
+        end
 
-        :ns ->
-          [evt, "QRY:", to_iodata(meta.qry), " NS:", to_str(meta.ns)]
-
-        :reply ->
-          [
-            evt,
-            "TYPE:#{meta.type}",
-            " QTN:",
-            to_str(meta.qry.question),
-            " REPLY:",
-            to_iodata(meta.msg)
-          ]
-      end
+      [logid(meta.ctx), " query:#{topic} ", details]
     end)
   end
 
   # [[ CACHE events ]]
 
-  def handle_event([:dns, :cache, event], _metrics, meta, cfg) do
-    evt = "cache:#{event} "
-    lvl = level(cfg, [event, :cache])
+  def handle_event([:dns, :cache, topic] = event, _metrics, meta, cfg) do
+    lvl = level(cfg, event)
 
     Logger.log(lvl, fn ->
-      case event do
-        :miss ->
-          [evt, "KEY:", to_str(meta.key)]
+      details =
+        case topic do
+          :miss ->
+            ["KEY:", to_str(meta.key)]
 
-        :hit ->
-          [evt, "KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+          :hit ->
+            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-        :expired ->
-          [evt, "KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+          :expired ->
+            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-        :insert ->
-          [evt, "KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+          :insert ->
+            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-        :error ->
-          ["#{evt} ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
+          :error ->
+            ["ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
 
-        _ ->
-          ["#{evt} ERROR not handled, meta:#{inspect(meta)}"]
-      end
+          _ ->
+            ["ERROR cache event not handled, meta:#{inspect(meta)}"]
+        end
+
+      ["cache:#{topic} ", details]
+    end)
+  end
+
+  # [[ NS events ]]
+  def handle_event([:dns, :ns, topic] = event, _metrics, meta, cfg) do
+    lvl = level(cfg, event)
+
+    Logger.log(lvl, fn ->
+      details =
+        case topic do
+          :query ->
+            ["PROTO:", meta.proto, " NS:", to_str(meta.ns), " QTN:", to_str(meta.qry.question)]
+
+          :reply ->
+            ["TYPE:#{meta.type}", " REPLY:", to_iodata(meta.msg)]
+
+          :error ->
+            ["NS:", to_str(meta.ns), " REASON:", meta.reason]
+
+          :loop ->
+            ["REASON:", to_str(meta.reason), " SEEN:", to_str(meta.seen)]
+
+          :lame ->
+            ["NS:", to_str(meta.ns), " REPLY:", to_iodata(meta.msg)]
+        end
+
+      [logid(meta.ctx), " ns:#{topic} ", details]
     end)
   end
 
   # [[ NSS events ]]
 
-  def handle_event([:dns, :nss, event], _metrics, meta, cfg) do
-    lvl = level(cfg, [event, :nss])
+  def handle_event([:dns, :nss, topic] = event, _metrics, meta, cfg) do
+    lvl = level(cfg, event)
 
     Logger.log(lvl, fn ->
-      evt = "#{logid(meta.ctx)} nss:#{event} "
+      details =
+        case topic do
+          :switch ->
+            glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
 
-      case event do
-        :switch ->
-          glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
+            iodata = [
+              "NS:",
+              meta.ns,
+              " ZONE:",
+              meta.zone,
+              " GLUED:#{glued}",
+              " NSS:",
+              to_str(meta.nss)
+            ]
 
-          iodata = [
-            evt,
-            "NS:",
-            meta.ns,
-            " ZONE:#{meta.zone}",
-            " GLUED:#{glued}",
-            " NSS:",
-            to_str(meta.nss)
-          ]
+            if meta.ex_glue != [],
+              do: [iodata, " DROP:", to_str(meta.ex_glue)],
+              else: iodata
 
-          if meta.ex_glue != [],
-            do: [iodata, [evt, "ZONE:#{meta.zone}", " DROP:", to_str(meta.ex_glue)]],
-            else: iodata
+          :select ->
+            ["NS:", to_str(meta.ns)]
 
-        :drop ->
-          [evt, "NS:", to_str(meta.ns), " ERROR:", to_str(meta.error)]
+          :fail ->
+            ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
 
-        other ->
-          [evt, "-------------------> TODO - ", inspect(other), inspect(meta)]
-      end
+          :drop ->
+            ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
+
+          other ->
+            ["-------------------> TODO - ", inspect(other), inspect(meta)]
+        end
+
+      ["#{logid(meta.ctx)} nss:#{topic} ", details]
     end)
   end
 

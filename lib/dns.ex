@@ -144,7 +144,12 @@ defmodule DNS do
     end
     |> case do
       {:ok, ctx} ->
-        resolvep(name, type, ctx)
+        {:ok, qry} = make_query(name, type, ctx)
+
+        :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry, nss: ctx.nameservers}, fn ->
+          resp = resolvep(name, type, ctx)
+          {resp, %{ctx: ctx, qry: qry, nss: ctx.nameservers, resp: resp}}
+        end)
 
       error ->
         {:error, {:option, error}}
@@ -186,15 +191,20 @@ defmodule DNS do
         [] ->
           nss = ctx[:nameservers] || Cache.nss(qname)
 
-          :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry, nss: nss}, fn ->
-            resp =
-              case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
-                {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
-                error -> error
-              end
+          case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
+            {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
+            error -> error
+          end
 
-            {resp, %{ctx: ctx, qry: qry, nss: nss, resp: resp}}
-          end)
+        # :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry, nss: nss}, fn ->
+        #   resp =
+        #     case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
+        #       {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
+        #       error -> error
+        #     end
+        #
+        #   {resp, %{ctx: ctx, qry: qry, nss: nss, resp: resp}}
+        # end)
 
         rrs ->
           {:ok, msg} = reply_make(qry, rrs)
@@ -355,11 +365,11 @@ defmodule DNS do
 
       true ->
         ns = unwrap(ns)
-        emit([:query, :ns], %{}, ctx: ctx, qry: qry, ns: ns)
+        emit([:nss, :select], %{}, ctx: ctx, qry: qry, ns: ns)
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
-            emit([:nss, :push], %{}, ctx: ctx, error: :timeout, ns: ns)
+            emit([:nss, :fail], %{}, ctx: ctx, error: :timeout, ns: ns)
             query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
           {:error, reason} ->
@@ -411,13 +421,16 @@ defmodule DNS do
     payload = byte_size(qry.wdata)
 
     if payload > bufsize or ctx.tcp do
+      emit([:ns, :query], %{}, ctx: ctx, ns: ns, qry: qry, proto: "tcp")
       query_tcp(ns, qry, timeout, tstop)
     else
       udp_timeout = udp_timeout(timeout, ctx.retry, n, tstop)
 
+      emit([:ns, :query], %{}, ctx: ctx, ns: ns, qry: qry, proto: "udp")
+
       case query_udp(ns, qry, udp_timeout, bufsize) do
         {:ok, rsp} when rsp.header.tc == 1 ->
-          # Log.info("reply truncated, switching to tcp")
+          emit([:ns, :query], %{}, ctx: ctx, ns: ns, qry: qry, proto: "tcp")
           query_tcp(ns, qry, timeout, tstop)
 
         result ->
@@ -446,7 +459,6 @@ defmodule DNS do
     with :ok <- :gen_udp.connect(sock, ip, port),
          :ok <- :gen_udp.send(sock, qry.wdata),
          {:ok, msg} <- query_udp_recv(sock, qry, timeout) do
-      # Log.info("got #{byte_size(msg.wdata)} bytes from #{name} (#{Pfx.new(ip)}:#{port}/udp)")
       :gen_udp.close(sock)
       span = now() - t0
 
@@ -464,7 +476,7 @@ defmodule DNS do
     else
       error ->
         :gen_udp.close(sock)
-        Log.error("udp socket error for #{name} (#{inspect(ip)}), #{inspect(error)}")
+        emit([:ns, :error], %{}, ns: ns, reason: error)
         error
     end
   rescue
@@ -512,7 +524,6 @@ defmodule DNS do
       {:ok, msg}
     else
       false ->
-        Log.warning("retry udp_recv for #{inspect(qry.question)}")
         query_udp_recv(sock, qry, timeout(tstop))
 
       # other is {:error, :not_owner | :timeout | :inet.posix | DNS.MsgError.t}
@@ -550,8 +561,6 @@ defmodule DNS do
         revcd: byte_size(msg.wdata)
       }
 
-      # Log.info("got #{byte_size(rsp)} bytes from #{name} (#{Pfx.new(ip)}:#{port}/tcp) in #{t} ms")
-
       {:ok, %{msg | xdata: xdata}}
     else
       false ->
@@ -569,9 +578,8 @@ defmodule DNS do
 
   @spec query_tcp_connect(ns, timeout, timeT) ::
           {:ok, :inet.socket()} | {:error, :badarg | :timeout | :inet.posix()}
-  defp query_tcp_connect({name, ip, port}, timeout, tstop) do
+  defp query_tcp_connect({_name, ip, port}, timeout, tstop) do
     # avoid *exit* badarg by checking ip/port's validity
-    # Log.info("query tcp: #{name} (#{inspect(ip)}:#{port}/tcp, timeout #{timeout}")
 
     iptype =
       case Pfx.type(ip) do
@@ -651,7 +659,7 @@ defmodule DNS do
     qtn = hd(qry.question)
     # TODO: remove or keep
     type = "#{reply_type(msg)}"
-    emit([:query, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: type)
+    emit([:ns, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: type)
     # /TODO:
 
     case reply_type(msg) do
@@ -662,16 +670,14 @@ defmodule DNS do
       :referral ->
         # referral loop detection using ctx.rzones
         zone = hd(msg.authority).name
-        Log.debug("#{qtn.name} #{qtn.type} - got referral to #{zone}")
         seen = Enum.any?(ctx.rzones, &dname_equal?(&1, zone))
 
         if seen do
-          Log.debug("zone #{zone} seen before: #{inspect(ctx.rzones)}")
+          emit([:ns, :loop], %{}, ctx: ctx, reason: zone, seen: ctx.rzones)
           {:error, {:rzone_loop, msg}}
         else
           Cache.put(msg)
           ctx = %{ctx | rzones: [zone | ctx[:rzones]]}
-          Log.debug("qname=#{qtn.name} -> zones seen are: #{inspect(ctx.rzones)}")
           recurse(qry, msg, ctx, tstop)
         end
 
@@ -683,7 +689,7 @@ defmodule DNS do
 
         # cname loop detection using ctx.cnames
         if Enum.member?(ctx.cnames, cname) do
-          Log.debug("cname #{cname} seen before: #{inspect(ctx.cnames)}")
+          emit([:ns, :loop], %{}, ctx: ctx, reason: cname, seen: ctx.cnames)
           {:error, {:cname_loop, msg}}
         else
           ctx =
@@ -720,7 +726,7 @@ defmodule DNS do
         {:ok, msg}
 
       :lame ->
-        Log.warning("got a lame reply to #{qry}")
+        emit([:ns, :lame], %{}, ns: msg.xdata.ns, msg: msg)
         {:error, {:lame, msg}}
     end
   end
