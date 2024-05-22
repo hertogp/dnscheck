@@ -84,7 +84,15 @@ defmodule DNS.Telemetry do
   # [[ DEFAULT LOGGER ]]
 
   defp do_opts(opts) when map_size(opts) == 0 do
-    do_opts(%{[:dns] => :info, [:dns, :cache] => :debug})
+    do_opts(%{
+      [:dns] => :info,
+      [:dns, :nss, :drop] => :warning,
+      [:dns, :nss, :fail] => :warning,
+      [:dns, :nss, :error] => :error,
+      [:dns, :ns, :loop] => :error,
+      [:dns, :ns, :lame] => :warning,
+      [:dns, :cache] => :debug
+    })
   end
 
   defp do_opts(opts) do
@@ -131,7 +139,7 @@ defmodule DNS.Telemetry do
 
               {:error, {reason, msg}} ->
                 ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-                ["TIME:#{ms}ms", "ERROR:[#{reason}]", "DESC:[#{inspect(msg)}]"]
+                ["TIME:#{ms}ms", " ERROR:[#{reason}]", " DESC:[#{inspect(msg)}]"]
             end
 
           :exception ->
