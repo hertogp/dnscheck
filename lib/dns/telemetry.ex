@@ -96,6 +96,7 @@ defmodule DNS.Telemetry do
   end
 
   defp do_opts(opts) do
+    # short(er) keys first
     sorted =
       opts
       |> Map.to_list()
