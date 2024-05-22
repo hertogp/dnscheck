@@ -171,44 +171,39 @@ defmodule DNS do
           | {:error, {:cname_loop, msg}}
   defp resolvep(name, type, ctx) do
     # resolvep called by:
-    # - resolve to answer caller's query
+    # - resolve to answer caller's original query
     # - reply_handler, when following cnames
     # - reply_handler, when following referral: recurse() > recurse_nss > next_ns
-    # - next_ns when first ns has not yet been resolved
-
-    ctx = %{ctx | qnr: ctx.qnr + 1}
+    #   (next_ns only when first ns has not yet been resolved)
 
     # TODO: return error tuple instead of raising {:error, {:query, "max recursion exceeded"}
     # add true <- ctx.qnr < ctx.max_depth as with clause and add a false-clause to else block
     if ctx.qnr > 10,
       do: raise("this question runs too deep #{ctx.qnr}")
 
+    ctx = %{ctx | qnr: ctx.qnr + 1}
+    t0 = now()
+
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
          cached <- Cache.get(qname, ctx.class, type),
          tstop <- time(ctx.maxtime) do
-      case cached do
-        [] ->
-          nss = ctx[:nameservers] || Cache.nss(qname)
+      if cached == [] do
+        nss = ctx[:nameservers] || Cache.nss(qname)
 
-          case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
-            {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
-            error -> error
-          end
+        case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
+          {:ok, msg} ->
+            case reply_handler(qry, msg, ctx, tstop) do
+              {:ok, msg} -> {:ok, put_in(msg, [Access.key(:xdata), :time], now() - t0)}
+              error -> error
+            end
 
-        # :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry, nss: nss}, fn ->
-        #   resp =
-        #     case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
-        #       {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
-        #       error -> error
-        #     end
-        #
-        #   {resp, %{ctx: ctx, qry: qry, nss: nss, resp: resp}}
-        # end)
-
-        rrs ->
-          {:ok, msg} = reply_make(qry, rrs)
-          reply_handler(qry, msg, ctx, tstop)
+          error ->
+            error
+        end
+      else
+        {:ok, msg} = reply_make(qry, cached)
+        reply_handler(qry, msg, ctx, tstop)
       end
     else
       error -> error
@@ -332,6 +327,7 @@ defmodule DNS do
 
   # [[ QUERY ]]
 
+  # query a set of nameservers (nss)
   @spec query_nss([ns | {ns, timeT}], DNS.Msg.t(), map, timeT, counter, [{ns, timeT}]) ::
           {:ok, msg}
           | {:error, {:timeout, binary}}
@@ -353,7 +349,6 @@ defmodule DNS do
   end
 
   defp query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
-    # query a set of nameservers
     ctx = %{ctx | qnr: ctx.qnr + 1}
 
     cond do
@@ -401,6 +396,7 @@ defmodule DNS do
     end
   end
 
+  # query a single nameserver (ns)
   @spec query_ns(ns, msg, map, timeT, counter) ::
           {:ok, msg}
           | {:error,
@@ -414,7 +410,6 @@ defmodule DNS do
              | {:timeout, binary}
              | :closed}
   defp query_ns(ns, qry, ctx, tstop, n) do
-    # query a single nameserver
     # REVIEW: perhaps fallback to plain dns when EDNS leads to BADVERS or FORMERROR ?
     bufsize = ctx.bufsize
     timeout = ctx.timeout
@@ -467,7 +462,7 @@ defmodule DNS do
         ip: "#{Pfx.new(ip)}",
         port: port,
         proto: "udp",
-        time: span,
+        rtt: span,
         sent: byte_size(qry.wdata),
         revcd: byte_size(msg.wdata)
       }
@@ -556,7 +551,7 @@ defmodule DNS do
         ip: "#{Pfx.new(ip)}",
         port: port,
         proto: "tcp",
-        time: span,
+        rtt: span,
         sent: byte_size(qry.wdata),
         revcd: byte_size(msg.wdata)
       }

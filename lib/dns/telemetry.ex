@@ -2,31 +2,6 @@ defmodule DNS.Telemetry do
   @moduledoc """
   `Telemetry` integration for DNS event metrics and logging.
 
-  A number of things may occur during resolving:
-  - a msg was sent
-  - a msg was received
-  - a query was resolved (span event)
-  - a query failed to resolve
-  - a ns was resolved
-  - a ns refused a query
-  - a ns timed out and sent to retry list
-    - udp timeout
-    - tcp timeout
-  - fallback to tcp occurred due to msg being truncated
-  - a nss was swapped (failed -> try again nss)
-  - a nss was exhausted (none could be reached)
-  - a msg recvd contained a referral
-  - a msg could not be encoded/decoded
-  - a msg contained a lame answer
-  - an unsollicited msg was received
-  - a msg was (partially) cached
-  - a rr was cached or rejected by cache
-  - a cache miss/hit occurred
-  - an answer was synthesized from cache
-  - a cache action limited a TTL
-
-
-
   ## Events
 
   When iterating down the DNS tree, the resolver generates a number of events
@@ -37,6 +12,13 @@ defmodule DNS.Telemetry do
   - `cache`, events related to the (simple) DNS cache
 
   All events are emitted as `[:dns, context, event]`.
+
+  ### `:query` events
+
+  Emitted as `[:dns, :query, event]`, where event includes:
+  - `:start` at the start of the original query
+  - `:stop`, at the end of the original query
+  - `:exception`, if an exception was raised while running the query
 
   ### `:ns` events
 
@@ -81,8 +63,6 @@ defmodule DNS.Telemetry do
     [:dns, :query, :start],
     [:dns, :query, :stop],
     [:dns, :query, :exception],
-    [:dns, :query, :ns],
-    [:dns, :query, :reply],
     #
     [:dns, :cache, :hit],
     [:dns, :cache, :miss],
@@ -90,6 +70,7 @@ defmodule DNS.Telemetry do
     [:dns, :cache, :insert],
     #
     [:dns, :nss, :switch],
+    [:dns, :nss, :select],
     [:dns, :nss, :fail],
     [:dns, :nss, :drop],
     [:dns, :nss, :error],
@@ -165,37 +146,6 @@ defmodule DNS.Telemetry do
     end)
   end
 
-  # [[ CACHE events ]]
-
-  def handle_event([:dns, :cache, topic] = event, _metrics, meta, cfg) do
-    lvl = level(cfg, event)
-
-    Logger.log(lvl, fn ->
-      details =
-        case topic do
-          :miss ->
-            ["KEY:", to_str(meta.key)]
-
-          :hit ->
-            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
-
-          :expired ->
-            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
-
-          :insert ->
-            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
-
-          :error ->
-            ["ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
-
-          _ ->
-            ["ERROR cache event not handled, meta:#{inspect(meta)}"]
-        end
-
-      ["cache:#{topic} ", details]
-    end)
-  end
-
   # [[ NS events ]]
   def handle_event([:dns, :ns, topic] = event, _metrics, meta, cfg) do
     lvl = level(cfg, event)
@@ -265,11 +215,35 @@ defmodule DNS.Telemetry do
     end)
   end
 
-  # catch all
-  def handle_event(event, metrics, meta, _config) do
-    Logger.info(
-      "** UNKNOWN QUERY EVENT ** #{inspect(event)} #{inspect(metrics)} #{inspect(meta)}"
-    )
+  # [[ CACHE events ]]
+
+  def handle_event([:dns, :cache, topic] = event, _metrics, meta, cfg) do
+    lvl = level(cfg, event)
+
+    Logger.log(lvl, fn ->
+      details =
+        case topic do
+          :miss ->
+            ["KEY:", to_str(meta.key)]
+
+          :hit ->
+            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+
+          :expired ->
+            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+
+          :insert ->
+            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+
+          :error ->
+            ["ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
+
+          _ ->
+            ["ERROR cache event not handled, meta:#{inspect(meta)}"]
+        end
+
+      ["cache:#{topic} ", details]
+    end)
   end
 
   def set_level(level) do
