@@ -123,7 +123,8 @@ defmodule DNS do
       rzones: ["."],
       cnames: [name],
       qid: :erlang.phash2({name, class, type, System.monotonic_time()}),
-      qnr: 0
+      qnr: 0,
+      tstart: now()
     }
 
     cond do
@@ -182,7 +183,6 @@ defmodule DNS do
       do: raise("this question runs too deep #{ctx.qnr}")
 
     ctx = %{ctx | qnr: ctx.qnr + 1}
-    t0 = now()
 
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
@@ -192,14 +192,8 @@ defmodule DNS do
         nss = ctx[:nameservers] || Cache.nss(qname)
 
         case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
-          {:ok, msg} ->
-            case reply_handler(qry, msg, ctx, tstop) do
-              {:ok, msg} -> {:ok, put_in(msg, [Access.key(:xdata), :time], now() - t0)}
-              error -> error
-            end
-
-          error ->
-            error
+          {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
+          error -> error
         end
       else
         {:ok, msg} = reply_make(qry, cached)
@@ -637,7 +631,9 @@ defmodule DNS do
           | {:error, {:query, binary}}
           | {:error, {:timeout, binary}}
           | {:error, {:retries, binary}}
-  defp reply_handler(_qry, msg, %{recurse: false}, _tstop) do
+  defp reply_handler(_qry, msg, %{recurse: false} = ctx, _tstop) do
+    msg = put_in(msg, [Access.key(:xdata), :time], now() - ctx.tstart)
+
     case reply_type(msg) do
       :lame ->
         Log.warning("lame reply for #{inspect(msg.question)}")
@@ -656,6 +652,8 @@ defmodule DNS do
     type = "#{reply_type(msg)}"
     emit([:ns, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: type)
     # /TODO:
+
+    msg = put_in(msg, [Access.key(:xdata), :time], now() - ctx.tstart)
 
     case reply_type(msg) do
       :answer ->
@@ -702,6 +700,7 @@ defmodule DNS do
               answer = [%{rr | wdata: <<>>} | msg.answer]
               header = %{msg.header | aa: 0, anc: length(answer), wdata: <<>>}
               msg = %{msg | header: header, question: question, answer: answer}
+              msg = put_in(msg, [Access.key(:xdata), :time], now() - ctx.tstart)
               {:ok, msg}
 
             {:error, {:cname_loop, msg}} ->
@@ -709,6 +708,7 @@ defmodule DNS do
               question = [%{qtn | wdata: <<>>}]
               answer = [%{rr | wdata: <<>>} | msg.answer]
               msg = %{msg | header: header, question: question, answer: answer}
+              msg = put_in(msg, [Access.key(:xdata), :time], now() - ctx.tstart)
               {:error, {:cname_loop, msg}}
 
             error ->
