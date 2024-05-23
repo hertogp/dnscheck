@@ -60,10 +60,6 @@ defmodule DNS.Telemetry do
   @handler_id "dns-default-logger"
 
   @events [
-    [:dns, :query, :start],
-    [:dns, :query, :stop],
-    [:dns, :query, :exception],
-    #
     [:dns, :cache, :hit],
     [:dns, :cache, :miss],
     [:dns, :cache, :expired],
@@ -121,41 +117,8 @@ defmodule DNS.Telemetry do
     :telemetry.detach(@handler_id)
   end
 
-  # [[ QUERY events ]]
-
-  def handle_event([:dns, :query, topic] = event, metrics, meta, cfg) do
-    lvl = level(cfg, event)
-
-    Logger.log(lvl, fn ->
-      details =
-        case topic do
-          :start ->
-            ["QRY:", to_str(Map.take(meta.qry, [:header, :question])), " NSS:", to_str(meta.nss)]
-
-          :stop ->
-            case meta.resp do
-              {:ok, msg} ->
-                ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-                ["TIME:#{ms}ms", " REPLY:", to_iodata(msg)]
-
-              {:error, {reason, msg}} ->
-                ms = System.convert_time_unit(metrics.duration, :native, :millisecond)
-                ["TIME:#{ms}ms", " ERROR:[#{reason}]", " DESC:[#{inspect(msg)}]"]
-            end
-
-          :exception ->
-            error = Exception.format_banner(meta.kind, meta.reason, meta.stacktrace)
-            ["EXCEPTION", error]
-
-          :ns ->
-            ["QRY:", to_iodata(meta.qry), " NS:", to_str(meta.ns)]
-        end
-
-      [logid(meta.ctx), " query:#{topic} ", details]
-    end)
-  end
-
   # [[ NS events ]]
+
   def handle_event([:dns, :ns, topic] = event, _metrics, meta, cfg) do
     lvl = level(cfg, event)
 

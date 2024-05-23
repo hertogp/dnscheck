@@ -144,16 +144,8 @@ defmodule DNS do
       true -> {:ok, ctx}
     end
     |> case do
-      {:ok, ctx} ->
-        {:ok, qry} = make_query(name, type, ctx)
-
-        :telemetry.span([:dns, :query], %{ctx: ctx, qry: qry, nss: ctx.nameservers}, fn ->
-          resp = resolvep(name, type, ctx)
-          {resp, %{ctx: ctx, qry: qry, nss: ctx.nameservers, resp: resp}}
-        end)
-
-      error ->
-        {:error, {:option, error}}
+      {:ok, ctx} -> resolvep(name, type, ctx)
+      error -> {:error, {:option, error}}
     end
   rescue
     # due to Terms.en/decode
@@ -648,12 +640,11 @@ defmodule DNS do
 
   defp reply_handler(qry, msg, ctx, tstop) do
     qtn = hd(qry.question)
+    msg = put_in(msg, [Access.key(:xdata), :time], now() - ctx.tstart)
     # TODO: remove or keep
     type = "#{reply_type(msg)}"
     emit([:ns, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: type)
     # /TODO:
-
-    msg = put_in(msg, [Access.key(:xdata), :time], now() - ctx.tstart)
 
     case reply_type(msg) do
       :answer ->
