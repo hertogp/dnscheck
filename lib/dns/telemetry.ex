@@ -42,6 +42,7 @@ defmodule DNS.Telemetry do
   """
 
   require Logger
+  import DNS.Utils
 
   @handler_id "dns-default-logger"
 
@@ -164,7 +165,7 @@ defmodule DNS.Telemetry do
             ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
         end
 
-      ["#{logid(meta.ctx)} nss:#{topic} ", details]
+      [logid(meta.ctx), " nss:#{topic} ", details]
     end)
   end
 
@@ -205,7 +206,7 @@ defmodule DNS.Telemetry do
 
   # [[ HELPERS ]]
   defp logid(ctx),
-    do: ["DNS:", "#{ctx.qid}-#{ctx.qnr}"]
+    do: ["DNS:", "#{ctx.qid} [#{ctx.depth},#{now() - ctx.tstart}ms]"]
 
   def to_iodata(%DNS.Msg{} = msg) do
     [

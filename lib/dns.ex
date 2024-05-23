@@ -123,7 +123,7 @@ defmodule DNS do
       rzones: ["."],
       cnames: [name],
       qid: :erlang.phash2({name, class, type, System.monotonic_time()}),
-      qnr: 0,
+      depth: 0,
       tstart: now()
     }
 
@@ -170,11 +170,9 @@ defmodule DNS do
     #   (next_ns only when first ns has not yet been resolved)
 
     # TODO: return error tuple instead of raising {:error, {:query, "max recursion exceeded"}
-    # add true <- ctx.qnr < ctx.max_depth as with clause and add a false-clause to else block
-    if ctx.qnr > 10,
-      do: raise("this question runs too deep #{ctx.qnr}")
-
-    ctx = %{ctx | qnr: ctx.qnr + 1}
+    # add true <- ctx.depth < ctx.max_depth as with clause and add a false-clause to else block
+    if ctx.depth > 10,
+      do: raise("this question runs too deep #{ctx.depth}")
 
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
@@ -335,7 +333,7 @@ defmodule DNS do
   end
 
   defp query_nss([ns | nss], qry, ctx, tstop, nth, failed) do
-    ctx = %{ctx | qnr: ctx.qnr + 1}
+    ctx = %{ctx | depth: ctx.depth + 1}
 
     cond do
       timeout(tstop) == 0 ->
