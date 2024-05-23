@@ -13,13 +13,6 @@ defmodule DNS.Telemetry do
 
   All events are emitted as `[:dns, context, event]`.
 
-  ### `:query` events
-
-  Emitted as `[:dns, :query, event]`, where event includes:
-  - `:start` at the start of the original query
-  - `:stop`, at the end of the original query
-  - `:exception`, if an exception was raised while running the query
-
   ### `:ns` events
 
   Emitted as `[:dns, :ns, event]`, where event includes:
@@ -37,13 +30,6 @@ defmodule DNS.Telemetry do
   - `:drop`, a nameserver was dropped from the nameserver set
   - `:fail`, a nameserver was added to the failed list for (possibly) later use
   - `:rotate`, the failed nss was selected as the new nss
-
-  ### `query` span events
-
-  Emitted as `[:dns, :query, event]` where event is one of:
-  - `:start`, a query was started by the resolver
-  - `:stop`, a query was concluded by the resolver
-  - `:exception`, a query resulted in an raised execption
 
   ### `cache` events
 
@@ -156,19 +142,17 @@ defmodule DNS.Telemetry do
           :switch ->
             glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
 
-            iodata = [
+            [
               "NS:",
               meta.ns,
               " ZONE:",
               meta.zone,
               " GLUED:#{glued}",
               " NSS:",
-              to_str(meta.nss)
+              to_str(meta.nss),
+              " DROP:",
+              to_str(meta.ex_glue)
             ]
-
-            if meta.ex_glue != [],
-              do: [iodata, " DROP:", to_str(meta.ex_glue)],
-              else: iodata
 
           :select ->
             ["NS:", to_str(meta.ns)]
@@ -178,9 +162,6 @@ defmodule DNS.Telemetry do
 
           :drop ->
             ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
-
-          other ->
-            ["-------------------> TODO - ", inspect(other), inspect(meta)]
         end
 
       ["#{logid(meta.ctx)} nss:#{topic} ", details]
