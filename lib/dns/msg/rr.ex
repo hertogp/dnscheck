@@ -253,12 +253,7 @@ defmodule DNS.Msg.RR do
   # [ ] rename DNS.Msg.Terms to DNS.Msg.Names or mnemonics
   # [ ] add all/more names to Terms' @rr_types
   # [c] accept TYPEnnn as mnemonic -> not needed, a bind ns sends numeric anyway
-  # [c] move the only func in DNS.Msg.Utils into Names module (only place it'll be used)
-  #     impossible, used at compile time to expand module attributes
   # [ ] maybe only use nrs in Hdr, Qtn and RR's and use name maps for presentation only?
-  # [x] rename DNS.Msg.Fields to ...(DNS.Msg.Utils?)
-  #     Name.decode/encode, ip4_decode/encode, ip6_decode/encode,
-  #     bitmap_decode/encode etc...
   # [x] move error func into DNS.MsgError, and use import DNS.MsgError, only: [error: 2]
   # [ ] add RRs: Maybe add these (check out <type>.dns.netmeister.org
   #     [ ] NSEC3PARAM hash, see

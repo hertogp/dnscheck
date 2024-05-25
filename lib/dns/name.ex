@@ -338,6 +338,32 @@ defmodule DNS.Name do
     do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
 
   @doc """
+  Scrambles the case of a binary's characters.
+
+  ## Example
+
+  ```elixir
+  DNS.Name.scramble("google.com")
+  "GoOGlE.cOM"
+  ```
+
+  """
+  @spec scramble(binary) :: binary
+  def scramble(qname) do
+    for <<c <- qname>>, into: <<>> do
+      if :rand.uniform(256) > 128 do
+        <<c>>
+      else
+        case c do
+          c when c in ?a..?z -> <<c - 32>>
+          c when c in ?A..?Z -> <<c + 32>>
+          c -> <<c>>
+        end
+      end
+    end
+  end
+
+  @doc """
   Returns true is child is a subzone of parent, false otherwise.
 
   Also returns false if either child or parent has:

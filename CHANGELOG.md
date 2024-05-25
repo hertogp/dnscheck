@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       use Code.eval_file("priv/root.nss") here (so priv/root.nss is readable)
 - [c] sort the root hints fastest to slowest RTT
 - [x] randomize NSs for root.nss each time they're used
+- [ ] add option to randomize case of qname
 - [ ] add time spent to result of resolve (plus last NS seen?),
       stats: qtime = total, qrtt = last NS, qtstamp = timestamp, ns, port, rxsize (bytes received)
 - [ ] add check when recursing to see if delegated NSs are closer to QNAME
@@ -147,17 +148,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
            from AA=0 might come from some other cache where they lived a long time
 - [ ] Need to detect when cached answer doesn't match DO-bit (both ways)
       and respond accordingly
-
-### DNS.Utils
-- [c] initialize cache with root name servers (query via priv/named.root.rrs)
-- [x] maybe add nss(domain name) -> searches the cache?
-- [ ] handle put_msg better!
-- [x] clear rdata/wdata before caching if not raw
-- [x] should we cache RR's with wildcard domain names? -> NO!
-- [ ] cache negative responses, but NXDOMAIN has only a SOA in aut
-- [?] prime the cache using DNS.resolve & root hints
--     see https://datatracker.ietf.org/doc/draft-ietf-dnsop-rfc8109bis/
-- [x] shuffle NSs around before handing off
 
 ### Dnscheck
 - [ ] documentation

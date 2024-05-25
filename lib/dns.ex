@@ -114,6 +114,7 @@ defmodule DNS do
       name: name,
       nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
+      scramble: Keyword.get(opts, :scramble, true),
       rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
       retry: Keyword.get(opts, :retry, 3),
       srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),

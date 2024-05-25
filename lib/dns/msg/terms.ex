@@ -15,7 +15,6 @@ defmodule DNS.Msg.Terms do
   """
 
   import DNS.MsgError, only: [error: 2]
-  alias DNS.Utils
 
   # [[ NOTES ]]
   # rfc4034, section 5.1.4
@@ -93,7 +92,7 @@ defmodule DNS.Msg.Terms do
                  NONE: 254,
                  ANY: 255
                }
-               |> Utils.normalize_name_map()
+               |> Enum.reduce(%{}, fn {k, v}, acc -> Map.put(acc, k, v) |> Map.put(v, k) end)
 
   @doc """
   Encode a DNS class to its numeric value.
@@ -182,7 +181,7 @@ defmodule DNS.Msg.Terms do
                  UPDATE: 5,
                  DSO: 6
                }
-               |> Utils.normalize_name_map()
+               |> Enum.reduce(%{}, fn {k, v}, acc -> Map.put(acc, k, v) |> Map.put(v, k) end)
 
   @doc """
   Encode a DNS opcode to its numeric value.
@@ -279,7 +278,7 @@ defmodule DNS.Msg.Terms do
                 BADTRUNC: 22,
                 BADCOOKIE: 23
               }
-              |> Utils.normalize_name_map()
+              |> Enum.reduce(%{}, fn {k, v}, acc -> Map.put(acc, k, v) |> Map.put(v, k) end)
 
   @doc """
   Encode a DNS RCODE to its numeric value.
@@ -405,7 +404,7 @@ defmodule DNS.Msg.Terms do
               X25: 19,
               ZONEMD: 63
             }
-            |> Utils.normalize_name_map()
+            |> Enum.reduce(%{}, fn {k, v}, acc -> Map.put(acc, k, v) |> Map.put(v, k) end)
 
   @doc """
   Encode an RR type to its numeric value.
@@ -507,7 +506,7 @@ defmodule DNS.Msg.Terms do
                      UMBRELLA_IDENT: 20292,
                      DEVICEID: 26946
                    }
-                   |> Utils.normalize_name_map()
+                   |> Enum.reduce(%{}, fn {k, v}, acc -> Map.put(acc, k, v) |> Map.put(v, k) end)
 
   @doc """
   Encode an [EDNS0
@@ -576,7 +575,7 @@ defmodule DNS.Msg.Terms do
 
   # [[ DNSSEC ALGO TYPEs ]]
   @dnssec_algo_types %{
-                       reserved: 0,
+                       RESERVED: 0,
                        RSAMD5: 1,
                        DH: 2,
                        DSA: 3,
@@ -586,11 +585,13 @@ defmodule DNS.Msg.Terms do
                        PRIVATEDNS: 253,
                        PRIVATEOID: 254
                      }
-                     |> Utils.normalize_name_map()
+                     |> Enum.reduce(%{}, fn {k, v}, acc -> Map.put(acc, k, v) |> Map.put(v, k) end)
 
   @dnssec_digest_type %{
-                        reserved: 0,
+                        RESERVED: 0,
                         SHA1: 1
                       }
-                      |> Utils.normalize_name_map()
+                      |> Enum.reduce(%{}, fn {k, v}, acc ->
+                        Map.put(acc, k, v) |> Map.put(v, k)
+                      end)
 end
