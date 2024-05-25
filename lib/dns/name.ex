@@ -252,7 +252,7 @@ defmodule DNS.Name do
       {13, "example.NET"}
 
   """
-  def equal?(aname, bbame)
+  def equal?(left, right)
 
   def equal?(<<>>, <<>>),
     do: true
@@ -412,7 +412,7 @@ defmodule DNS.Name do
   end
 
   @doc """
-  Creates a list of labels for Given a domain `name`.
+  Creates a list of labels for given a domain `name`.
 
   An error is raised when:
   - the name exceeds 255 characters, or
