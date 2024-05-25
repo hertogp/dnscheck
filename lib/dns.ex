@@ -408,7 +408,8 @@ defmodule DNS do
       emit([:ns, :query], %{}, ctx: ctx, ns: ns, qry: qry, proto: "udp")
 
       case query_udp(ns, qry, udp_timeout, bufsize) do
-        {:ok, rsp} when rsp.header.tc == 1 ->
+        {:ok, msg} when msg.header.tc == 1 ->
+          emit([:ns, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: reply_type(msg))
           emit([:ns, :query], %{}, ctx: ctx, ns: ns, qry: qry, proto: "tcp")
           query_tcp(ns, qry, timeout, tstop)
 
@@ -422,8 +423,10 @@ defmodule DNS do
           {:ok, msg}
           | {:error,
              :timeout | :badarg | :system_limit | :not_owner | :inet.posix() | DNS.MsgError.t()}
-  defp query_udp(_ns, _qry, 0, _bufsize),
-    do: {:error, :timeout}
+  defp query_udp(ns, _qry, 0, _bufsize) do
+    emit([:ns, :error], %{}, ns: ns, reason: {:error, :timeout})
+    {:error, :timeout}
+  end
 
   defp query_udp({name, ip, port} = ns, qry, timeout, bufsize) do
     # note that:
@@ -448,7 +451,7 @@ defmodule DNS do
         proto: "udp",
         rtt: span,
         sent: byte_size(qry.wdata),
-        revcd: byte_size(msg.wdata)
+        recvd: byte_size(msg.wdata)
       }
 
       {:ok, %{msg | xdata: xdata}}
@@ -537,7 +540,7 @@ defmodule DNS do
         proto: "tcp",
         rtt: span,
         sent: byte_size(qry.wdata),
-        revcd: byte_size(msg.wdata)
+        recvd: byte_size(msg.wdata)
       }
 
       {:ok, %{msg | xdata: xdata}}

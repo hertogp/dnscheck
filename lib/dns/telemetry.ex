@@ -61,7 +61,8 @@ defmodule DNS.Telemetry do
     [:dns, :ns, :query],
     [:dns, :ns, :reply],
     [:dns, :ns, :loop],
-    [:dns, :ns, :lame]
+    [:dns, :ns, :lame],
+    [:dns, :ns, :error]
   ]
 
   # [[ DEFAULT LOGGER ]]
@@ -74,6 +75,7 @@ defmodule DNS.Telemetry do
       [:dns, :nss, :error] => :error,
       [:dns, :ns, :loop] => :error,
       [:dns, :ns, :lame] => :warning,
+      [:dns, :ns, :error] => :error,
       [:dns, :cache] => :debug
     })
   end
