@@ -103,6 +103,8 @@ defmodule DNS do
     Cache.init(clear: false)
     recurse = opts[:nameservers] == nil
     class = Keyword.get(opts, :class, :IN)
+    scramble = Keyword.get(opts, :scramble, true)
+    qname = if scramble, do: Name.scramble(name), else: name
 
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
@@ -114,7 +116,7 @@ defmodule DNS do
       name: name,
       nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Terms.encode_dns_opcode(),
-      scramble: Keyword.get(opts, :scramble, true),
+      scramble: scramble,
       rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
       retry: Keyword.get(opts, :retry, 3),
       srvfail_wait: Keyword.get(opts, :srvfail_wait, 1500),
@@ -125,7 +127,7 @@ defmodule DNS do
       recurse: recurse,
       rzones: ["."],
       cnames: [name],
-      qid: :erlang.phash2({name, class, type, System.monotonic_time()}),
+      qid: :erlang.phash2({qname, class, type, System.monotonic_time()}),
       depth: 0,
       tstart: now()
     }
@@ -595,7 +597,9 @@ defmodule DNS do
         Pfx.dns_ptr(name)
       else
         with {:ok, name} <- Name.normalize(name) do
-          name
+          if ctx.scramble,
+            do: Name.scramble(name),
+            else: name
         else
           _ -> name
         end
