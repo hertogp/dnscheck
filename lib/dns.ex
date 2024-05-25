@@ -6,7 +6,7 @@ defmodule DNS do
 
   import DNS.Time
   alias DNS.Name
-  import DNS.Utils
+  import DNS.Guards
   alias DNS.Msg
   alias DNS.Cache
   alias DNS.Msg.Terms

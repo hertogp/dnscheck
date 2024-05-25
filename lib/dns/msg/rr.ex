@@ -278,7 +278,7 @@ defmodule DNS.Msg.RR do
 
   import DNS.MsgError, only: [error: 2]
   alias DNS.Name
-  import DNS.Utils
+  import DNS.Guards
   import DNS.Msg.Terms
 
   defstruct name: "",
