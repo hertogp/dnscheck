@@ -5,6 +5,7 @@ defmodule DNS do
   """
 
   import DNS.Time
+  alias DNS.Name
   import DNS.Utils
   alias DNS.Msg
   alias DNS.Cache
@@ -241,7 +242,7 @@ defmodule DNS do
       glue =
         for rr <- msg.additional, rr.type in [:A, :AAAA], uniq: true, do: String.downcase(rr.name)
 
-      missing = for name <- nsnames, name not in glue and dname_subdomain?(name, zone), do: name
+      missing = for name <- nsnames, name not in glue and Name.subdomain?(name, zone), do: name
 
       glued =
         for rr <- msg.additional,
@@ -592,7 +593,7 @@ defmodule DNS do
       if Pfx.valid?(name) do
         Pfx.dns_ptr(name)
       else
-        with {:ok, name} <- dname_normalize(name) do
+        with {:ok, name} <- Name.normalize(name) do
           name
         else
           _ -> name
@@ -656,7 +657,7 @@ defmodule DNS do
       :referral ->
         # referral loop detection using ctx.rzones
         zone = hd(msg.authority).name
-        seen = Enum.any?(ctx.rzones, &dname_equal?(&1, zone))
+        seen = Enum.any?(ctx.rzones, &Name.equal?(&1, zone))
 
         if seen do
           emit([:ns, :loop], %{}, ctx: ctx, reason: zone, seen: ctx.rzones)
@@ -670,8 +671,8 @@ defmodule DNS do
       :cname ->
         Cache.put(msg)
         rr = Enum.find(msg.answer, fn rr -> rr.type == :CNAME end)
-        # REVIEW: handle a {:error, :eencode} return from dname_normalize
-        {:ok, cname} = dname_normalize(rr.rdmap.name)
+        # REVIEW: handle a {:error, :eencode} return from Name.normalize
+        {:ok, cname} = Name.normalize(rr.rdmap.name)
 
         # cname loop detection using ctx.cnames
         if Enum.member?(ctx.cnames, cname) do
@@ -766,7 +767,7 @@ defmodule DNS do
 
       _ ->
         soa = Enum.any?(aut, fn rr -> rr.type == :SOA end)
-        nss = Enum.any?(aut, fn rr -> rr.type == :NS and dname_indomain?(qname, rr.name) end)
+        nss = Enum.any?(aut, fn rr -> rr.type == :NS and Name.indomain?(qname, rr.name) end)
 
         cond do
           soa -> :nodata
@@ -824,7 +825,7 @@ defmodule DNS do
   defp upward?(qname, zone) do
     cond do
       zone in ["", "."] -> true
-      dname_indomain?(qname, zone) -> false
+      Name.indomain?(qname, zone) -> false
       true -> true
     end
   end
@@ -899,12 +900,12 @@ defmodule DNS do
         # - lastly, order of individual qtn's in question section may differ
         ql =
           qry.question
-          |> Enum.map(fn q -> {elem(dname_normalize(q.name), 1), q.type, q.class} end)
+          |> Enum.map(fn q -> {elem(Name.normalize(q.name), 1), q.type, q.class} end)
           |> Enum.sort()
 
         rl =
           rsp.question
-          |> Enum.map(fn r -> {elem(dname_normalize(r.name), 1), r.type, r.class} end)
+          |> Enum.map(fn r -> {elem(Name.normalize(r.name), 1), r.type, r.class} end)
           |> Enum.sort()
 
         if ql == rl do

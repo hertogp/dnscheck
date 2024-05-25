@@ -4,6 +4,9 @@ defmodule DNS.Name do
 
   """
 
+  # TODO
+  # [ ] dname_equal?("x.example.com", "*.example.com") <- equal?
+
   import DNS.MsgError, only: [error: 2]
   # [[ DNAME HELPERS ]]
 

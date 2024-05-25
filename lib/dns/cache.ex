@@ -31,8 +31,8 @@ defmodule DNS.Cache do
 
   """
 
+  alias DNS.Name
   import DNS.Time
-  import DNS.Utils
   alias Logger, as: Log
   require Logger
 
@@ -96,7 +96,7 @@ defmodule DNS.Cache do
   def rrs(zone, opts \\ []) do
     stale = Keyword.get(opts, :stale, false)
 
-    with {:ok, zone} <- dname_normalize(zone) do
+    with {:ok, zone} <- Name.normalize(zone) do
       case :ets.whereis(@cache) do
         :undefined ->
           []
@@ -240,7 +240,7 @@ defmodule DNS.Cache do
     with true <- cacheable?(msg),
          qname <- hd(msg.question).name do
       msg.answer
-      |> Enum.filter(fn rr -> dname_equal?(rr.name, qname) end)
+      |> Enum.filter(fn rr -> Name.equal?(rr.name, qname) end)
       |> Enum.map(&put/1)
       |> Enum.all?(& &1)
     else
@@ -263,17 +263,17 @@ defmodule DNS.Cache do
         msg.authority
         |> Enum.filter(fn rr -> rr.type in [:NS, :DS, :RRSIG] end)
         |> Enum.filter(fn rr ->
-          dname_subdomain?(qname, rr.name) or dname_equal?(qname, rr.name)
+          Name.subdomain?(qname, rr.name) or Name.equal?(qname, rr.name)
         end)
 
       nsnames =
         rrs
         |> Enum.filter(fn rr -> rr.type == :NS end)
         |> Enum.map(fn rr -> rr.rdmap.name end)
-        |> Enum.map(fn name -> dname_normalize(name) end)
+        |> Enum.map(fn name -> Name.normalize(name) end)
 
       msg.additional
-      |> Enum.filter(fn rr -> dname_normalize(rr.name) in nsnames end)
+      |> Enum.filter(fn rr -> Name.normalize(rr.name) in nsnames end)
       |> Enum.concat(rrs)
       |> Enum.map(&put/1)
       |> Enum.all?(& &1)
@@ -385,7 +385,7 @@ defmodule DNS.Cache do
   """
   @spec nss(binary) :: [ns]
   def nss(zone) when is_binary(zone) do
-    with {:ok, labels} <- dname_normalize(zone, join: false) do
+    with {:ok, labels} <- Name.normalize(zone, join: false) do
       nssp(labels)
     else
       _ ->
@@ -464,7 +464,7 @@ defmodule DNS.Cache do
     # Sometimes cache data MUST be replaced
     # [ ] cached data is not authoritative and the current msg is authoritative
     qname = hd(msg.question).name
-    labels = dname_to_labels(qname)
+    labels = Name.to_labels(qname)
     wildcard = List.starts_with?(labels, ["*"])
 
     cond do
@@ -492,7 +492,7 @@ defmodule DNS.Cache do
   defp make_key(name, class, type) do
     ntype = DNS.Msg.Terms.encode_rr_type(type)
     nclass = DNS.Msg.Terms.encode_dns_class(class)
-    {:ok, name} = dname_normalize(name)
+    {:ok, name} = Name.normalize(name)
     {:ok, {name, nclass, ntype}}
   rescue
     _ ->
