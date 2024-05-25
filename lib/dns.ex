@@ -589,9 +589,8 @@ defmodule DNS do
 
   @spec make_query(binary, type, map) :: {:ok, msg} | {:error, {:query, binary}}
   defp make_query(name, type, ctx) do
-    # assumes ctx is safe (made by resolve_contextp and maybe updated on recursion)
+    # assumes ctx is safe (made by resolvep and maybe updated on recursion)
     # https://community.cloudflare.com/t/servfail-from-1-1-1-1/578704/9
-    # TODO: optionally randomize case to help detect unsollicited replies
     name =
       if Pfx.valid?(name) do
         Pfx.dns_ptr(name)
