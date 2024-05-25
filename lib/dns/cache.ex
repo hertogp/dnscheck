@@ -31,6 +31,7 @@ defmodule DNS.Cache do
 
   """
 
+  import DNS.Time
   import DNS.Utils
   alias Logger, as: Log
   require Logger

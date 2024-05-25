@@ -4,39 +4,62 @@ defmodule DNS.Time do
 
   """
 
-  @doc false
-  # current moment in monotonic time
+  @doc """
+  Returns the current point in monotonic time.
+
+  Uses `:millisecond` as the time unit.
+
+  """
+  @spec now() :: integer
   def now(),
     do: System.monotonic_time(:millisecond)
 
-  @doc false
-  # create a (usually future), monotonic point in time, timeout ms from now
-  def time(timeout),
-    do: now() + timeout
+  @doc """
+  Returns a point in monotonic time, `delta` ms from now.
 
-  @doc false
-  # remaining time [ms] till we reach the monotonic `time`
+  """
+  @spec time(non_neg_integer) :: integer
+  def time(delta),
+    do: now() + max(0, delta)
+
+  @doc """
+  Returns the remaining time, in ms, for `time` relative to `now/0`.
+
+  The remaining time is always 0 or more milliseconds.
+
+  """
+  @spec timeout(integer) :: non_neg_integer
   def timeout(time),
     do: timeout(now(), time)
 
-  @doc false
-  # how many ms till monotonic `time` reaches monotonic `endtime`
-  def timeout(time, endtime) do
-    if time < endtime,
-      do: endtime - time,
-      else: 0
-  end
+  @doc """
+  Returns the remaining time, in ms, for `time` relative to `endtime`.
 
-  @doc false
-  # donot wait
-  def wait(0),
+  Returns 0 if given `time` is already past `endtime`.
+
+  """
+  # how many ms till monotonic `time` reaches monotonic `endtime`
+  @spec timeout(integer, integer) :: non_neg_integer
+  def timeout(time, endtime),
+    do: max(0, endtime - time)
+
+  #   if time < endtime,
+  #     do: endtime - time,
+  #     else: 0
+  # end
+
+  @doc """
+  Returns `:ok` after `delta` milliseconds.
+
+  """
+  @spec wait(non_neg_integer) :: :ok
+  def wait(delta) when delta <= 0,
     do: :ok
 
-  # wait for `time` ms, don't match any messages
-  def wait(time) do
+  def wait(delta) do
     receive do
     after
-      time -> :ok
+      delta -> :ok
     end
   end
 end

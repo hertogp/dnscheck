@@ -34,7 +34,7 @@ defmodule DNS.Msg.Qtn do
   """
 
   import DNS.MsgError, only: [error: 2]
-  import DNS.Utils
+  alias DNS.Name
   import DNS.Msg.Terms
 
   defstruct name: "", type: :A, class: :IN, wdata: <<>>
@@ -93,7 +93,7 @@ defmodule DNS.Msg.Qtn do
   @spec decode(offset, binary) :: {offset, t()} | no_return
   def decode(offset, msg) do
     # offset2 - offset might not equal byte_size(name) due to name compression
-    {offset2, name} = dname_decode(offset, msg)
+    {offset2, name} = Name.decode(offset, msg)
     <<_::binary-size(offset2), type::16, class::16, _::binary>> = msg
 
     wdata = :binary.part(msg, {offset, offset2 - offset + 4})
@@ -131,7 +131,7 @@ defmodule DNS.Msg.Qtn do
   """
   @spec encode(t()) :: t() | no_return
   def encode(%__MODULE__{} = qtn) do
-    dname = dname_encode(qtn.name)
+    dname = Name.encode(qtn.name)
     class = encode_dns_class(qtn.class)
     type = encode_rr_type(qtn.type)
     %{qtn | wdata: <<dname::binary, type::16, class::16>>}
@@ -180,7 +180,7 @@ defmodule DNS.Msg.Qtn do
       ** (DNS.MsgError) [create] Qtn domain name invalid: example.123
 
   But if you want to see how nameservers respond to illegal names, you can set
-  the name manually before encoding, since `encode/1` uses `DNS.Msg.Fields.dname_encode/1` which
+  the name manually before encoding, since `encode/1` uses `DNS.Msg.Fields.Name.encode/1` which
   checks only for name/label lengths.
 
       iex> q = %{new() | name: "example.123"}
@@ -245,7 +245,7 @@ defmodule DNS.Msg.Qtn do
 
   @spec do_put({atom, any}, t()) :: t()
   defp do_put({k, v}, qtn) when k == :name do
-    if dname_valid?(v),
+    if Name.valid?(v),
       do: Map.put(qtn, k, v),
       else: error(:ecreate, "domain name invalid: #{v}")
   end

@@ -1,46 +1,10 @@
-defmodule DNS.Utils do
+defmodule DNS.Name do
   @moduledoc """
-  Utility functions used in various places
+  Functions to work with domain names.
 
   """
 
-  # TODO
-  # [ ] dname_equal?("x.example.com", "*.example.com") <- equal?
-
-  @ldh Enum.concat([?a..?z, [?-], ?0..?9, ?A..?Z])
-
   import DNS.MsgError, only: [error: 2]
-
-  # [[ GUARDS ]]
-
-  @doc "Returns true if `n` is true, false, 0 or 1"
-  defguard is_bool(n) when is_boolean(n) or n in 0..1
-
-  @doc "Returns true if `n` fits in an unsigned 7 bit integer"
-  defguard is_u7(n) when n in 0..127
-
-  @doc "Returns `true` if `n` fits in an unsigned 8 bit integer, `false` otherwise."
-  defguard is_u8(n) when n in 0..255
-
-  @doc "Returns `true` if `n` fits in an unsigned 15 bit integer, `false` otherwise."
-  # 2**15 -1
-  defguard is_u15(n) when n in 0..32767
-
-  @doc "Returns `true` if `n` fits in an unsigned 16 bit integer, `false` otherwise."
-  # 2**16 - 1
-  defguard is_u16(n) when n in 0..65535
-
-  @doc "Returns `true` if `n` fits in an unsigned 32 bit integer, `false` otherwise."
-  # 2**32 - 1
-  defguard is_u32(n) when n in 0..4_294_967_295
-
-  @doc "Returns `true` if `n` fits in a signed 32 bit integer, `false` otherwise."
-  # -2**31..2**31-1
-  defguard is_s32(n) when n in -2_147_483_648..2_147_483_647
-
-  @doc "Returns `true` if `n` is a valid ttl in range of 0..2**32 - 1"
-  defguard is_ttl(n) when n in 0..4_294_967_295
-
   # [[ DNAME HELPERS ]]
 
   @spec do_labels([binary], binary, binary) :: [binary] | no_return
@@ -133,21 +97,21 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_decode(5, <<"stuff", 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 3, ?c, ?o, ?m, 0, "more stuff">>)
+      iex> decode(5, <<"stuff", 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 3, ?c, ?o, ?m, 0, "more stuff">>)
       {18, "example.com"}
 
-      iex> dname_decode(5, <<3, ?n, ?e, ?t, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>)
+      iex> decode(5, <<3, ?n, ?e, ?t, 0, 7, ?e, ?x, ?a, ?m, ?p, ?l, ?e, 192, 0>>)
       {15, "example.net"}
 
-      iex> dname_decode(0, <<1, 255, 0>>)
+      iex> decode(0, <<1, 255, 0>>)
       {3, "\\255"}
 
   """
-  @spec dname_decode(non_neg_integer, binary) :: {non_neg_integer, binary}
-  def dname_decode(offset, msg) when is_binary(msg),
-    do: dname_decode(offset, msg, <<>>, %{})
+  @spec decode(non_neg_integer, binary) :: {non_neg_integer, binary}
+  def decode(offset, msg) when is_binary(msg),
+    do: decode(offset, msg, <<>>, %{})
 
-  defp dname_decode(offset, msg, acc, seen) do
+  defp decode(offset, msg, acc, seen) do
     # notes:
     # - OPT RR (EDNS0) MUST have root acc (i.e. "" encoded as <<0>>)
     # - case stmt matches either 0 (root), label_len < 64 or ptr to next label_len
@@ -166,13 +130,13 @@ defmodule DNS.Utils do
             do: <<label::binary>>,
             else: <<acc::binary, ?., label::binary>>
 
-        dname_decode(offset + n + 1, msg, acc, Map.put(seen, offset, []))
+        decode(offset + n + 1, msg, acc, Map.put(seen, offset, []))
 
       <<3::2, ptr::14, _::binary>> ->
         if Map.has_key?(seen, ptr),
           do: error(:edecode, "domain name compression loop at offset #{offset}")
 
-        {_, acc} = dname_decode(ptr, msg, acc, Map.put(seen, ptr, []))
+        {_, acc} = decode(ptr, msg, acc, Map.put(seen, ptr, []))
         {offset + 2, acc}
 
       _ ->
@@ -208,38 +172,38 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_encode(".")
+      iex> encode(".")
       <<0::8>>
 
-      iex> dname_encode("")
+      iex> encode("")
       <<0::8>>
 
-      iex> dname_encode("acdc.au")
+      iex> encode("acdc.au")
       <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
 
       # escaped characters
-      iex> dname_encode("one\\.label.see")
+      iex> encode("one\\.label.see")
       <<9, "one.label", 3, "see", 0>>
 
       # escaped numbers
-      iex> dname_encode("two\\.one\\.\\000.boom")
+      iex> encode("two\\.one\\.\\000.boom")
       <<9, "two.one.", 0, 4, "boom", 0>>
 
-      iex> dname_encode("acdc.au.")
+      iex> encode("acdc.au.")
       <<4, ?a, ?c, ?d, ?c, 2, ?a, ?u, 0>>
 
       # happily encode an otherwise illegal name
-      iex> dname_encode("acdc.-au-.")
+      iex> encode("acdc.-au-.")
       <<4, 97, 99, 100, 99, 4, 45, 97, 117, 45, 0>>
 
 
   """
   # https://www.rfc-editor.org/rfc/rfc1035, sec 2.3.1, 3.1
-  @spec dname_encode(binary) :: binary
-  def dname_encode(name) when is_binary(name) do
+  @spec encode(binary) :: binary
+  def encode(name) when is_binary(name) do
     name =
       name
-      |> dname_to_labels()
+      |> to_labels()
       |> Enum.map(fn label -> <<byte_size(label)::8, label::binary>> end)
       |> Enum.join()
       |> Kernel.<>(<<0>>)
@@ -249,7 +213,7 @@ defmodule DNS.Utils do
       else: error(:eencode, "domain name too long #{byte_size(name)}")
   end
 
-  def dname_encode(noname),
+  def encode(noname),
     do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
 
   @doc ~S"""
@@ -263,52 +227,52 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_equal?("example.com", "EXAMPLE.COM")
+      iex> equal?("example.com", "EXAMPLE.COM")
       true
 
-      iex> dname_equal?("example.com.", "EXAMPLE.com")
+      iex> equal?("example.com.", "EXAMPLE.com")
       true
 
-      iex> dname_equal?("EXAmple.com", "exaMPLE.COM.")
+      iex> equal?("EXAmple.com", "exaMPLE.COM.")
       true
 
-      iex> dname_equal?("9xample.com", "YXAMPLE.COM.")
+      iex> equal?("9xample.com", "YXAMPLE.COM.")
       false
 
-      iex> dname_equal?(42, 42)
+      iex> equal?(42, 42)
       false
 
-      iex> name1 = dname_encode("example.NET")
-      iex> name2 = dname_encode("EXAMPLE.net")
-      iex> dname_equal?(name1, name2)
+      iex> name1 = encode("example.NET")
+      iex> name2 = encode("EXAMPLE.net")
+      iex> equal?(name1, name2)
       true
-      iex> dname_equal?("example.NET", name1)
+      iex> equal?("example.NET", name1)
       false
-      iex> dname_decode(0, name1)
+      iex> decode(0, name1)
       {13, "example.NET"}
 
   """
-  def dname_equal?(aname, bbame)
+  def equal?(aname, bbame)
 
-  def dname_equal?(<<>>, <<>>),
+  def equal?(<<>>, <<>>),
     do: true
 
-  def dname_equal?(<<?.>>, <<>>),
+  def equal?(<<?.>>, <<>>),
     do: true
 
-  def dname_equal?(<<>>, <<?.>>),
+  def equal?(<<>>, <<?.>>),
     do: true
 
-  def dname_equal?(<<a::8, rest_a::binary>>, <<b::8, rest_b::binary>>) do
+  def equal?(<<a::8, rest_a::binary>>, <<b::8, rest_b::binary>>) do
     cond do
-      a == b -> dname_equal?(rest_a, rest_b)
-      a == b + 32 and a in ?a..?z -> dname_equal?(rest_a, rest_b)
-      a + 32 == b and a in ?A..?Z -> dname_equal?(rest_a, rest_b)
+      a == b -> equal?(rest_a, rest_b)
+      a == b + 32 and a in ?a..?z -> equal?(rest_a, rest_b)
+      a + 32 == b and a in ?A..?Z -> equal?(rest_a, rest_b)
       true -> false
     end
   end
 
-  def dname_equal?(_, _),
+  def equal?(_, _),
     do: false
 
   @doc """
@@ -322,14 +286,14 @@ defmodule DNS.Utils do
   has a label longer than 63 octets), the error tuple is returned.
 
   """
-  @spec dname_normalize(binary, Keyword.t()) :: {:ok, binary | [binary]} | {:error, :eencode}
-  def dname_normalize(name, opts \\ []) do
+  @spec normalize(binary, Keyword.t()) :: {:ok, binary | [binary]} | {:error, :eencode}
+  def normalize(name, opts \\ []) do
     join = Keyword.get(opts, :join, true)
 
     labels =
       name
       |> String.downcase()
-      |> dname_to_labels()
+      |> to_labels()
 
     result = if join, do: Enum.join(labels, "."), else: labels
 
@@ -345,19 +309,19 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_reverse("example.com")
+      iex> reverse("example.com")
       "com.example"
 
       # trailing dot is ignored
-      iex> dname_reverse("example.com.")
+      iex> reverse("example.com.")
       "com.example"
 
-      iex> dname_reverse(".example.com")
+      iex> reverse(".example.com")
       ** (DNS.MsgError) [encode] domain name has empty label
 
   """
-  @spec dname_reverse(binary) :: binary
-  def dname_reverse(name) when is_binary(name) do
+  @spec reverse(binary) :: binary
+  def reverse(name) when is_binary(name) do
     case name do
       <<>> -> []
       <<?.>> -> []
@@ -367,7 +331,7 @@ defmodule DNS.Utils do
     |> Enum.join(".")
   end
 
-  def dname_reverse(noname),
+  def reverse(noname),
     do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
 
   @doc """
@@ -379,26 +343,26 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_subdomain?("example.COM", "com")
+      iex> subdomain?("example.COM", "com")
       true
 
-      iex> dname_subdomain?("host.example.com", "example.com")
+      iex> subdomain?("host.example.com", "example.com")
       true
 
-      iex> dname_subdomain?("example.com.", "com")
+      iex> subdomain?("example.com.", "com")
       true
 
-      iex> dname_subdomain?("example.com.", "example.com")
+      iex> subdomain?("example.com.", "example.com")
       false
 
-      iex> dname_subdomain?("example.com.", "net")
+      iex> subdomain?("example.com.", "net")
       false
 
   """
-  @spec dname_subdomain?(binary, binary) :: boolean
-  def dname_subdomain?(child, parent) do
-    {:ok, child} = dname_normalize(child, join: false)
-    {:ok, parent} = dname_normalize(parent, join: false)
+  @spec subdomain?(binary, binary) :: boolean
+  def subdomain?(child, parent) do
+    {:ok, child} = normalize(child, join: false)
+    {:ok, parent} = normalize(parent, join: false)
 
     if length(child) > length(parent),
       do: List.starts_with?(Enum.reverse(child), Enum.reverse(parent)),
@@ -416,27 +380,27 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_indomain?("example.COM", "com")
+      iex> indomain?("example.COM", "com")
       true
 
-      iex> dname_indomain?("host.example.com", "example.com")
+      iex> indomain?("host.example.com", "example.com")
       true
 
-      iex> dname_indomain?("example.com.", "com")
+      iex> indomain?("example.com.", "com")
       true
 
-      iex> dname_indomain?("example.com.", "example.com")
+      iex> indomain?("example.com.", "example.com")
       true
 
-      iex> dname_indomain?("example.com.", "net")
+      iex> indomain?("example.com.", "net")
       false
 
   """
   # https://www.rfc-editor.org/rfc/rfc8499#section-7
-  @spec dname_indomain?(binary, binary) :: boolean
-  def dname_indomain?(child, ancestor) do
-    {:ok, child} = dname_normalize(child, join: false)
-    {:ok, ancestor} = dname_normalize(ancestor, join: false)
+  @spec indomain?(binary, binary) :: boolean
+  def indomain?(child, ancestor) do
+    {:ok, child} = normalize(child, join: false)
+    {:ok, ancestor} = normalize(ancestor, join: false)
     child = Enum.reverse(child)
     ancestor = Enum.reverse(ancestor)
 
@@ -459,25 +423,25 @@ defmodule DNS.Utils do
 
   ## Examples
 
-      iex> dname_to_labels("example.com")
+      iex> to_labels("example.com")
       ["example", "com"]
 
-      iex> dname_to_labels("example.com.")
+      iex> to_labels("example.com.")
       ["example", "com"]
 
       # root domain has no labels
-      iex> dname_to_labels(".")
+      iex> to_labels(".")
       []
 
       # root is implied
-      iex> dname_to_labels("")
+      iex> to_labels("")
       []
 
-      iex> dname_to_labels(".example.com")
+      iex> to_labels(".example.com")
       ** (DNS.MsgError) [encode] domain name has empty label
 
   """
-  def dname_to_labels(name) when is_binary(name) do
+  def to_labels(name) when is_binary(name) do
     case name do
       <<>> -> []
       <<?.>> -> []
@@ -485,7 +449,7 @@ defmodule DNS.Utils do
     end
   end
 
-  def dname_to_labels(noname),
+  def to_labels(noname),
     do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
 
   @doc """
@@ -501,44 +465,45 @@ defmodule DNS.Utils do
 
   ## Examples
 
-       iex> dname_valid?("")
+       iex> valid?("")
        true
 
-       iex> dname_valid?(".")
+       iex> valid?(".")
        true
 
-       iex> dname_valid?("example.com")
+       iex> valid?("example.com")
        true
 
-       iex> dname_valid?("example.c-m")
+       iex> valid?("example.c-m")
        true
 
-       iex> dname_valid?("example.123")
+       iex> valid?("example.123")
        false
 
-       iex> dname_valid?("example.-om")
+       iex> valid?("example.-om")
        false
 
-       iex> dname_valid?("example..com")
+       iex> valid?("example..com")
        false
 
-       iex> dname_valid?(".example.com")
+       iex> valid?(".example.com")
        false
 
-       iex> String.duplicate("a", 64) |> Kernel.<>(".com") |> dname_valid?
+       iex> String.duplicate("a", 64) |> Kernel.<>(".com") |> valid?
        false
 
   """
-  @spec dname_valid?(binary) :: boolean
-  def dname_valid?(name) when is_binary(name) do
+  @spec valid?(binary) :: boolean
+  def valid?(name) when is_binary(name) do
     try do
-      labels = dname_to_labels(name)
+      labels = to_labels(name)
       tld = List.last(labels)
 
       cond do
         labels == [] ->
           true
 
+        # actually, 0..255 are valid in a domain name.
         # ascii check
         # name != for(<<c <- name>>, c < 128, into: "", do: <<c>>) ->
         #   false
@@ -567,37 +532,6 @@ defmodule DNS.Utils do
     end
   end
 
-  def dname_valid?(_),
+  def valid?(_),
     do: false
-
-  # [[ MAPS ]]
-
-  @doc """
-  Normalizes a `:NAME,value` lookup map.
-
-  Normalizing a :NAME,value-map means:
-  - turn all keys into uppercase ATOM keys
-  - add reverse mapping value -> :KEY
-
-  Best used on maps that already has uppercase keys and unique values.
-
-  ## Examples
-
-       iex> normalize_name_map(%{"A" => 1})
-       %{1 => :A, :A => 1}
-
-       iex> normalize_name_map(%{"a" => 1})
-       %{1 => :A, :A => 1}
-
-       iex> normalize_name_map(%{a: 1})
-       %{1 => :A, :A => 1}
-
-  """
-  @spec normalize_name_map(map) :: any
-  def normalize_name_map(map) when is_map(map) do
-    up = fn x -> to_string(x) |> String.upcase() |> String.to_atom() end
-
-    map
-    |> Enum.reduce(%{}, fn {k, v}, acc -> acc |> Map.put(up.(k), v) |> Map.put(v, up.(k)) end)
-  end
 end

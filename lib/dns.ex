@@ -4,6 +4,7 @@ defmodule DNS do
 
   """
 
+  import DNS.Time
   import DNS.Utils
   alias DNS.Msg
   alias DNS.Cache

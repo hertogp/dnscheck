@@ -42,7 +42,7 @@ defmodule DNS.Telemetry do
   """
 
   require Logger
-  import DNS.Utils
+  import DNS.Time
 
   @handler_id "dns-default-logger"
 

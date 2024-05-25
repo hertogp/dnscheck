@@ -3,7 +3,7 @@ defmodule DNS.CacheTest do
   doctest DNS.Cache, import: true
 
   alias DNS.Cache
-  alias DNS.Utils
+  alias DNS.Time
   alias DNS.Msg.RR
 
   @cache :dns_cache
@@ -28,7 +28,7 @@ defmodule DNS.CacheTest do
     assert 1 == Cache.size()
 
     # stale entries are removed during retrieval
-    Utils.wait(1100)
+    Time.wait(1100)
     assert 1 == Cache.size()
     assert [] == Cache.get("example.com", :IN, :A)
     assert 0 == Cache.size()
@@ -39,7 +39,7 @@ defmodule DNS.CacheTest do
     assert Cache.put(rr)
     assert 1 == Cache.size()
 
-    Utils.wait(1100)
+    Time.wait(1100)
     assert 1 == Cache.size()
     [rr2] = Cache.get("example.com", :IN, :A)
     assert rr.ttl > rr2.ttl
