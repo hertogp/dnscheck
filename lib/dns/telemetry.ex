@@ -351,6 +351,10 @@ defmodule DNS.Telemetry do
 
   # [[ log ]]
 
+  # To be imported by user of this module
+  def emit(event, meta),
+    do: :telemetry.execute([:dns | event], %{}, Map.new(meta))
+
   def level(_cfg, []),
     do: :info
 
