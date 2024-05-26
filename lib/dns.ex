@@ -271,9 +271,9 @@ defmodule DNS do
       _ -> []
     end
   rescue
-    # TODO: rescue clause no longer needed?
+    # In the rare case Pfx.new raises an argument error
     error ->
-      emit([:nss, :error], error: error)
+      emit([:nss, :error], ctx: ctx, error: error)
       []
   end
 
@@ -727,7 +727,7 @@ defmodule DNS do
         {:ok, msg}
 
       :lame ->
-        emit([:ns, :lame], ns: msg.xdata.ns, msg: msg)
+        emit([:ns, :lame], ctx: ctx, ns: msg.xdata.ns, msg: msg)
         {:error, {:lame, msg}}
     end
   end
