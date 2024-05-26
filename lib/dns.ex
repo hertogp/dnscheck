@@ -689,6 +689,7 @@ defmodule DNS do
           emit([:ns, :loop], ctx: ctx, qry: qry, reason: cname, seen: ctx.cnames)
           {:error, {:cname_loop, msg}}
         else
+          # REVIEW: use Cache.nss(cname) instead of nil?
           ctx =
             %{ctx | cnames: [cname | ctx[:cnames]]}
             |> Map.put(:nameservers, nil)
@@ -717,7 +718,6 @@ defmodule DNS do
               {:error, {:cname_loop, msg}}
 
             error ->
-              emit([:ns, :error], ctx: ctx, qry: qry, reason: error)
               error
           end
         end

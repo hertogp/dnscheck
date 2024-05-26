@@ -209,43 +209,45 @@ defmodule DNS.Telemetry do
   def handle_event([:dns, :nss, topic] = event, _metrics, meta, cfg) do
     Logger.log(cfg[event], fn ->
       details =
-        case topic do
-          :switch ->
-            glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
+        if cfg[event] == :debug do
+          [to_str(meta)]
+        else
+          case topic do
+            :switch ->
+              glued = "#{length(meta.in_glue)}/#{length(meta.nss)}"
 
-            [
-              "NS:",
-              meta.ns,
-              " ZONE:",
-              meta.zone,
-              " GLUED:#{glued}",
-              " NSS:",
-              to_str(meta.nss),
-              " DROP:",
-              to_str(meta.ex_glue)
-            ]
+              [
+                "NS:",
+                meta.ns,
+                " ZONE:",
+                meta.zone,
+                " GLUED:#{glued}",
+                " NSS:",
+                to_str(meta.nss),
+                " DROP:",
+                to_str(meta.ex_glue)
+              ]
 
-          :select ->
-            ["NS:", to_str(meta.ns)]
+            :select ->
+              ["NS:", to_str(meta.ns)]
 
-          :fail ->
-            [
-              "NS:",
-              to_str(meta.ns),
-              " REASON:",
-              to_str(meta.reason),
-              " FAILED",
-              to_str(meta.failed)
-            ]
+            :fail ->
+              [
+                " REASON:",
+                to_str(meta.reason),
+                " FAILED",
+                to_str([meta.ns | meta.failed])
+              ]
 
-          :drop ->
-            ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
+            :drop ->
+              ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
 
-          :rotate ->
-            ["RETRY:", to_str(meta.nth), " NSSFAILED:", to_str(meta.failed)]
+            :rotate ->
+              ["RETRY:", to_str(meta.nth), " NSSFAILED:", to_str(meta.failed)]
 
-          :error ->
-            [to_str(meta.error)]
+            :error ->
+              [to_str(meta.error)]
+          end
         end
 
       [logid(meta.ctx), " nss:#{topic} ", details]
@@ -255,28 +257,27 @@ defmodule DNS.Telemetry do
   # [[ CACHE events ]]
 
   def handle_event([:dns, :cache, topic] = event, _metrics, meta, cfg) do
-    lvl = level(cfg, event)
-
-    Logger.log(lvl, fn ->
+    Logger.log(cfg[event], fn ->
       details =
-        case topic do
-          :miss ->
-            ["KEY:", to_str(meta.key)]
+        if cfg[event] == :debug do
+          [to_str(meta)]
+        else
+          case topic do
+            :miss ->
+              ["KEY:", to_str(meta.key)]
 
-          :hit ->
-            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+            :error ->
+              ["ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
 
-          :expired ->
-            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+            :hit ->
+              ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-          :insert ->
-            ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+            :expired ->
+              ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
 
-          :error ->
-            ["ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
-
-          _ ->
-            ["ERROR cache event not handled, meta:#{inspect(meta)}"]
+            :insert ->
+              ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+          end
         end
 
       ["cache:#{topic} ", details]
