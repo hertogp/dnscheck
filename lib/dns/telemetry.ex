@@ -163,12 +163,15 @@ defmodule DNS.Telemetry do
               [to_str(qry), " @#{Pfx.new(ip)}##{port}/#{meta.proto} (#{ns})"]
 
             :reply ->
-              IO.inspect(meta, label: :meta)
-
+              tc = if meta.msg.header.tc == 1, do: " (truncated)", else: ""
               qtn = Enum.frequencies_by(meta.msg.question, fn rr -> rr.type end)
               aut = Enum.frequencies_by(meta.msg.authority, fn rr -> rr.type end)
-              ans = Enum.frequencies_by(meta.msg.answer, fn rr -> rr.type end)
               add = Enum.frequencies_by(meta.msg.additional, fn rr -> rr.type end)
+
+              ans =
+                if meta.type == :answer,
+                  do: Enum.map(meta.msg.answer, fn rr -> "#{rr}" end),
+                  else: Enum.frequencies_by(meta.msg.answer, fn rr -> rr.type end)
 
               [
                 "#{meta.type}",
@@ -179,11 +182,14 @@ defmodule DNS.Telemetry do
                 " ANS:",
                 to_str(ans),
                 " ADD:",
-                to_str(add)
+                to_str(add),
+                tc
               ]
 
             :error ->
-              ["NS:", to_str(meta.ns), " REASON:", meta.reason]
+              {ns, ip, port} = meta.ns
+              qry = Enum.map(meta.qry.question, fn q -> "#{q.name}/#{q.class}/#{q.type}" end)
+              [to_str(qry), " @#{Pfx.new(ip)}#{port}/#{meta.proto} (#{ns}) ", to_str(meta.reason)]
 
             :loop ->
               ["REASON:", to_str(meta.reason), " SEEN:", to_str(meta.seen)]
