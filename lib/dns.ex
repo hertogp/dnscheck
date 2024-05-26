@@ -272,8 +272,8 @@ defmodule DNS do
     end
   rescue
     # TODO: rescue clause no longer needed?
-    err ->
-      Log.error("error: #{inspect(err)}")
+    error ->
+      emit([:nss, :error], %{}, error: error)
       []
   end
 
@@ -304,8 +304,8 @@ defmodule DNS do
               _ns_ips -> Enum.concat(ns_ips, nss)
             end
 
-          {:error, {reason, info}} ->
-            emit([:nss, :error], %{}, ctx: ctx, reason: reason, info: info)
+          error ->
+            emit([:nss, :error], %{}, ctx: ctx, error: error)
             next_ns(nss, ctx, tstop)
         end
 
@@ -326,7 +326,12 @@ defmodule DNS do
     do: {:error, {:timeout, "nameserver(s) failed to reply properly"}}
 
   defp query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
-    emit([:nss, :rotate], %{}, ctx: ctx, nth: nth + 1, failed: failed)
+    emit([:nss, :rotate], %{},
+      ctx: ctx,
+      nth: nth + 1,
+      failed: Enum.map(failed, fn f -> elem(f, 0) end)
+    )
+
     query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
   end
 
@@ -342,9 +347,11 @@ defmodule DNS do
 
     cond do
       timeout(tstop) == 0 ->
+        emit([:nss, :error], %{}, ctx: ctx, error: "query time exceeded")
         {:error, {:timeout, "Query timeout for query reached"}}
 
       ctx.retry < nth ->
+        emit([:nss, :error], %{}, ctx: ctx, error: "query max retries exceeded")
         {:error, {:retries, "Query max retries (#{nth}) reached"}}
 
       true ->
@@ -353,7 +360,13 @@ defmodule DNS do
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
-            emit([:nss, :fail], %{}, ctx: ctx, reason: :timeout, ns: ns)
+            emit([:nss, :fail], %{},
+              ctx: ctx,
+              reason: :timeout,
+              ns: ns,
+              failed: Enum.map(failed, fn f -> elem(f, 0) end)
+            )
+
             query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
           {:error, reason} ->

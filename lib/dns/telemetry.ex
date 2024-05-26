@@ -57,6 +57,7 @@ defmodule DNS.Telemetry do
     [:dns, :nss, :fail],
     [:dns, :nss, :drop],
     [:dns, :nss, :error],
+    [:dns, :nss, :rotate],
     #
     [:dns, :ns, :query],
     [:dns, :ns, :reply],
@@ -206,9 +207,7 @@ defmodule DNS.Telemetry do
   # [[ NSS events ]]
 
   def handle_event([:dns, :nss, topic] = event, _metrics, meta, cfg) do
-    lvl = level(cfg, event)
-
-    Logger.log(lvl, fn ->
+    Logger.log(cfg[event], fn ->
       details =
         case topic do
           :switch ->
@@ -230,13 +229,23 @@ defmodule DNS.Telemetry do
             ["NS:", to_str(meta.ns)]
 
           :fail ->
-            ["NS:", to_str(meta.ns), " REASON:", to_str(meta.reason)]
+            [
+              "NS:",
+              to_str(meta.ns),
+              " REASON:",
+              to_str(meta.reason),
+              " FAILED",
+              to_str(meta.failed)
+            ]
 
           :drop ->
             ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
 
           :rotate ->
-            ["RETRY:", meta.nth, " NSSFAILED:", meta.failed]
+            ["RETRY:", to_str(meta.nth), " NSSFAILED:", to_str(meta.failed)]
+
+          :error ->
+            [to_str(meta.error)]
         end
 
       [logid(meta.ctx), " nss:#{topic} ", details]
