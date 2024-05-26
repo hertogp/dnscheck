@@ -96,7 +96,7 @@ defmodule DNS.Telemetry do
     |> Enum.into(%{})
   end
 
-  def(attach_default_logger(opts \\ %{})) do
+  def attach_default_logger(opts \\ %{}) do
     opts = do_opts(opts)
     :telemetry.detach(@handler_id)
     :telemetry.attach_many(@handler_id, Map.keys(opts), &DNS.Telemetry.handle_event/4, opts)
@@ -106,28 +106,91 @@ defmodule DNS.Telemetry do
     :telemetry.detach(@handler_id)
   end
 
+  @doc """
+  Returns the default logger's current configuration.
+
+  If the optional `default` is set to true, returns the default
+  configuration that would be used when attaching the default logger
+  with no specific configuration.
+  """
+  @spec config(Keyword.t()) :: map
+  def config(opts \\ []) do
+    if Keyword.get(opts, :default, false) do
+      do_opts(%{})
+    else
+      :telemetry.list_handlers([:dns])
+      |> Enum.map(fn cfg -> cfg.config end)
+      |> Enum.reduce(%{}, fn c, acc -> Map.merge(acc, c) end)
+    end
+  end
+
+  @doc """
+  Get or set `DNS.Telemetry`'s logging level.
+
+  Use the option `:set` to set the module's logging level.
+  When omitted, returns the current logging level.
+
+  """
+
+  @spec level(Keyword.t()) :: :ok | {:error, term} | atom
+  def level(opts \\ []) do
+    level = Keyword.get(opts, :set, nil)
+
+    if level do
+      Logger.put_module_level(__MODULE__, level)
+    else
+      Logger.get_module_level(__MODULE__)
+      |> Enum.find({__MODULE__, :none}, fn t -> elem(t, 0) == __MODULE__ end)
+      |> elem(1)
+    end
+  end
+
   # [[ NS events ]]
 
   def handle_event([:dns, :ns, topic] = event, _metrics, meta, cfg) do
-    lvl = level(cfg, event)
-
-    Logger.log(lvl, fn ->
+    # FIXME: [:dns, :ns, :error] event has no ctx
+    # - don't emit from lower levels, emit from places where ctx is available
+    Logger.log(cfg[event], fn ->
       details =
-        case topic do
-          :query ->
-            ["PROTO:", meta.proto, " NS:", to_str(meta.ns), " QTN:", to_str(meta.qry.question)]
+        if cfg[event] == :debug do
+          to_str(meta)
+        else
+          case topic do
+            :query ->
+              {ns, ip, port} = meta.ns
+              qry = Enum.map(meta.qry.question, fn q -> "#{q.name}/#{q.class}/#{q.type}" end)
 
-          :reply ->
-            ["TYPE:#{meta.type}", " REPLY:", to_iodata(meta.msg)]
+              [to_str(qry), " @#{Pfx.new(ip)}##{port}/#{meta.proto} (#{ns})"]
 
-          :error ->
-            ["NS:", to_str(meta.ns), " REASON:", meta.reason]
+            :reply ->
+              IO.inspect(meta, label: :meta)
 
-          :loop ->
-            ["REASON:", to_str(meta.reason), " SEEN:", to_str(meta.seen)]
+              qtn = Enum.frequencies_by(meta.msg.question, fn rr -> rr.type end)
+              aut = Enum.frequencies_by(meta.msg.authority, fn rr -> rr.type end)
+              ans = Enum.frequencies_by(meta.msg.answer, fn rr -> rr.type end)
+              add = Enum.frequencies_by(meta.msg.additional, fn rr -> rr.type end)
 
-          :lame ->
-            ["NS:", to_str(meta.ns), " REPLY:", to_iodata(meta.msg)]
+              [
+                "#{meta.type}",
+                " QTN:",
+                to_str(qtn),
+                " AUT:",
+                to_str(aut),
+                " ANS:",
+                to_str(ans),
+                " ADD:",
+                to_str(add)
+              ]
+
+            :error ->
+              ["NS:", to_str(meta.ns), " REASON:", meta.reason]
+
+            :loop ->
+              ["REASON:", to_str(meta.reason), " SEEN:", to_str(meta.seen)]
+
+            :lame ->
+              ["NS:", to_str(meta.ns), " REPLY:", to_iodata(meta.msg)]
+          end
         end
 
       [logid(meta.ctx), " ns:#{topic} ", details]
@@ -161,10 +224,13 @@ defmodule DNS.Telemetry do
             ["NS:", to_str(meta.ns)]
 
           :fail ->
-            ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
+            ["NS:", to_str(meta.ns), " REASON:", to_str(meta.reason)]
 
           :drop ->
             ["NS:", to_str(meta.ns), " REASON:", to_str(meta.error)]
+
+          :rotate ->
+            ["RETRY:", meta.nth, " NSSFAILED:", meta.failed]
         end
 
       [logid(meta.ctx), " nss:#{topic} ", details]
@@ -207,8 +273,10 @@ defmodule DNS.Telemetry do
   end
 
   # [[ HELPERS ]]
-  defp logid(ctx),
-    do: ["DNS:", "#{ctx.qid} [#{ctx.depth},#{now() - ctx.tstart}ms]"]
+  defp logid(ctx) do
+    ms = String.pad_leading("#{now() - ctx.tstart}", 3)
+    ["DNS:", "#{ctx.qid} [#{ctx.depth},#{ms}ms]"]
+  end
 
   def to_iodata(%DNS.Msg{} = msg) do
     [

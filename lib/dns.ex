@@ -326,7 +326,7 @@ defmodule DNS do
     do: {:error, {:timeout, "nameserver(s) failed to reply properly"}}
 
   defp query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
-    emit([:nss, :rotate], %{}, ctx: ctx, failed: failed)
+    emit([:nss, :rotate], %{}, ctx: ctx, nth: nth + 1, failed: failed)
     query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
   end
 
@@ -353,7 +353,7 @@ defmodule DNS do
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
-            emit([:nss, :fail], %{}, ctx: ctx, error: :timeout, ns: ns)
+            emit([:nss, :fail], %{}, ctx: ctx, reason: :timeout, ns: ns)
             query_nss(nss, qry, ctx, tstop, nth, [wrap(ns, ctx.srvfail_wait) | failed])
 
           {:error, reason} ->
@@ -456,7 +456,7 @@ defmodule DNS do
         proto: "udp",
         rtt: span,
         sent: byte_size(qry.wdata),
-        recvd: byte_size(msg.wdata)
+        rcvd: byte_size(msg.wdata)
       }
 
       {:ok, %{msg | xdata: xdata}}
@@ -545,7 +545,7 @@ defmodule DNS do
         proto: "tcp",
         rtt: span,
         sent: byte_size(qry.wdata),
-        recvd: byte_size(msg.wdata)
+        rcvd: byte_size(msg.wdata)
       }
 
       {:ok, %{msg | xdata: xdata}}
@@ -595,13 +595,9 @@ defmodule DNS do
       if Pfx.valid?(name) do
         Pfx.dns_ptr(name)
       else
-        with {:ok, name} <- Name.normalize(name) do
-          if ctx.scramble,
-            do: Name.scramble(name),
-            else: name
-        else
-          _ -> name
-        end
+        if ctx.scramble,
+          do: Name.scramble(name),
+          else: name
       end
 
     edns_opts =
