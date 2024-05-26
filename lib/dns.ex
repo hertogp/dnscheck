@@ -4,9 +4,10 @@ defmodule DNS do
 
   """
 
+  import DNS.Telemetry, only: [emit: 2]
   import DNS.Time
-  alias DNS.Name
   import DNS.Guards
+  alias DNS.Name
   alias DNS.Msg
   alias DNS.Cache
   alias DNS.Msg.Terms
@@ -861,9 +862,6 @@ defmodule DNS do
   end
 
   # [[ HELPERS ]]
-
-  defp emit(event, meta),
-    do: :telemetry.execute([:dns | event], %{}, Map.new(meta))
 
   @spec reply?(msg, msg) :: boolean
   defp reply?(qry, rsp) do
