@@ -252,7 +252,7 @@ defmodule DNS do
             rr.type in [:A, :AAAA] and String.downcase(rr.name) in nsnames,
             do: {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
 
-      emit([:nss, :switch], %{},
+      emit([:nss, :switch],
         ns: msg.xdata.ns,
         ctx: ctx,
         zone: zone,
@@ -273,7 +273,7 @@ defmodule DNS do
   rescue
     # TODO: rescue clause no longer needed?
     error ->
-      emit([:nss, :error], %{}, error: error)
+      emit([:nss, :error], error: error)
       []
   end
 
@@ -305,7 +305,7 @@ defmodule DNS do
             end
 
           error ->
-            emit([:nss, :error], %{}, ctx: ctx, error: error)
+            emit([:nss, :error], ctx: ctx, error: error)
             next_ns(nss, ctx, tstop)
         end
 
@@ -326,11 +326,7 @@ defmodule DNS do
     do: {:error, {:timeout, "nameserver(s) failed to reply properly"}}
 
   defp query_nss([] = _nss, qry, ctx, tstop, nth, failed) do
-    emit([:nss, :rotate], %{},
-      ctx: ctx,
-      nth: nth + 1,
-      failed: Enum.map(failed, fn f -> elem(f, 0) end)
-    )
+    emit([:nss, :rotate], ctx: ctx, nth: nth + 1, failed: Enum.map(failed, fn f -> elem(f, 0) end))
 
     query_nss(Enum.reverse(failed), qry, ctx, tstop, nth + 1, [])
   end
@@ -347,20 +343,20 @@ defmodule DNS do
 
     cond do
       timeout(tstop) == 0 ->
-        emit([:nss, :error], %{}, ctx: ctx, error: "query time exceeded")
+        emit([:nss, :error], ctx: ctx, error: "query time exceeded")
         {:error, {:timeout, "Query timeout for query reached"}}
 
       ctx.retry < nth ->
-        emit([:nss, :error], %{}, ctx: ctx, error: "query max retries exceeded")
+        emit([:nss, :error], ctx: ctx, error: "query max retries exceeded")
         {:error, {:retries, "Query max retries (#{nth}) reached"}}
 
       true ->
         ns = unwrap(ns)
-        emit([:nss, :select], %{}, ctx: ctx, qry: qry, ns: ns)
+        emit([:nss, :select], ctx: ctx, qry: qry, ns: ns)
 
         case query_ns(ns, qry, ctx, tstop, nth) do
           {:error, :timeout} ->
-            emit([:nss, :fail], %{},
+            emit([:nss, :fail],
               ctx: ctx,
               reason: :timeout,
               ns: ns,
@@ -372,7 +368,7 @@ defmodule DNS do
           {:error, reason} ->
             # REVIEW: some query_ns errors (e.g. :system_limit or :inet.posix()) might require a
             # full stop here ...
-            emit([:nss, :drop], %{}, ctx: ctx, ns: ns, error: reason)
+            emit([:nss, :drop], ctx: ctx, ns: ns, error: reason)
             query_nss(nss, qry, ctx, tstop, nth, failed)
 
           {:ok, msg} ->
@@ -388,7 +384,7 @@ defmodule DNS do
             case xrcode(msg) do
               rcode
               when rcode in [:FORMERROR, :NOTIMP, :REFUSED, :BADVERS] ->
-                emit([:nss, :drop], %{}, ctx: ctx, ns: ns, error: rcode)
+                emit([:nss, :drop], ctx: ctx, ns: ns, error: rcode)
                 query_nss(nss, qry, ctx, tstop, nth, failed)
 
               _ ->
@@ -438,7 +434,7 @@ defmodule DNS do
              :timeout | :badarg | :system_limit | :not_owner | :inet.posix() | DNS.MsgError.t()}
   defp query_udp(ns, qry, ctx, 0, _bufsize) do
     error = {:error, :timeout}
-    emit([:ns, :error], %{}, ctx: ctx, qry: qry, ns: ns, proto: "udp", reason: error)
+    emit([:ns, :error], ctx: ctx, qry: qry, ns: ns, proto: "udp", reason: error)
     error
   end
 
@@ -448,7 +444,7 @@ defmodule DNS do
     # - :gen_udp.connect ensures incoming data arrived at our src IP:port
     # - query_udp_recv ensures qry/msg ID's are equal and msg's qr=1
     # the higher ups will need to decide on how to handle the reply
-    emit([:ns, :query], %{}, ctx: ctx, ns: ns, qry: qry, proto: "udp")
+    emit([:ns, :query], ctx: ctx, ns: ns, qry: qry, proto: "udp")
     {:ok, sock} = query_udp_open(ns, bufsize)
 
     t0 = now()
@@ -469,18 +465,18 @@ defmodule DNS do
       }
 
       msg = %{msg | xdata: xdata}
-      emit([:ns, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: reply_type(msg))
+      emit([:ns, :reply], ctx: ctx, qry: qry, msg: msg, type: reply_type(msg))
       {:ok, msg}
     else
       error ->
         :gen_udp.close(sock)
-        emit([:ns, :error], %{}, ctx: ctx, qry: qry, ns: ns, proto: "udp", reason: error)
+        emit([:ns, :error], ctx: ctx, qry: qry, ns: ns, proto: "udp", reason: error)
         error
     end
   rescue
     # when query_udp_open returns {:error, :badarg} (i.e. the term in MatchError)
     error in MatchError ->
-      emit([:ns, :error], %{}, ctx: ctx, qry: qry, ns: ns, proto: "udp", reason: error)
+      emit([:ns, :error], ctx: ctx, qry: qry, ns: ns, proto: "udp", reason: error)
       error.term
   end
 
@@ -541,7 +537,7 @@ defmodule DNS do
 
   defp query_tcp({name, ip, port} = ns, qry, ctx, timeout, tstop) do
     # connect outside `with`-block, so we can always close the socket
-    emit([:ns, :query], %{}, ctx: ctx, ns: ns, qry: qry, proto: "tcp")
+    emit([:ns, :query], ctx: ctx, ns: ns, qry: qry, proto: "tcp")
     {:ok, sock} = query_tcp_connect(ns, timeout, tstop)
     t0 = now()
 
@@ -562,17 +558,17 @@ defmodule DNS do
       }
 
       msg = %{msg | xdata: xdata}
-      emit([:ns, :reply], %{}, ctx: ctx, qry: qry, msg: msg, type: reply_type(msg))
+      emit([:ns, :reply], ctx: ctx, qry: qry, msg: msg, type: reply_type(msg))
       {:ok, msg}
     else
       false ->
         error = {:error, :notreply}
-        emit([:ns, :error], %{}, ctx: ctx, qry: qry, ns: ns, proto: "tcp", reason: error)
+        emit([:ns, :error], ctx: ctx, qry: qry, ns: ns, proto: "tcp", reason: error)
         :gen_tcp.close(sock)
         error
 
       error ->
-        emit([:ns, :error], %{}, ctx: ctx, qry: qry, ns: ns, proto: "tcp", reason: error)
+        emit([:ns, :error], ctx: ctx, qry: qry, ns: ns, proto: "tcp", reason: error)
         :gen_tcp.close(sock)
         error
     end
@@ -674,7 +670,7 @@ defmodule DNS do
         seen = Enum.any?(ctx.rzones, &Name.equal?(&1, zone))
 
         if seen do
-          emit([:ns, :loop], %{}, ctx: ctx, qry: qry, reason: zone, seen: ctx.rzones)
+          emit([:ns, :loop], ctx: ctx, qry: qry, reason: zone, seen: ctx.rzones)
           {:error, {:rzone_loop, msg}}
         else
           Cache.put(msg)
@@ -690,7 +686,7 @@ defmodule DNS do
 
         # cname loop detection using ctx.cnames
         if Enum.member?(ctx.cnames, cname) do
-          emit([:ns, :loop], %{}, ctx: ctx, qry: qry, reason: cname, seen: ctx.cnames)
+          emit([:ns, :loop], ctx: ctx, qry: qry, reason: cname, seen: ctx.cnames)
           {:error, {:cname_loop, msg}}
         else
           ctx =
@@ -717,11 +713,11 @@ defmodule DNS do
               answer = [%{rr | wdata: <<>>} | msg.answer]
               msg = %{msg | header: header, question: question, answer: answer}
               msg = put_in(msg, [Access.key(:xdata), :time], now() - ctx.tstart)
-              emit([:ns, :loop], %{}, ctx: ctx, qry: qry, reason: cname, seen: ctx.cnames)
+              emit([:ns, :loop], ctx: ctx, qry: qry, reason: cname, seen: ctx.cnames)
               {:error, {:cname_loop, msg}}
 
             error ->
-              emit([:ns, :error], %{}, ctx: ctx, qry: qry, reason: error)
+              emit([:ns, :error], ctx: ctx, qry: qry, reason: error)
               error
           end
         end
@@ -731,7 +727,7 @@ defmodule DNS do
         {:ok, msg}
 
       :lame ->
-        emit([:ns, :lame], %{}, ns: msg.xdata.ns, msg: msg)
+        emit([:ns, :lame], ns: msg.xdata.ns, msg: msg)
         {:error, {:lame, msg}}
     end
   end
@@ -866,9 +862,8 @@ defmodule DNS do
 
   # [[ HELPERS ]]
 
-  defp emit(event, measurements, meta) do
-    :telemetry.execute([:dns | event], measurements, Enum.into(meta, %{}))
-  end
+  defp emit(event, meta),
+    do: :telemetry.execute([:dns | event], %{}, Map.new(meta))
 
   @spec reply?(msg, msg) :: boolean
   defp reply?(qry, rsp) do
