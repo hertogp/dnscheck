@@ -1933,7 +1933,7 @@ end
 
 defimpl String.Chars, for: DNS.Msg.RR do
   def to_string(rr) do
-    "#{rr.name}.\t#{rr.ttl}\t#{rr.class}\t#{rr.type}\t" <>
+    "#{rr.name}. #{rr.ttl} #{rr.class} #{rr.type} " <>
       rdmap_tostr(rr.type, rr)
   end
 

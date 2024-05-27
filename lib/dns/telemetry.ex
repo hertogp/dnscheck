@@ -289,10 +289,6 @@ defmodule DNS.Telemetry do
   end
 
   # [[ HELPERS ]]
-  defp logid(ctx) do
-    ms = String.pad_leading("#{now() - ctx.tstart}", 3)
-    ["DNS:", "#{ctx.qid} [#{ctx.depth},#{ms}ms]"]
-  end
 
   def to_iodata(%DNS.Msg{} = msg) do
     [
@@ -351,17 +347,24 @@ defmodule DNS.Telemetry do
 
   # [[ log ]]
 
-  # To be imported by user of this module
+  @doc false
+  def logid(ctx) do
+    ms = String.pad_leading("#{now() - ctx.tstart}", 3)
+    ["DNS:", "#{ctx.qid} [#{ctx.depth},#{ms}ms]"]
+  end
+
+  # For modules that use DNS.Telemetry
+  @doc false
   def emit(event, meta),
     do: :telemetry.execute([:dns | event], %{}, Map.new(meta))
 
-  def level(_cfg, []),
-    do: :info
-
-  def level(cfg, [_ | rest] = event) do
-    case cfg[event] do
-      nil -> level(cfg, rest)
-      level -> level
-    end
-  end
+  # defp level(_cfg, []),
+  #   do: :info
+  #
+  # defp level(cfg, [_ | rest] = event) do
+  #   case cfg[event] do
+  #     nil -> level(cfg, rest)
+  #     level -> level
+  #   end
+  # end
 end
