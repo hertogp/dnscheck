@@ -328,7 +328,6 @@ defmodule DNS.Cache do
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
         dead = Enum.map(dead, &unwrap_ttd/1)
-        # :telemetry.execute([:dns, :cache, :expired], %{}, %{key: key, rrs: dead})
         emit([:cache, :expired], key: key, rrs: dead)
 
         # remove the dead by re-inserting the live ones (with current timer)
@@ -342,17 +341,12 @@ defmodule DNS.Cache do
       else
         rrs = Enum.map(rrs, &unwrap_ttd/1)
         event = if rrs == [], do: :miss, else: :hit
-        # :telemetry.execute([:dns, :cache, event], %{}, %{key: key, rrs: rrs})
         emit([:cache, event], key: key, rrs: rrs)
 
         rrs
       end
     else
       {:error, reason} ->
-        # :telemetry.execute([:dns, :cache, :error], %{}, %{
-        #   key: {name, class, type},
-        #   reason: reason
-        # })
         emit([:cache, :error], key: {name, class, type}, reason: reason)
 
         []
@@ -393,10 +387,6 @@ defmodule DNS.Cache do
       nssp(labels)
     else
       _ ->
-        # :telemetry.execute([:dns, :cache, :error], %{}, %{
-        #   desc: "illegal zone name #{inspect(zone)}"
-        # })
-
         emit([:cache, :error], error: {"illegal zone name", zone})
 
         []

@@ -133,6 +133,9 @@ defmodule DNS do
       tstart: now()
     }
 
+    # so we can pass in ctx (used in telemetry events)
+    ctx = %{ctx | nameservers: ctx.nameservers || Cache.nss(name)}
+
     cond do
       not is_u16(ctx.bufsize) -> "bufsize out of u16 range"
       ctx.cd not in 0..1 -> "cd bit should be 0 or 1"

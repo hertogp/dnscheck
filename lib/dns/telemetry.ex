@@ -349,7 +349,7 @@ defmodule DNS.Telemetry do
 
   @doc false
   def logid(ctx) do
-    ms = String.pad_leading("#{now() - ctx.tstart}", 3)
+    ms = String.pad_leading("#{now() - ctx.tstart}", 4)
     ["DNS:", "#{ctx.qid} [#{ctx.depth},#{ms}ms]"]
   end
 
