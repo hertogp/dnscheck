@@ -94,38 +94,6 @@ defmodule DNS.Msg.Terms do
                }
                |> Enum.reduce(%{}, fn {k, v}, acc -> Map.put(acc, k, v) |> Map.put(v, k) end)
 
-  @classes [
-    {:IN, 1},
-    {:ANY, 255},
-    {:CH, 3},
-    {:HS, 4},
-    {:NONE, 254},
-    {:RESERVED, 0}
-  ]
-
-  @doc """
-  Returns a number for a known DNS class atom, or nil.
-
-  """
-  @spec class_encode(atom) :: non_neg_integer | DNS.MsgError
-  def class_encode(atom)
-
-  for {k, v} <- @classes do
-    def class_encode(unquote(k)), do: unquote(v)
-  end
-
-  def class_encode(k) when is_binary(k),
-    do: String.upcase(k) |> String.to_existing_atom() |> class_encode()
-
-  def class_encode(k),
-    do: error(:edecode, "DNS class #{inspect(k)} is unknown")
-
-  for {k, v} <- @classes,
-      do: def(class_decode(unquote(v)), do: unquote(k))
-
-  def class_decode(k),
-    do: error(:eencode, "DNS class number valid range is 0..65535, got #{inspect(k)}")
-
   @doc """
   Encode a DNS class to its numeric value.
 
