@@ -143,10 +143,6 @@ defmodule DNS.Param do
       {:UMBRELLA_IDENT, 20292},
       {:DEVICEID, 26946}
     ],
-
-    # EDNS Extended DNS Error codes
-    # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#extended-dns-error-codes
-
     :edns_ede => [
       {:OTHER, 0},
       {:DNSKEY_ALGO, 1},
@@ -253,6 +249,8 @@ defmodule DNS.Param do
       _ -> false
     end
   end
+
+  # [[ MODULE DOC ]]
 
   @moduledoc """
   Functions to work with DNS Parameters
@@ -363,7 +361,6 @@ defmodule DNS.Param do
   ```
 
   ## TODO
-  - [ ] [xrcodes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#extended-dns-error-codes)
   - [ ] [nsec3 params](https://www.iana.org/assignments/dnssec-nsec3-parameters/dnssec-nsec3-parameters.xhtml)
 
 
