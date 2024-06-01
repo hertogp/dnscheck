@@ -39,7 +39,6 @@ defmodule DNS.Msg.Hdr do
   """
 
   import DNS.MsgError, only: [error: 2]
-  import DNS.Msg.Terms
   alias DNS.Param
 
   defstruct id: 0,
@@ -142,7 +141,7 @@ defmodule DNS.Msg.Hdr do
       }
 
       iex> new(opcode: 16)
-      ** (DNS.MsgError) [create] Hdr opcode valid range is 0..15, got: 16
+      ** (DNS.MsgError) [create] Hdr opcode_decode: unknown parameter value '16'
 
 
   """
@@ -215,7 +214,7 @@ defmodule DNS.Msg.Hdr do
   # opcode & rcode store atom's if possible, numbers otherwise
   # in case we have a valid value, but no known name
   defp do_put({k, v}, hdr) when k == :opcode,
-    do: Map.put(hdr, k, decode_dns_opcode(v))
+    do: Map.put(hdr, k, Param.opcode_decode(v))
 
   defp do_put({k, v}, hdr) when k == :rcode do
     # encode_dns_rcode accepts extended rcodes as well, so check for v in 0..15
@@ -247,8 +246,8 @@ defmodule DNS.Msg.Hdr do
   """
   @spec encode(t) :: t | no_return
   def encode(%__MODULE__{} = hdr) do
-    opcode = encode_dns_opcode(hdr.opcode)
-    rcode = encode_dns_rcode(hdr.rcode)
+    opcode = Param.opcode_encode(hdr.opcode)
+    rcode = Param.rcode_encode(hdr.rcode)
 
     hdr
     |> Map.put(
@@ -303,7 +302,7 @@ defmodule DNS.Msg.Hdr do
       new(
         id: id,
         qr: qr,
-        opcode: decode_dns_opcode(opcode),
+        opcode: Param.opcode_decode(opcode),
         aa: aa,
         tc: tc,
         rd: rd,
@@ -311,7 +310,7 @@ defmodule DNS.Msg.Hdr do
         z: z,
         ad: ad,
         cd: cd,
-        rcode: decode_dns_rcode(rcode),
+        rcode: Param.rcode_decode(rcode),
         qdc: qdc,
         anc: anc,
         nsc: nsc,
