@@ -274,7 +274,6 @@ defmodule DNS.Msg.RR do
   import DNS.MsgError, only: [error: 2]
   alias DNS.Name
   import DNS.Guards
-  import DNS.Msg.Terms
   alias DNS.Param
 
   defstruct name: "",
@@ -483,8 +482,8 @@ defmodule DNS.Msg.RR do
   end
 
   defp do_put({k, v}, rr) when k == :class do
-    if is_u16(encode_dns_class(v)),
-      do: Map.put(rr, k, decode_dns_class(v)),
+    if is_u16(Param.class_encode(v)),
+      do: Map.put(rr, k, Param.class_decode(v)),
       else: error(:ecreate, "#{k}, got: #{inspect(v)}")
   end
 
@@ -553,7 +552,7 @@ defmodule DNS.Msg.RR do
       do: error(:ecreate, "bufsize range is 0..65535, got: #{inspect(class)}")
 
     # construct EDNS(0) TTL
-    xrcode = Keyword.get(opts, :xrcode, 0) |> encode_dns_rcode()
+    xrcode = Keyword.get(opts, :xrcode, 0) |> Param.rcode_encode()
     version = Keyword.get(opts, :version, 0)
     do_bit = Keyword.get(opts, :do, 1)
     z = Keyword.get(opts, :z, 0)
@@ -576,14 +575,14 @@ defmodule DNS.Msg.RR do
       do:
         error(:ecreate, "ENDS0 opts should be list of {CODE, DATA}, got: %#{inspect(edns_opts)}")
 
-    edns_opts = edns_opts |> Enum.map(fn {opt, dta} -> {decode_rropt_code(opt), dta} end)
+    edns_opts = edns_opts |> Enum.map(fn {opt, dta} -> {Param.edns_option_decode(opt), dta} end)
 
     # pseudo-rr: add information encoded in class & ttl to rdmap as well
     # even though it's not encoded in this rr's rdata
     rdmap =
       Keyword.get(opts, :rdmap, %{})
       |> Map.put(:bufsize, class)
-      |> Map.put(:xrcode, decode_dns_rcode(xrcode))
+      |> Map.put(:xrcode, Param.rcode_decode(xrcode))
       |> Map.put(:do, do_bit)
       |> Map.put(:version, version)
       |> Map.put(:z, z)
@@ -634,7 +633,7 @@ defmodule DNS.Msg.RR do
   @spec encode(t) :: t | no_return
   def encode(%__MODULE__{} = rr) do
     name = Name.encode(rr.name)
-    class = encode_dns_class(rr.class)
+    class = Param.class_encode(rr.class)
     type = Param.rrtype_encode(rr.type)
     rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.class, rr.rdmap)
     rdlen = byte_size(rdata)
@@ -1423,11 +1422,11 @@ defmodule DNS.Msg.RR do
 
     opts =
       for <<code::16, len::16, data::binary-size(len) <- rdata>>,
-        do: decode_rropt_code(code) |> decode_edns_opt(len, data)
+        do: Param.edns_option_decode(code) |> decode_edns_opt(len, data)
 
     %{
       bufsize: bufsize,
-      xrcode: decode_dns_rcode(xrcode),
+      xrcode: Param.rcode_decode(xrcode),
       version: version,
       do: do_bit,
       z: z,
