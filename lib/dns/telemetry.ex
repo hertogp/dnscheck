@@ -357,14 +357,4 @@ defmodule DNS.Telemetry do
   @doc false
   def emit(event, meta),
     do: :telemetry.execute([:dns | event], %{}, Map.new(meta))
-
-  # defp level(_cfg, []),
-  #   do: :info
-  #
-  # defp level(cfg, [_ | rest] = event) do
-  #   case cfg[event] do
-  #     nil -> level(cfg, rest)
-  #     level -> level
-  #   end
-  # end
 end
