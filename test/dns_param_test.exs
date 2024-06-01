@@ -16,7 +16,7 @@ defmodule DNS.ParamTest do
       assert v == class_encode("#{k}")
     end
 
-    # raises on unknown name or numbers
+    # raises on unknown names or invalid numbers
     assert_raise DNS.MsgError, fn -> class_encode(:in) end
     assert_raise DNS.MsgError, fn -> class_encode("in") end
     assert_raise DNS.MsgError, fn -> class_encode(65536) end

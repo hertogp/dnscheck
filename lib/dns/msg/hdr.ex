@@ -38,8 +38,9 @@ defmodule DNS.Msg.Hdr do
 
   """
 
-  import DNS.Msg.Terms
   import DNS.MsgError, only: [error: 2]
+  import DNS.Msg.Terms
+  alias DNS.Param
 
   defstruct id: 0,
             qr: 0,
@@ -218,8 +219,8 @@ defmodule DNS.Msg.Hdr do
 
   defp do_put({k, v}, hdr) when k == :rcode do
     # encode_dns_rcode accepts extended rcodes as well, so check for v in 0..15
-    if encode_dns_rcode(v) in 0..15,
-      do: Map.put(hdr, k, decode_dns_rcode(v)),
+    if Param.rcode_encode(v) in 0..15,
+      do: Map.put(hdr, k, Param.rcode_decode(v)),
       else: error(:ecreate, "rcode valid range is 0..15, got: #{inspect(v)}")
   end
 

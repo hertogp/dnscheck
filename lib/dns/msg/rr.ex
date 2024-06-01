@@ -333,7 +333,7 @@ defmodule DNS.Msg.RR do
 
   Known options include:
   - `:name`, must be a binary (default `""`)
-  - `:type`, an [atom](`DNS.Msg.Terms.encode_rr_type/1`) or an unsigned 16 bit number (default `:A`)
+  - `:type`, an [atom](`DNS.Param.rrtype_encode/1`) or an unsigned 16 bit number (default `:A`)
   - `:class`, an [atom](`DNS.Msg.Terms.encode_dns_class/1`) or an unsigned 16 bit number (default `:IN`)
   - `:ttl`, a unsigned 32 bit integer (default `0`)
   - `:rdmap`, a map with `key,value`-pairs (to be encoded later, default `%{}`)
@@ -635,7 +635,6 @@ defmodule DNS.Msg.RR do
   def encode(%__MODULE__{} = rr) do
     name = Name.encode(rr.name)
     class = encode_dns_class(rr.class)
-    # type = encode_rr_type(rr.type)
     type = Param.rrtype_encode(rr.type)
     rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.class, rr.rdmap)
     rdlen = byte_size(rdata)
@@ -943,7 +942,6 @@ defmodule DNS.Msg.RR do
 
   # IN RRSIG (46), https://www.rfc-editor.org/rfc/rfc4034#section-3
   defp encode_rdata(:RRSIG, :IN, m) do
-    # type = required(:RRSIG, m, :type, fn t -> encode_rr_type(t) |> is_u16 end)
     type = required(:RRSIG, m, :type, fn t -> Param.rrtype_encode(t) |> is_u16 end)
     algo = required(:RRSIG, m, :algo, &is_u8/1)
     labels = required(:RRSIG, m, :labels, &is_u8/1)
@@ -1821,7 +1819,7 @@ defmodule DNS.Msg.RR do
   defp bitmap_4_rrs(rrs) do
     # TODO: maybe filter out QTYPEs like ANY (255), AXFR (252), IXFR (251), OPT (41)
     # or leave that up to the caller so experimentation remains possible
-    Enum.map(rrs, fn n -> encode_rr_type(n) end)
+    Enum.map(rrs, fn n -> Param.rrtype_encode(n) end)
     |> Enum.sort(:asc)
     |> Enum.group_by(fn n -> div(n, 256) end)
     |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)
@@ -1930,8 +1928,6 @@ defimpl Inspect, for: DNS.Msg.RR do
       end
 
     rr
-    # |> Map.put(:type, "#{rr.type} (#{encode_rr_type(rr.type)})")
-    # |> Map.put(:class, "#{class} (#{rr.class})")
     |> Map.put(:rdata, "#{Kernel.inspect(rr.rdata, limit: 10)}")
     |> Map.put(:wdata, "#{Kernel.inspect(rr.wdata, limit: 10)}")
     |> Inspect.Any.inspect(opts)

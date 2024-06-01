@@ -35,17 +35,17 @@ defmodule DNS.Msg.Qtn do
 
   import DNS.MsgError, only: [error: 2]
   alias DNS.Name
-  import DNS.Msg.Terms
+  alias DNS.Param
 
   defstruct name: "", type: :A, class: :IN, wdata: <<>>
 
   @typedoc "A non negative offset into a DNS message."
   @type offset :: non_neg_integer
 
-  @typedoc "The DNS RR's type, either a number or a [known name](`DNS.Msg.Terms.encode_rr_type/1`)"
+  @typedoc "The DNS RR's type, either a number or a [known name](`DNS.Param`)"
   @type type :: atom | non_neg_integer
 
-  @typedoc "The DNS RR's class, either a number or a [known name](`DNS.Msg.Terms.encode_dns_class/1`)"
+  @typedoc "The DNS RR's class, either a number or a [known name](`DNS.Param`)"
   @type class :: atom | non_neg_integer
 
   @typedoc """
@@ -132,8 +132,8 @@ defmodule DNS.Msg.Qtn do
   @spec encode(t()) :: t() | no_return
   def encode(%__MODULE__{} = qtn) do
     dname = Name.encode(qtn.name)
-    class = encode_dns_class(qtn.class)
-    type = encode_rr_type(qtn.type)
+    class = Param.class_encode(qtn.class)
+    type = Param.rrtype_encode(qtn.type)
     %{qtn | wdata: <<dname::binary, type::16, class::16>>}
   rescue
     e in DNS.MsgError -> error(:eencode, "Qtn " <> e.data)
@@ -251,10 +251,10 @@ defmodule DNS.Msg.Qtn do
   end
 
   defp do_put({k, v}, qtn) when k == :type,
-    do: Map.put(qtn, k, decode_rr_type(v))
+    do: Map.put(qtn, k, Param.rrtype_decode(v))
 
   defp do_put({k, v}, qtn) when k == :class,
-    do: Map.put(qtn, k, decode_dns_class(v))
+    do: Map.put(qtn, k, Param.class_decode(v))
 
   # ignore options we donot need or know
   defp do_put(_, qtn),

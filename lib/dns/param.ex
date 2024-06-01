@@ -73,7 +73,6 @@ defmodule DNS.Param do
       {:RT, 21},
       {:AAAA, 28},
       {:SRV, 33},
-      # was missing, old decode_rr_type(35) -> 35
       # {:NAPTR, 35},
       {:KX, 36},
       {:CERT, 37},
@@ -216,15 +215,19 @@ defmodule DNS.Param do
     end
 
     # decoding unknown numeric values should return the value if in range
+    # there are a bunch of numeric values reserved or unassigned
     case name do
       name when name in [:class, :rrtype, :edns_option, :edns_ede] ->
         def unquote(decode)(k) when k in 0..65535, do: k
+        def unquote(encode)(k) when k in 0..65535, do: k
 
       name when name in [:opcode, :rcode] ->
         def unquote(decode)(k) when k in 0..15, do: k
+        def unquote(encode)(k) when k in 0..15, do: k
 
       name when name in [:dnssec_algo, :ds_digest] ->
         def unquote(decode)(k) when k in 0..255, do: k
+        def unquote(encode)(k) when k in 0..255, do: k
 
       _ ->
         nil
@@ -282,8 +285,9 @@ defmodule DNS.Param do
       iex> class_encode(:OOPS)
       ** (DNS.MsgError) [encode] class_encode: unknown parameter name ':OOPS'
 
+      # unknown but valid numeric values are returned as-is
       iex> class_encode(42)
-      ** (DNS.MsgError) [encode] class_encode: unknown parameter name '42'
+      42
 
   ## DNS classes
 
