@@ -38,7 +38,7 @@ defmodule Dnscheck do
 
     type =
       Keyword.get(opts, :type, "A")
-      |> DNS.Msg.Terms.decode_rr_type()
+      |> DNS.Param.rrtype_decode()
 
     for host <- hosts do
       DNS.resolve(host, type)
