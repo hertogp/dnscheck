@@ -255,23 +255,51 @@ defmodule DNS.Param do
   @moduledoc """
   Functions to work with DNS Parameters
 
-  The `.._encode/1` functions map a parameter name to its numeric value. The name is
-  usually an uppercase atom (like `:A`), but can also be its uppercase string
-  version (like "A").  If given a valid numeric value, it is simply returned.
-  These functions raise `t:DNS.MsgError.t/0` on invalid or unknown names or values.
+  The `.._encode/1` functions map a parameter name to its numeric value. The
+  name is usually an uppercase atom (like `:A`), but can also be its uppercase
+  string version (like "A").  If given a valid numeric value, it is simply
+  returned. These functions raise `t:DNS.MsgError.t/0` on unknown names or
+  invalid numerical values.
 
-  The `.._decode/1` functions map a numeric value to its parameter name, which is
-  always an uppercase atom.  If given a valid parameter name (uppercase atom or
-  uppercase name) it is returned as an uppercase atom, if valid.  These
-  functions raise `t:DNS.MsgError.t/0` on invalid or unknown names or values.
+  The `.._decode/1` functions map a numeric value to its parameter name. The value
+  is usually numeric and if known, an atom name is returned.  If the value is a
+  valid atom name or string name, the atom name is returned.  If the value is numeric,
+  not known but valid, it is simply returned as-is.  If the value is an unknown name
+  or an invalid numeric value, a `t:DNS.MsgError.t/0` is raised.
 
   The `.._valid?/1` functions take either a name (uppercase atom or binary) or a numeric
   value and return `true` if it is valid, `false` otherwise.
 
-  The `.._list/0` functions simply return a list of `{name, value}`-pairs for the given
-  type of parameter.
+  The `.._list/0` functions simply return a list of known `{name, value}`-pairs
+  for the given type of parameter that can be mapped back and forth between symbolic
+  name and its numeric value.
 
   ## Examples
+
+      # LIST
+
+      iex> class_list()
+      [{:RESERVED, 0}, {:IN, 1}, {:CH, 3}, {:HS, 4}, {:NONE, 254}, {:ANY, 255}]
+
+      # VALID?
+
+      iex> class_valid?(:IN)
+      true
+
+      iex> class_valid?(1)
+      true
+
+      # unassigned, but valid class value
+      iex> class_valid?(2)
+      true
+
+      iex> class_valid?(:OOPS)
+      false
+
+      iex> class_valid?(65536)
+      false
+
+      # ENCODING
 
       iex> class_encode(:IN)
       1
@@ -288,6 +316,30 @@ defmodule DNS.Param do
       # unknown but valid numeric values are returned as-is
       iex> class_encode(42)
       42
+
+      iex> class_encode(65536)
+      ** (DNS.MsgError) [encode] class_encode: unknown parameter name '65536'
+
+      # DECODING
+
+      iex> class_decode(1)
+      :IN
+
+      iex> class_decode(:IN)
+      :IN
+
+      iex> class_decode("IN")
+      :IN
+
+      iex> class_decode(42)
+      42
+
+      iex> class_decode(:OOPS)
+      ** (DNS.MsgError) [decode] class_decode: unknown parameter value ':OOPS'
+
+      iex> class_decode(65536)
+      ** (DNS.MsgError) [decode] class_decode: unknown parameter value '65536'
+
 
   ## DNS classes
 

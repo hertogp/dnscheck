@@ -1906,8 +1906,6 @@ defmodule DNS.Msg.RR do
 end
 
 defimpl Inspect, for: DNS.Msg.RR do
-  # import DNS.Msg.Terms
-
   def inspect(rr, opts) do
     syntax_colors = IO.ANSI.syntax_colors()
     opts = Map.put(opts, :syntax_colors, syntax_colors)
