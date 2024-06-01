@@ -275,6 +275,7 @@ defmodule DNS.Msg.RR do
   alias DNS.Name
   import DNS.Guards
   import DNS.Msg.Terms
+  alias DNS.Param
 
   defstruct name: "",
             type: :A,
@@ -452,7 +453,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new() |> put(type: 65536)
-      ** (DNS.MsgError) [create] RR type valid range is 0..65535, got: 65536
+      ** (DNS.MsgError) [create] RR rrtype_decode: unknown parameter value '65536'
 
   """
   @spec put(t(), Keyword.t()) :: t | no_return
@@ -461,7 +462,8 @@ defmodule DNS.Msg.RR do
   def put(%__MODULE__{} = rr, opts) do
     # ensure (native) decode_rdata func's can match on type as an atom
     {type, opts} = Keyword.pop(opts, :type, rr.type)
-    type = decode_rr_type(type)
+    # type = decode_rr_type(type)
+    type = Param.rrtype_decode(type)
 
     rr = %{rr | type: type}
 
@@ -633,7 +635,8 @@ defmodule DNS.Msg.RR do
   def encode(%__MODULE__{} = rr) do
     name = Name.encode(rr.name)
     class = encode_dns_class(rr.class)
-    type = encode_rr_type(rr.type)
+    # type = encode_rr_type(rr.type)
+    type = Param.rrtype_encode(rr.type)
     rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.class, rr.rdmap)
     rdlen = byte_size(rdata)
 
@@ -940,7 +943,8 @@ defmodule DNS.Msg.RR do
 
   # IN RRSIG (46), https://www.rfc-editor.org/rfc/rfc4034#section-3
   defp encode_rdata(:RRSIG, :IN, m) do
-    type = required(:RRSIG, m, :type, fn t -> encode_rr_type(t) |> is_u16 end)
+    # type = required(:RRSIG, m, :type, fn t -> encode_rr_type(t) |> is_u16 end)
+    type = required(:RRSIG, m, :type, fn t -> Param.rrtype_encode(t) |> is_u16 end)
     algo = required(:RRSIG, m, :algo, &is_u8/1)
     labels = required(:RRSIG, m, :labels, &is_u8/1)
     ttl = required(:RRSIG, m, :ttl, &is_u32/1)
@@ -1514,7 +1518,8 @@ defmodule DNS.Msg.RR do
     # {:ok, notbefore} = DateTime.from_unix(notbefore, :second)
 
     %{
-      type: decode_rr_type(type),
+      # type: decode_rr_type(type),
+      type: Param.rrtype_decode(type),
       algo: algo,
       labels: labels,
       ttl: ttl,
@@ -1808,7 +1813,9 @@ defmodule DNS.Msg.RR do
       |> Enum.map(fn n -> n + w * 256 end)
     end
     |> List.flatten()
-    |> Enum.map(fn n -> decode_rr_type(n) end)
+    |> Enum.map(fn n -> Param.rrtype_decode(n) end)
+
+    # |> Enum.map(fn n -> decode_rr_type(n) end)
   end
 
   defp bitmap_4_rrs(rrs) do

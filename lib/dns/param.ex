@@ -1,26 +1,6 @@
 defmodule DNS.Param do
-  # @moduledoc """
-  # Low level functions to convert between DNS Param numbers and atom (or strings)
-  #
-  # ## Examples
-  #
-  #     iex> class_encode(:IN)
-  #     1
-  #
-  #     iex> class_encode("IN")
-  #     1
-  #
-  #     iex> class_encode(1)
-  #     1
-  #
-  #     iex> class_encode(:OOPS)
-  #     ** (DNS.MsgError) [encode] class_encode: unknown parameter name ':OOPS'
-  #
-  #     iex> class_encode(42)
-  #     ** (DNS.MsgError) [encode] class_encode: unknown parameter name '42'
-  #
-  #
-  # """
+  # beware, here be dragons
+
   import DNS.MsgError, only: [error: 2]
 
   @typedoc "A parameter's name, either an uppercase atom or uppercase binary"
@@ -93,6 +73,8 @@ defmodule DNS.Param do
       {:RT, 21},
       {:AAAA, 28},
       {:SRV, 33},
+      # was missing, old decode_rr_type(35) -> 35
+      # {:NAPTR, 35},
       {:KX, 36},
       {:CERT, 37},
       {:DNAME, 39},
@@ -231,6 +213,21 @@ defmodule DNS.Param do
       def unquote(decode)(unquote(v)), do: unquote(k)
       def unquote(decode)(unquote(k)), do: unquote(k)
       def unquote(decode)(unquote(s)), do: unquote(k)
+    end
+
+    # decoding unknown numeric values should return the value if in range
+    case name do
+      name when name in [:class, :rrtype, :edns_option, :edns_ede] ->
+        def unquote(decode)(k) when k in 0..65535, do: k
+
+      name when name in [:opcode, :rcode] ->
+        def unquote(decode)(k) when k in 0..15, do: k
+
+      name when name in [:dnssec_algo, :ds_digest] ->
+        def unquote(decode)(k) when k in 0..255, do: k
+
+      _ ->
+        nil
     end
 
     def unquote(encode)(k),
