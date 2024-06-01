@@ -34,6 +34,7 @@ defmodule DNS.Cache do
   import DNS.Telemetry, only: [emit: 2]
   import DNS.Time
   alias DNS.Name
+  alias DNS.Param
   alias Logger, as: Log
   require Logger
 
@@ -430,7 +431,7 @@ defmodule DNS.Cache do
   defp cacheable?(%DNS.Msg.RR{} = rr) do
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
     # [ ] never cache NS from root hints
-    type = DNS.Msg.Terms.decode_rr_type(rr.type)
+    type = Param.rrtype_decode(rr.type)
 
     cond do
       type in @uncacheable -> false
@@ -486,8 +487,8 @@ defmodule DNS.Cache do
 
   @spec make_key(binary, atom, atom) :: {:ok, tuple} | :error
   defp make_key(name, class, type) do
-    ntype = DNS.Msg.Terms.encode_rr_type(type)
-    nclass = DNS.Msg.Terms.encode_dns_class(class)
+    ntype = Param.rrtype_encode(type)
+    nclass = Param.class_encode(class)
     {:ok, name} = Name.normalize(name)
     {:ok, {name, nclass, ntype}}
   rescue

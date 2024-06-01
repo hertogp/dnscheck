@@ -158,9 +158,8 @@ defmodule DNS.Msg.Hdr do
   Raises `DNS.MsgError` if a value is out of bounds.
 
   Values for fields `opcode:` and `rcode:` can be given as either a numeric
-  value, or their mnemonic atom name (e.g. :SERVFAIL).  See
-  `DNS.Msg.Terms.encode_dns_opcode/1` and `DNS.Msg.Terms.encode_dns_rcode/1`
-  for known names.  Note that in a header `rcode` is limited to the range of
+  value, or their mnemonic atom name (e.g. :SERVFAIL).  See `DNS.Param` for
+  known names.  Note that in a header `rcode` is limited to the range of
   0..15.
 
   Ignores `:wdata` since that should be set via `encode/1`, which is called
