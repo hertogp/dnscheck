@@ -124,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [x] move MsgXYZ into DNS.Msg.Xyz and files under lib/dns/msg/xyz.ex
 
 
-### DNS.Msg.Terms
+### DNS.Param
 - [ ] add tcp/udp services lookup: nr -> proto name (for presentation only)
 - [ ] add all/more RR types, not just the ones supported by en/de-coding
 - [x] documentation

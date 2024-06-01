@@ -73,7 +73,7 @@ defmodule DNS.Param do
       {:RT, 21},
       {:AAAA, 28},
       {:SRV, 33},
-      # {:NAPTR, 35},
+      {:NAPTR, 35},
       {:KX, 36},
       {:CERT, 37},
       {:DNAME, 39},
@@ -271,8 +271,8 @@ defmodule DNS.Param do
   value and return `true` if it is valid, `false` otherwise.
 
   The `.._list/0` functions simply return a list of known `{name, value}`-pairs
-  for the given type of parameter that can be mapped back and forth between symbolic
-  name and its numeric value.
+  for the given type of parameter that can be mapped back and forth between
+  symbolic name and its numeric value.
 
   ## Examples
 

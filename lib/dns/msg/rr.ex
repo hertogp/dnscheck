@@ -250,8 +250,8 @@ defmodule DNS.Msg.RR do
   # [ ] add encode/decode_ip_proto (name)
   # [x] add guard is_ttl (u32 with range 0..2**32-1 => should be 1--2**32 (!)
   # [x] add section RR's to module doc with explanation & examples & rfc ref(s)
-  # [ ] rename DNS.Msg.Terms to DNS.Msg.Names or mnemonics
-  # [ ] add all/more names to Terms' @rr_types
+  # [x] rename DNS.Msg.Terms to DNS.Param
+  # [x] add all/more names to Param's @rr_types
   # [c] accept TYPEnnn as mnemonic -> not needed, a bind ns sends numeric anyway
   # [ ] maybe only use nrs in Hdr, Qtn and RR's and use name maps for presentation only?
   # [x] move error func into DNS.MsgError, and use import DNS.MsgError, only: [error: 2]
@@ -286,10 +286,10 @@ defmodule DNS.Msg.RR do
             rdata: <<>>,
             wdata: <<>>
 
-  @typedoc "The DNS RR's class, either a number or a [known name](`DNS.Msg.Terms.encode_dns_class/1`)"
+  @typedoc "The DNS RR's class, either a number or a [known name](`DNS.Param`)"
   @type class :: atom | 0..65535
 
-  @typedoc "The DNS RR's type, either a number or a [known name](`DNS.Msg.Terms.encode_rr_type/1`)"
+  @typedoc "The DNS RR's type, either a number or a [known name](`DNS.Param`)"
   @type type :: atom | 0..65535
 
   @typedoc "A non negative offset into a DNS message."
@@ -333,7 +333,7 @@ defmodule DNS.Msg.RR do
   Known options include:
   - `:name`, must be a binary (default `""`)
   - `:type`, an [atom](`DNS.Param.rrtype_encode/1`) or an unsigned 16 bit number (default `:A`)
-  - `:class`, an [atom](`DNS.Msg.Terms.encode_dns_class/1`) or an unsigned 16 bit number (default `:IN`)
+  - `:class`, an [atom](`DNS.Param.class_list/0`) or an unsigned 16 bit number (default `:IN`)
   - `:ttl`, a unsigned 32 bit integer (default `0`)
   - `:rdmap`, a map with `key,value`-pairs (to be encoded later, default `%{}`)
 
@@ -342,17 +342,17 @@ defmodule DNS.Msg.RR do
   struct.  The `:rdmap`, if provided, is set as-is.  Its `key,value`-pairs
   are checked upon invoking `encode/1`.
 
-  The `:type` option takes either a number or a known [name](`DNS.Msg.Terms.encode_rr_type/1`).
+  The `:type` option takes either a number or a known [name](`DNS.Param`).
   A number will be replaced by its known name (if possible), which makes it
   easier when inspecting an RR. The same holds true for `:class`
-  [names](`DNS.Msg.Terms.encode_dns_class/1`).
+  [names](`DNS.Param`).
 
   ## [EDNS0](https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2)
 
   The EDNS0 pseudo-RR (type: :OPT (41)) is a little bit different and
   recognizes only these options:
 
-  - `:xrcode`, an 8 bit unsigned integer (or known [name](`DNS.Msg.Terms.encode_dns_rcode/1`), default 0)
+  - `:xrcode`, an 8 bit unsigned integer (or known [name](`DNS.Param`), default 0)
   - `:version`, an 8 bit unsigned integer (default 0)
   - `:do`, EDNS0's DNSSEC OK bit, either 0 or 1 (default 1).
   - `:z`, a 15 bit unsigned integer (default 0)
@@ -364,8 +364,8 @@ defmodule DNS.Msg.RR do
 
   Some [EDNS0
   options](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
-  can also be specified by [name](`DNS.Msg.Terms.encode_rropt_code/1`) but only
-  a small set is currently supported by this library: `:NSID`, `COOKIE` and `EXPIRE`.
+  can also be specified by [name](`DNS.Param`) but only a small set is
+  currently supported by this library: `:NSID`, `COOKIE` and `EXPIRE`.
 
   These options are also listed in the RR's `rdmap`, even though they're not part
   of the pseudo-RR's `rdata`.
