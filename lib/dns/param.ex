@@ -143,6 +143,42 @@ defmodule DNS.Param do
       {:UMBRELLA_IDENT, 20292},
       {:DEVICEID, 26946}
     ],
+
+    # EDNS Extended DNS Error codes
+    # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#extended-dns-error-codes
+
+    :edns_ede => [
+      {:OTHER, 0},
+      {:DNSKEY_ALGO, 1},
+      {:DS_DIGEST, 2},
+      {:STALE, 3},
+      {:FORGED, 4},
+      {:INDETERMINATE, 5},
+      {:BOGUS, 6},
+      {:SIG_EXPIRED, 7},
+      {:SIG_NOTYET_VALID, 8},
+      {:NO_DNSKEY, 9},
+      {:NO_RRSIGS, 10},
+      {:NO_ZONE_KEYBIT, 11},
+      {:NO_NSEC, 12},
+      {:CACHED_ERROR, 13},
+      {:NOT_READY, 14},
+      {:BLOCKED, 15},
+      {:CENSORED, 16},
+      {:FILTERED, 17},
+      {:PROHIBITED, 18},
+      {:STALE_NXDOMAIN, 19},
+      {:NOT_AUTHORITATIVE, 20},
+      {:NOT_SUPPORTED, 21},
+      {:NO_REACHABLE_AUTHORITIES, 22},
+      {:NETWORK_ERROR, 23},
+      {:INVALID_DATA, 24},
+      {:SIG_EXPIRED_BEFORE_VALID, 25},
+      {:TOO_EARLY, 26},
+      {:NSEC_ITER_VALUE, 27},
+      {:POLICY, 28},
+      {:SYNTHESIZED, 29}
+    ],
     :dnssec_algo => [
       {:DELETE, 0},
       {:RSAMD5, 1},
@@ -173,8 +209,6 @@ defmodule DNS.Param do
       {:GOST12, 5},
       {:SM3, 6}
     ]
-    # TODO EDNS Error Codes
-    # https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#extended-dns-error-codes
   }
 
   defp params(param),
@@ -221,7 +255,23 @@ defmodule DNS.Param do
   end
 
   @moduledoc """
-  Low level functions to convert between DNS Param numbers and atom (or strings)
+  Functions to work with DNS Parameters
+
+  The `.._encode/1` functions map a parameter name to its numeric value. The name is
+  usually an uppercase atom (like `:A`), but can also be its uppercase string
+  version (like "A").  If given a valid numeric value, it is simply returned.
+  These functions raise `t:DNS.MsgError.t/0` on invalid or unknown names or values.
+
+  The `.._decode/1` functions map a numeric value to its parameter name, which is
+  always an uppercase atom.  If given a valid parameter name (uppercase atom or
+  uppercase name) it is returned as an uppercase atom, if valid.  These
+  functions raise `t:DNS.MsgError.t/0` on invalid or unknown names or values.
+
+  The `.._valid?/1` functions take either a name (uppercase atom or binary) or a numeric
+  value and return `true` if it is valid, `false` otherwise.
+
+  The `.._list/0` functions simply return a list of `{name, value}`-pairs for the given
+  type of parameter.
 
   ## Examples
 
@@ -283,6 +333,15 @@ defmodule DNS.Param do
 
   ```
   #{inspect(@params[:edns_option], pretty: true, width: 10)}
+  ```
+
+  ## EDNS Exteneded DNS Error (ede)
+
+  Known [extended dns errors](https://www.iana.org/assignments/dns-parameters/dns-parameters.xml#extended-dns-error-codes)
+  include:
+
+  ```
+  #{inspect(@params[:edns_ede], pretty: true, width: 10)}
   ```
 
   ## DNSSEC algorithm types
