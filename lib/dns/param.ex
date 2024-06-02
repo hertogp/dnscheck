@@ -83,9 +83,9 @@ defmodule DNS.Param do
       iex> class_decode(65536)
       ** (DNS.MsgError) [decode] class_decode: unknown parameter value '65536'
 
-
-  For lists of known `{name, value}`-mappings, see the `..list/0` functions for
-  the parameter of interest.
+  See
+  [iana](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml)
+  for more details on DNS parameters.
 
   ## TODO
   - [ ] [nsec3 params](https://www.iana.org/assignments/dnssec-nsec3-parameters/dnssec-nsec3-parameters.xhtml)
@@ -285,7 +285,7 @@ defmodule DNS.Param do
   defp params(param),
     do: @params[param] || []
 
-  # [[ CODECs ]]
+  # [[ GENERATE FUNCS ]]
 
   for {name, parms} <- @params do
     encode = String.to_atom("#{name}_encode")
@@ -293,7 +293,7 @@ defmodule DNS.Param do
     list = String.to_atom("#{name}_list")
     valid = String.to_atom("#{name}_valid?")
 
-    # [[ function heads with spec & doc string ]]
+    ## [[ function heads with spec & doc string ]]
 
     @doc """
     Returns the numeric value for given `name` of the `#{name}` parameter.
@@ -306,13 +306,14 @@ defmodule DNS.Param do
     def unquote(encode)(name)
 
     @doc """
-    Returns the name for given `value` of the `#{name}` parameter.
+    Returns the name (as uppercase atom) for given `value` of the `#{name}`
+    parameter.
 
     When given a valid name instead, it is returned as-is.  \\
     Raises `DNS.MsgError` on invalid values or unknown names.
 
     """
-    @spec unquote(decode)(name | value) :: name | DNS.MsgError.t()
+    @spec unquote(decode)(value | name) :: atom | DNS.MsgError.t()
     def unquote(decode)(value)
 
     @doc """
@@ -327,7 +328,7 @@ defmodule DNS.Param do
     Returns the list of known `{name, value}` pairs for the `#{name}` parameter.
 
     ```elixir
-    # These are:
+    # Currently known:
     #{inspect(@params[name], pretty: true, width: 10)}
     ```
 
@@ -335,7 +336,7 @@ defmodule DNS.Param do
     @spec unquote(list)() :: [{name, value}]
     def unquote(list)()
 
-    # [[ function definitions ]]
+    ## [[ encode/decode known names/values ]]
 
     for {k, v} <- parms do
       s = Atom.to_string(k)
@@ -347,7 +348,7 @@ defmodule DNS.Param do
       def unquote(decode)(unquote(s)), do: unquote(k)
     end
 
-    # [[ simply return valid, but unnamed, values ]]
+    ## [[ return valid values as-is ]]
 
     case name do
       name when name in [:class, :rrtype, :edns_option, :edns_ede] ->
@@ -366,7 +367,7 @@ defmodule DNS.Param do
         nil
     end
 
-    # [[ catch all's ]]
+    ## [[ catch all's ]]
 
     def unquote(encode)(k),
       do: error(:eencode, "#{unquote(encode)}: unknown parameter name '#{inspect(k)}'")
