@@ -294,14 +294,12 @@ defmodule DNS.Telemetry do
 
   # [[ HELPERS ]]
 
-  # iolist is a list that contains: a string, a byte or another iolist
-  @spec to_iodata(DNS.Msg, Keyword.t()) :: [iodata]
+  @spec to_iodata(DNS.Msg.t(), Keyword.t()) :: iolist
   def to_iodata(%DNS.Msg{} = msg, opts \\ []) do
-    drop = [:rdata, :wdata] -- Keyword.get(opts, :keep, [])
+    drop = [:rdata, :wdata] -- (Keyword.get(opts, :keep, []) |> List.wrap())
 
     [
-      ?[,
-      "header:",
+      "[header:",
       to_str(Map.drop(msg.header, drop)),
       " question:",
       to_str(Enum.map(msg.question, fn qtn -> Map.drop(qtn, drop) end)),
@@ -313,7 +311,7 @@ defmodule DNS.Telemetry do
       to_str(Enum.map(msg.additional, fn rr -> Map.drop(rr, drop) end)),
       " xdata:",
       to_str(msg.xdata),
-      ?]
+      "]"
     ]
   end
 
@@ -328,7 +326,7 @@ defmodule DNS.Telemetry do
     do: "[]"
 
   def to_str([h | t]),
-    do: [?[, Enum.reduce(t, to_str(h), fn e, acc -> [acc, ", ", to_str(e)] end), ?]]
+    do: ["[", Enum.reduce(t, to_str(h), fn e, acc -> [acc, ", ", to_str(e)] end), "]"]
 
   def to_str(a) when is_atom(a),
     do: Atom.to_string(a)
@@ -343,7 +341,7 @@ defmodule DNS.Telemetry do
   end
 
   def to_str({k, v}),
-    do: [to_str(k), ?:, to_str(v)]
+    do: [to_str(k), ":", to_str(v)]
 
   def to_str(other),
     do: inspect(other, limit: :infinity)
