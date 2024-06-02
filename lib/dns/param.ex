@@ -199,10 +199,49 @@ defmodule DNS.Param do
     list = String.to_atom("#{name}_list")
     valid = String.to_atom("#{name}_valid?")
 
+    # [[ function heads with spec & doc string ]]
+
+    @doc """
+    Returns the numeric value for given `name` of the `#{name}` parameter.
+
+    When given a valid numeric value, it is simply returned as-is.  \\
+    Raises `DNS.MsgError` for unknown names or invalid values.
+
+    """
     @spec unquote(encode)(name | value) :: value | DNS.MsgError.t()
+    def unquote(encode)(name)
+
+    @doc """
+    Returns the name for given `value` of the `#{name}` parameter.
+
+    When given a valid name instead, it is returned as-is.  \\
+    Raises `DNS.MsgError` on invalid values or unknown names.
+
+    """
     @spec unquote(decode)(name | value) :: name | DNS.MsgError.t()
-    @spec unquote(list)() :: [{name, value}]
+    def unquote(decode)(value)
+
+    @doc """
+    Returns `true` if given `arg` is a valid value or name of the `#{name}` parameter,
+    `false` otherwise.
+
+    """
     @spec unquote(valid)(name | value) :: boolean
+    def unquote(valid)(arg)
+
+    @doc """
+    Returns the list of known `{name, value}` pairs for the `#{name}` parameter.
+
+    ```elixir
+    # These are:
+    #{inspect(@params[name], pretty: true, width: 10)}
+    ```
+
+    """
+    @spec unquote(list)() :: [{name, value}]
+    def unquote(list)()
+
+    # [[ function definitions ]]
 
     for {k, v} <- parms do
       s = Atom.to_string(k)
@@ -214,9 +253,8 @@ defmodule DNS.Param do
       def unquote(decode)(unquote(s)), do: unquote(k)
     end
 
-    # decoding unknown numeric values should return the value if in range
-    # which probably means there won't be a decoder available and the DNS
-    # msg will have raw parts in it (i.e. only raw wiredata).
+    # [[ simply return valid, but unnamed, values ]]
+
     case name do
       name when name in [:class, :rrtype, :edns_option, :edns_ede] ->
         def unquote(decode)(k) when k in 0..65535, do: k
@@ -233,6 +271,8 @@ defmodule DNS.Param do
       _ ->
         nil
     end
+
+    # [[ catch all's ]]
 
     def unquote(encode)(k),
       do: error(:eencode, "#{unquote(encode)}: unknown parameter name '#{inspect(k)}'")
@@ -342,77 +382,8 @@ defmodule DNS.Param do
       ** (DNS.MsgError) [decode] class_decode: unknown parameter value '65536'
 
 
-  ## DNS classes
-
-  Known [classes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-2)
-  include:
-
-  ```
-  #{inspect(@params[:class], pretty: true, width: 10)}
-  ```
-
-  ## DNS opcodes
-
-  Known [opcodes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-5)
-  include:
-
-  ```
-  #{inspect(@params[:opcode], pretty: true, width: 10)}
-  ```
-
-  ## DNS rcodes
-
-  Known [rcodes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6)
-  include:
-
-  ```
-  #{inspect(@params[:rcode], pretty: true, width: 10)}
-  ```
-
-  ## DNS rrtypes
-
-  Known [rrtypes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
-  include:
-
-  ```
-  #{inspect(@params[:rrtype], pretty: true, width: 10, limit: :infinity)}
-  ```
-
-  ## DNS edns_option
-
-  Known [edns option codes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
-  include:
-
-  ```
-  #{inspect(@params[:edns_option], pretty: true, width: 10)}
-  ```
-
-  ## EDNS Exteneded DNS Error (ede)
-
-  Known [extended dns errors](https://www.iana.org/assignments/dns-parameters/dns-parameters.xml#extended-dns-error-codes)
-  include:
-
-  ```
-  #{inspect(@params[:edns_ede], pretty: true, width: 10)}
-  ```
-
-  ## DNSSEC algorithm types
-
-  Known [algo types](https://www.iana.org/assignments/dns-sec-alg-numbers/dns-sec-alg-numbers.xhtml#dns-sec-alg-numbers-1)
-  include:
-
-  ```
-  #{inspect(@params[:dnssec_algo], pretty: true, width: 10)}
-  ```
-
-  ## DS RR digest types
-
-  Known [digest types](https://www.iana.org/assignments/ds-rr-types/ds-rr-types.xhtml#ds-rr-types-1)
-  include:
-
-  ```
-  #{inspect(@params[:ds_digest], pretty: true, width: 10)}
-  ```
+  For lists of known `{name, value}`-mappings, see the `..list/0` functions for
+  the parameter of interest.
 
   ## TODO
   - [ ] [nsec3 params](https://www.iana.org/assignments/dnssec-nsec3-parameters/dnssec-nsec3-parameters.xhtml)
