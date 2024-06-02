@@ -215,7 +215,8 @@ defmodule DNS.Param do
     end
 
     # decoding unknown numeric values should return the value if in range
-    # there are a bunch of numeric values reserved or unassigned
+    # which probably means there won't be a decoder available and the DNS
+    # msg will have raw parts in it (i.e. only raw wiredata).
     case name do
       name when name in [:class, :rrtype, :edns_option, :edns_ede] ->
         def unquote(decode)(k) when k in 0..65535, do: k
@@ -374,7 +375,7 @@ defmodule DNS.Param do
   include:
 
   ```
-  #{inspect(@params[:rrtype], pretty: true, width: 10)}
+  #{inspect(@params[:rrtype], pretty: true, width: 10, limit: :infinity)}
   ```
 
   ## DNS edns_option
