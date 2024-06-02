@@ -172,7 +172,7 @@ defmodule DNS.Telemetry do
 
               ans =
                 if meta.type == :answer,
-                  do: Enum.map(meta.msg.answer, fn rr -> "#{rr}" end),
+                  do: Enum.map(meta.msg.answer, fn rr -> "(#{rr})" end),
                   else: Enum.frequencies_by(meta.msg.answer, fn rr -> rr.type end)
 
               [
@@ -271,16 +271,16 @@ defmodule DNS.Telemetry do
               ["KEY:", key]
 
             :error ->
-              ["ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
+              ["ERROR KEY:", key, "REASON:", "#{meta.reason}"]
 
             :hit ->
-              ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+              ["KEY:", key, " RRS:", to_str(meta.rrs)]
 
             :expired ->
-              ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+              ["KEY:", key, " RRS:", to_str(meta.rrs)]
 
             :insert ->
-              ["KEY:", to_str(meta.key), " RRS:", to_str(meta.rrs)]
+              ["KEY:", key, " RRS:", to_str(meta.rrs)]
           end
         end
 
