@@ -1,4 +1,98 @@
 defmodule DNS.Param do
+  @moduledoc """
+  Functions to work with names and values for various types of DNS parameters.
+
+  The `<parameter>_{encode, decode}/1` functions map between a name (like `:IN`
+  or "IN") and a numeric value in a certain range for given type of parameter
+  (like a DNS `:class`).
+
+  Both functions actually take an argument in the form of what they would
+  return and return it as-is if it is valid (the name is known or the value is
+  in range for that particular type of DNS parameter) or raise a `DNS.MsgError`
+  when not known or not valid.  This helps prevent subtle bugs when encoding a
+  `DNS.Msg` to its wireformat or vice versa.
+
+  The `<parameter>_valid?/1` functions simply say whether the name if known or
+  the numeric value is in range or not.
+
+  The `<parameter>_list/0` functions simply return the list of known `{name,
+  value}` pairs for that particular DNS parameter.
+
+  ## Examples
+
+      iex> class_list()
+      [{:RESERVED, 0}, {:IN, 1}, {:CH, 3}, {:HS, 4}, {:NONE, 254}, {:ANY, 255}]
+
+      iex> class_valid?(:IN)
+      true
+
+      iex> class_valid?(1)
+      true
+
+      iex> class_valid?("IN")
+      true
+
+      iex> class_valid?(:OOPS)
+      false
+
+      iex> class_valid?("OOPS")
+      false
+
+      iex> class_valid?(65536)
+      false
+
+      # unassigned, but valid class value
+      iex> class_valid?(2)
+      true
+
+      iex> class_encode(:IN)
+      1
+
+      iex> class_encode("IN")
+      1
+
+      iex> class_encode(1)
+      1
+
+
+      iex> class_encode(:OOPS)
+      ** (DNS.MsgError) [encode] class_encode: unknown parameter name ':OOPS'
+
+      # unknown but valid numeric values are returned as-is
+      iex> class_encode(42)
+      42
+
+      iex> class_encode(65536)
+      ** (DNS.MsgError) [encode] class_encode: unknown parameter name '65536'
+
+      iex> class_decode(1)
+      :IN
+
+      iex> class_decode(:IN)
+      :IN
+
+      iex> class_decode("IN")
+      :IN
+
+      iex> class_decode(42)
+      42
+
+      iex> class_decode(:OOPS)
+      ** (DNS.MsgError) [decode] class_decode: unknown parameter value ':OOPS'
+
+      iex> class_decode(65536)
+      ** (DNS.MsgError) [decode] class_decode: unknown parameter value '65536'
+
+
+  For lists of known `{name, value}`-mappings, see the `..list/0` functions for
+  the parameter of interest.
+
+  ## TODO
+  - [ ] [nsec3 params](https://www.iana.org/assignments/dnssec-nsec3-parameters/dnssec-nsec3-parameters.xhtml)
+
+
+  """
+
   # beware, here be dragons
 
   import DNS.MsgError, only: [error: 2]
@@ -290,104 +384,4 @@ defmodule DNS.Param do
       _ -> false
     end
   end
-
-  # [[ MODULE DOC ]]
-
-  @moduledoc """
-  Functions to work with DNS Parameters
-
-  The `.._encode/1` functions map a parameter name to its numeric value. The
-  name is usually an uppercase atom (like `:A`), but can also be its uppercase
-  string version (like "A").  If given a valid numeric value, it is simply
-  returned. These functions raise `t:DNS.MsgError.t/0` on unknown names or
-  invalid numerical values.
-
-  The `.._decode/1` functions map a numeric value to its parameter name. The value
-  is usually numeric and if known, an atom name is returned.  If the value is a
-  valid atom name or string name, the atom name is returned.  If the value is numeric,
-  not known but valid, it is simply returned as-is.  If the value is an unknown name
-  or an invalid numeric value, a `t:DNS.MsgError.t/0` is raised.
-
-  The `.._valid?/1` functions take either a name (uppercase atom or binary) or a numeric
-  value and return `true` if it is valid, `false` otherwise.
-
-  The `.._list/0` functions simply return a list of known `{name, value}`-pairs
-  for the given type of parameter that can be mapped back and forth between
-  symbolic name and its numeric value.
-
-  ## Examples
-
-      # LIST
-
-      iex> class_list()
-      [{:RESERVED, 0}, {:IN, 1}, {:CH, 3}, {:HS, 4}, {:NONE, 254}, {:ANY, 255}]
-
-      # VALID?
-
-      iex> class_valid?(:IN)
-      true
-
-      iex> class_valid?(1)
-      true
-
-      # unassigned, but valid class value
-      iex> class_valid?(2)
-      true
-
-      iex> class_valid?(:OOPS)
-      false
-
-      iex> class_valid?(65536)
-      false
-
-      # ENCODING
-
-      iex> class_encode(:IN)
-      1
-
-      iex> class_encode("IN")
-      1
-
-      iex> class_encode(1)
-      1
-
-      iex> class_encode(:OOPS)
-      ** (DNS.MsgError) [encode] class_encode: unknown parameter name ':OOPS'
-
-      # unknown but valid numeric values are returned as-is
-      iex> class_encode(42)
-      42
-
-      iex> class_encode(65536)
-      ** (DNS.MsgError) [encode] class_encode: unknown parameter name '65536'
-
-      # DECODING
-
-      iex> class_decode(1)
-      :IN
-
-      iex> class_decode(:IN)
-      :IN
-
-      iex> class_decode("IN")
-      :IN
-
-      iex> class_decode(42)
-      42
-
-      iex> class_decode(:OOPS)
-      ** (DNS.MsgError) [decode] class_decode: unknown parameter value ':OOPS'
-
-      iex> class_decode(65536)
-      ** (DNS.MsgError) [decode] class_decode: unknown parameter value '65536'
-
-
-  For lists of known `{name, value}`-mappings, see the `..list/0` functions for
-  the parameter of interest.
-
-  ## TODO
-  - [ ] [nsec3 params](https://www.iana.org/assignments/dnssec-nsec3-parameters/dnssec-nsec3-parameters.xhtml)
-
-
-  """
 end
