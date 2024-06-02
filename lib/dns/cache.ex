@@ -94,7 +94,7 @@ defmodule DNS.Cache do
   In the absence of any RRs, an empty list is returned.
 
   """
-  @spec rrs(binary) :: [rr]
+  @spec rrs(binary, Keyword.t()) :: [rr]
   def rrs(zone, opts \\ []) do
     stale = Keyword.get(opts, :stale, false)
 

@@ -43,6 +43,7 @@ defmodule DNS.Telemetry do
 
   require Logger
   import DNS.Time
+  alias DNS.Param
 
   @handler_id "dns-default-logger"
 
@@ -262,9 +263,12 @@ defmodule DNS.Telemetry do
         if cfg[event] == :debug do
           [to_str(meta)]
         else
+          {name, class, type} = meta.key
+          key = {name, Param.class_decode(class), Param.rrtype_decode(type)} |> to_str
+
           case topic do
             :miss ->
-              ["KEY:", to_str(meta.key)]
+              ["KEY:", key]
 
             :error ->
               ["ERROR KEY:", to_str(meta.key), "REASON:", "#{meta.reason}"]
@@ -290,43 +294,46 @@ defmodule DNS.Telemetry do
 
   # [[ HELPERS ]]
 
-  def to_iodata(%DNS.Msg{} = msg) do
+  # iolist is a list that contains: a string, a byte or another iolist
+  @spec to_iodata(DNS.Msg, Keyword.t()) :: iolist
+  def to_iodata(%DNS.Msg{} = msg, opts \\ []) do
+    drop = [:rdata, :wdata] -- Keyword.get(opts, :keep, [])
+
     [
-      "[HDR:",
-      to_str(msg.header),
-      " QTN:",
-      to_str(msg.question),
-      " AUT:",
-      to_str(msg.authority),
-      " ANS:",
-      to_str(msg.answer),
-      " ADD:",
-      to_str(msg.additional),
-      " XDATA:",
+      "[header:",
+      to_str(Map.drop(msg.header, drop)),
+      " question:",
+      to_str(Enum.map(msg.question, fn qtn -> Map.drop(qtn, drop) end)),
+      " authority:",
+      to_str(Enum.map(msg.authority, fn rr -> Map.drop(rr, drop) end)),
+      " answer:",
+      to_str(Enum.map(msg.answer, fn rr -> Map.drop(rr, drop) end)),
+      " additional:",
+      to_str(Enum.map(msg.additional, fn rr -> Map.drop(rr, drop) end)),
+      " xdata:",
       to_str(msg.xdata),
       "]"
     ]
   end
 
-  def to_str(m) when is_map(m) do
-    m
-    |> Map.drop([:__struct__, :rdata, :wdata])
-    |> Map.to_list()
-    |> to_str()
-  end
+  @spec to_str(any) :: String.t() | [String.t()]
+  def to_str(m) when is_struct(m),
+    do: Map.from_struct(m) |> to_str()
 
-  def to_str(l) when is_list(l) do
-    [
-      "[",
-      l
-      |> Enum.map(&to_str/1)
-      |> Enum.intersperse(", "),
-      "]"
-    ]
-  end
+  def to_str(m) when is_map(m),
+    do: Map.to_list(m) |> to_str()
+
+  def to_str([]),
+    do: "[]"
+
+  def to_str([h | t]),
+    do: [?[, Enum.reduce(t, to_str(h), fn e, acc -> [acc, ", ", to_str(e)] end), ?]]
 
   def to_str(a) when is_atom(a),
     do: Atom.to_string(a)
+
+  def to_str(<<>>),
+    do: "<<>>"
 
   def to_str(b) when is_binary(b) do
     if String.printable?(b),
@@ -334,27 +341,34 @@ defmodule DNS.Telemetry do
       else: inspect(b, limit: :infinity)
   end
 
-  def to_str({k, v}) do
-    [to_str(k), ":", to_str(v)]
-  end
+  def to_str({k, v}),
+    do: [to_str(k), ?:, to_str(v)]
 
-  def to_str(n) when is_number(n),
-    do: "#{n}"
+  # def to_str(n) when is_integer(n),
+  #   do: Integer.to_string(n)
 
-  def to_str(other) do
-    [inspect(other)]
-  end
+  def to_str(other),
+    do: inspect(other, limit: :infinity)
 
   # [[ log ]]
 
   @doc false
   def logid(ctx) do
     ms = String.pad_leading("#{now() - ctx.tstart}", 4)
-    ["DNS:", "#{ctx.qid} [#{ctx.depth},#{ms}ms]"]
+    ["DNS:", "#{ctx.logid} [#{ctx.depth},#{ms}ms]"]
   end
 
   # For modules that use DNS.Telemetry
-  @doc false
+  @doc """
+  Emits an event via `Telemetry.execute/2`.
+
+  This convenience function prepends `:dns` to the event and takes
+  a keyword list, which is turned into a map when calling `Telemetry.execute/2`.
+
+  Modules can use `import DNS.Telemetry, only: [emit: 2]`.
+
+  """
+  @spec emit(Telemetry.event_name(), Keyword.t()) :: :ok
   def emit(event, meta),
     do: :telemetry.execute([:dns | event], %{}, Map.new(meta))
 end

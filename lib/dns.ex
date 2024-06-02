@@ -106,6 +106,7 @@ defmodule DNS do
     class = Keyword.get(opts, :class, :IN)
     scramble = Keyword.get(opts, :scramble, true)
     qname = if scramble, do: Name.scramble(name), else: name
+    logid = :erlang.phash2({qname, class, type, System.monotonic_time()})
 
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
@@ -128,7 +129,7 @@ defmodule DNS do
       recurse: recurse,
       rzones: ["."],
       cnames: [name],
-      qid: :erlang.phash2({qname, class, type, System.monotonic_time()}),
+      logid: logid,
       depth: 0,
       tstart: now()
     }
