@@ -2,21 +2,21 @@ defmodule DNS.Param do
   @moduledoc """
   Functions to work with names and values for various types of DNS parameters.
 
-  The `<parameter>_{encode, decode}/1` functions map between a name (like `:IN`
-  or "IN") and a numeric value in a certain range for given type of parameter
-  (like a DNS `:class`).
+  The `<parameter>_{encode, decode}/1` functions map between the name for a
+  parameter value (like `:IN` or "IN" for the type DNS `:class` parameter) and
+  its numeric value in the valid range for that type of parameter.
 
   Both functions actually take an argument in the form of what they would
-  return and return it as-is if it is valid (the name is known or the value is
-  in range for that particular type of DNS parameter) or raise a `DNS.MsgError`
-  when not known or not valid.  This helps prevent subtle bugs when encoding a
-  `DNS.Msg` to its wireformat or vice versa.
+  return and return it, as-is, if it is valid (the name is known or the value
+  is in range for that particular type of DNS parameter) or raise a
+  `DNS.MsgError`. This helps prevent subtle bugs when encoding a `DNS.Msg` to
+  its wireformat or vice versa.
 
   The `<parameter>_valid?/1` functions simply say whether the name if known or
   the numeric value is in range or not.
 
-  The `<parameter>_list/0` functions simply return the list of known `{name,
-  value}` pairs for that particular DNS parameter.
+  The `<parameter>_list/0` functions return the list of known `{name, value}`
+  pairs for the DNS `<parameter>`.
 
   ## Examples
 
@@ -53,7 +53,6 @@ defmodule DNS.Param do
 
       iex> class_encode(1)
       1
-
 
       iex> class_encode(:OOPS)
       ** (DNS.MsgError) [encode] class_encode: unknown parameter name ':OOPS'
@@ -309,7 +308,7 @@ defmodule DNS.Param do
     Returns the name (as uppercase atom) for given `value` of the `#{name}`
     parameter.
 
-    When given a valid name instead, it is returned as-is.  \\
+    When given a valid name instead, it returns the uppercase atom.  \\
     Raises `DNS.MsgError` on invalid values or unknown names.
 
     """
@@ -317,8 +316,8 @@ defmodule DNS.Param do
     def unquote(decode)(value)
 
     @doc """
-    Returns `true` if given `arg` is a valid value or name of the `#{name}` parameter,
-    `false` otherwise.
+    Returns `true` if given `arg` is a valid value or known name of the
+    `#{name}` parameter, `false` otherwise.
 
     """
     @spec unquote(valid)(name | value) :: boolean
