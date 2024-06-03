@@ -116,7 +116,7 @@ defmodule DNS do
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
       maxtime: Keyword.get(opts, :maxtime, 5_000),
       name: name,
-      nameservers: Keyword.get(opts, :nameservers, Cache.nss(name)),
+      nameservers: Keyword.get(opts, :nameservers, nil),
       opcode: Keyword.get(opts, :opcode, :QUERY) |> Param.opcode_encode(),
       scramble: scramble,
       rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
