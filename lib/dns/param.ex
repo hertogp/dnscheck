@@ -102,14 +102,19 @@ defmodule DNS.Param do
   @typedoc "A parameter's numeric value"
   @type value :: non_neg_integer
 
+  # DNS Parameter definitions for generating encode/decode/list/valid? functions
+  # - param type names (the keys) are atoms and used as prefix in function names
+  # - the {name, value}-pairs as a list allows for ordering func defs by popularity
+  # - each name and each value in the list must be unique due pattern matching
+  #   by the generated functions (compiler warns about redefining functions)
   @params %{
     :class => [
-      {:RESERVED, 0},
       {:IN, 1},
+      {:ANY, 255},
       {:CH, 3},
+      {:RESERVED, 0},
       {:HS, 4},
-      {:NONE, 254},
-      {:ANY, 255}
+      {:NONE, 254}
     ],
     :opcode => [
       {:QUERY, 0},
@@ -292,7 +297,7 @@ defmodule DNS.Param do
     list = String.to_atom("#{name}_list")
     valid = String.to_atom("#{name}_valid?")
 
-    ## [[ function heads with spec & doc string ]]
+    ## [[ @doc, @spec and function heads ]]
 
     @doc """
     Returns the numeric value for given `name` of the `#{name}` parameter.
@@ -328,14 +333,14 @@ defmodule DNS.Param do
 
     ```elixir
     # Currently known:
-    #{inspect(@params[name], pretty: true, width: 10)}
+    #{inspect(@params[name], pretty: true, width: 10, limit: :infinity)}
     ```
 
     """
     @spec unquote(list)() :: [{name, value}]
     def unquote(list)()
 
-    ## [[ encode/decode known names/values ]]
+    ## [[ encode/decode - known names/values ]]
 
     for {k, v} <- parms do
       s = Atom.to_string(k)
@@ -347,7 +352,7 @@ defmodule DNS.Param do
       def unquote(decode)(unquote(s)), do: unquote(k)
     end
 
-    ## [[ return valid values as-is ]]
+    ## [[ encode/decode - return valid values as-is ]]
 
     case name do
       name when name in [:class, :rrtype, :edns_option, :edns_ede] ->
@@ -366,13 +371,15 @@ defmodule DNS.Param do
         nil
     end
 
-    ## [[ catch all's ]]
+    ## [[ encode/decode - raise for encode/decode ]]
 
     def unquote(encode)(k),
       do: error(:eencode, "#{unquote(encode)}: unknown parameter name '#{inspect(k)}'")
 
     def unquote(decode)(v),
       do: error(:edecode, "#{unquote(decode)}: unknown parameter value '#{inspect(v)}'")
+
+    # [[ list/valid? definitions ]]
 
     def unquote(list)(),
       do: params(unquote(name))
