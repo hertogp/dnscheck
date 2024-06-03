@@ -248,17 +248,17 @@ defmodule DNS.Msg do
     ]
 
     hdr = Hdr.put(msg.header, lengths) |> Hdr.encode()
-    qtn = do_encode_section(msg.question, &Qtn.encode/1)
-    ans = do_encode_section(msg.answer, &RR.encode/1)
-    aut = do_encode_section(msg.authority, &RR.encode/1)
-    add = do_encode_section(msg.additional, &RR.encode/1)
+    qtn = Enum.map(msg.question, &Qtn.encode/1)
+    ans = Enum.map(msg.answer, &RR.encode/1)
+    aut = Enum.map(msg.authority, &RR.encode/1)
+    add = Enum.map(msg.additional, &RR.encode/1)
 
     wdata =
       hdr.wdata <>
-        Enum.reduce(qtn, <<>>, fn elm, acc -> acc <> elm.wdata end) <>
-        Enum.reduce(ans, <<>>, fn elm, acc -> acc <> elm.wdata end) <>
-        Enum.reduce(aut, <<>>, fn elm, acc -> acc <> elm.wdata end) <>
-        Enum.reduce(add, <<>>, fn elm, acc -> acc <> elm.wdata end)
+        Enum.map_join(qtn, & &1.wdata) <>
+        Enum.map_join(ans, & &1.wdata) <>
+        Enum.map_join(aut, & &1.wdata) <>
+        Enum.map_join(add, & &1.wdata)
 
     {:ok,
      %{
@@ -272,12 +272,6 @@ defmodule DNS.Msg do
      }}
   rescue
     e in DNS.MsgError -> {:error, e}
-  end
-
-  defp do_encode_section(elms, fun) do
-    elms
-    |> Enum.reduce([], fn elm, acc -> [fun.(elm) | acc] end)
-    |> Enum.reverse()
   end
 
   # [[ DECODE MSG ]]
