@@ -52,6 +52,7 @@ defmodule DNS.Telemetry do
     [:dns, :cache, :miss],
     [:dns, :cache, :expired],
     [:dns, :cache, :insert],
+    [:dns, :cache, :error],
     #
     [:dns, :nss, :switch],
     [:dns, :nss, :select],
@@ -271,7 +272,7 @@ defmodule DNS.Telemetry do
               ["KEY:", key]
 
             :error ->
-              ["ERROR KEY:", key, "REASON:", "#{meta.reason}"]
+              ["ERROR KEY:", key, " REASON:", to_str(meta.reason)]
 
             :hit ->
               ["KEY:", key, " RRS:", to_str(meta.rrs)]

@@ -384,11 +384,13 @@ defmodule DNS.Cache do
   """
   @spec nss(binary) :: [ns]
   def nss(zone) when is_binary(zone) do
+    IO.inspect(zone, label: :zone)
+
     with {:ok, labels} <- Name.normalize(zone, join: false) do
       nssp(labels)
     else
       _ ->
-        emit([:cache, :error], error: {"illegal zone name", zone})
+        emit([:cache, :error], key: {zone, :IN, :NS}, reason: {"illegal zone name", zone})
 
         []
     end
