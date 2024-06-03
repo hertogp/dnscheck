@@ -135,7 +135,7 @@ defmodule DNS do
     }
 
     # so we can pass in ctx (used in telemetry events)
-    ctx = %{ctx | nameservers: ctx.nameservers || Cache.nss(name)}
+    ctx = %{ctx | nameservers: ctx.nameservers || Cache.nss(name, ctx)}
 
     cond do
       not is_u16(ctx.bufsize) -> "bufsize out of u16 range"
@@ -186,10 +186,10 @@ defmodule DNS do
 
     with {:ok, qry} <- make_query(name, type, ctx),
          qname <- hd(qry.question).name,
-         cached <- Cache.get(qname, ctx.class, type),
+         cached <- Cache.get(qname, ctx.class, type, ctx),
          tstop <- time(ctx.maxtime) do
       if cached == [] do
-        nss = ctx[:nameservers] || Cache.nss(qname)
+        nss = ctx[:nameservers] || Cache.nss(qname, ctx)
 
         case query_nss(nss, qry, ctx, tstop, 0, _failed = []) do
           {:ok, msg} -> reply_handler(qry, msg, ctx, tstop)
@@ -655,7 +655,7 @@ defmodule DNS do
         {:error, {:lame, msg}}
 
       _ ->
-        Cache.put(msg)
+        Cache.put(msg, ctx)
         {:ok, msg}
     end
   end
@@ -666,7 +666,7 @@ defmodule DNS do
 
     case reply_type(msg) do
       :answer ->
-        Cache.put(msg)
+        Cache.put(msg, ctx)
         {:ok, msg}
 
       :referral ->
@@ -678,13 +678,13 @@ defmodule DNS do
           emit([:ns, :loop], ctx: ctx, qry: qry, reason: zone, seen: ctx.rzones)
           {:error, {:rzone_loop, msg}}
         else
-          Cache.put(msg)
+          Cache.put(msg, ctx)
           ctx = %{ctx | rzones: [zone | ctx[:rzones]]}
           recurse(qry, msg, ctx, tstop)
         end
 
       :cname ->
-        Cache.put(msg)
+        Cache.put(msg, ctx)
         rr = Enum.find(msg.answer, fn rr -> rr.type == :CNAME end)
         # REVIEW: handle a {:error, :eencode} return from Name.normalize
         {:ok, cname} = Name.normalize(rr.rdmap.name)

@@ -285,7 +285,7 @@ defmodule DNS.Telemetry do
           end
         end
 
-      ["cache:#{topic} ", details]
+      [logid(meta.ctx), " cache:#{topic} ", details]
     end)
   end
 

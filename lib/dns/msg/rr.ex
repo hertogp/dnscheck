@@ -1735,8 +1735,8 @@ defmodule DNS.Msg.RR do
   # Decode an EDNS option if we can, keep raw otherwise.
   #
   # """
-  @spec decode_edns_opt(non_neg_integer, non_neg_integer, binary) ::
-          {non_neg_integer, any} | no_return
+  @spec decode_edns_opt(atom, non_neg_integer, binary) ::
+          {atom, any} | no_return
   defp decode_edns_opt(code, len, data)
   # Note: not sure if decode_ends_opt should get an offset & org msg binary
   # since some options might refer to other parts of the msg (e.g. name

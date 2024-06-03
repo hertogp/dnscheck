@@ -52,7 +52,7 @@ defmodule DNS.Cache do
       iex> init(clear: true)
       :dns_cache
       iex> rr = DNS.Msg.RR.new(name: "example.com", ttl: 10)
-      iex> put(rr)
+      iex> put(rr, %{})
       true
       iex> size()
       1
@@ -147,7 +147,7 @@ defmodule DNS.Cache do
 
       iex> rr = DNS.Msg.RR.new(name: "example.org", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"})
       iex> init()
-      iex> put(rr)
+      iex> put(rr, %{})
       true
       iex> [{key, [{_t, crr}]}] = :ets.tab2list(:dns_cache)
       iex> key
@@ -157,7 +157,7 @@ defmodule DNS.Cache do
 
       # TTL < 1 is ignored
       iex> rr = DNS.Msg.RR.new(name: "example.org", type: :A, ttl: 0, rdmap: %{ip: "10.1.1.1"})
-      iex> put(rr)
+      iex> put(rr, %{})
       false
 
 
@@ -170,13 +170,13 @@ defmodule DNS.Cache do
       iex> {:ok, msg} = DNS.Msg.new(hdr: hdr, qtn: qtn, ans: ans)
       iex> size()
       0
-      iex> put(msg)
+      iex> put(msg, %{})
       true
       iex> size()
       1
-      iex> get("example.net", :IN, :A)
+      iex> get("example.net", :IN, :A, %{})
       []
-      iex> [rr] = get("example.com", :IN, :A)
+      iex> [rr] = get("example.com", :IN, :A, %{})
       iex> {rr.name, rr.rdmap.ip}
       {"example.com", "10.2.1.1"}
 
@@ -188,25 +188,25 @@ defmodule DNS.Cache do
       iex> add = [[name: "ns1.tld-servers.com", type: :A, ttl: 100, rdmap: %{ip: "10.4.1.1"}],
       ...>        [name: "ns1.tld-servers.net", type: :A, ttl: 100, rdmap: %{ip: "10.5.1.1"}]]
       iex> {:ok, msg} = DNS.Msg.new(hdr: hdr, qtn: qtn, aut: aut, add: add)
-      iex> put(msg)
+      iex> put(msg, %{})
       false
-      iex> get("ns1.tld-servers.net", :IN, :A)
+      iex> get("ns1.tld-servers.net", :IN, :A, %{})
       []
-      iex> [rr] = get("ns1.tld-servers.com", :IN, :A)
+      iex> [rr] = get("ns1.tld-servers.com", :IN, :A, %{})
       iex> {rr.name, rr.rdmap.ip}
       iex> {"ns1.tld-servers.com", "10.4.1.1"}
 
   """
-  @spec put(DNS.Msg.RR.t() | DNS.Msg.t()) :: boolean
-  def put(rr_or_msg)
+  @spec put(DNS.Msg.RR.t() | DNS.Msg.t(), map) :: boolean
+  def put(rr_or_msg, ctx)
 
-  def put(%DNS.Msg.RR{name: name} = rr) when name in ["", "."] do
+  def put(%DNS.Msg.RR{name: name} = rr, ctx) when name in ["", "."] do
     # explicitly ignore RR's referencing root
-    Log.warning("ignoring #{inspect(rr)}")
+    Log.warning("ignoring #{inspect(rr)}, #{inspect(ctx)}")
     false
   end
 
-  def put(%DNS.Msg.RR{} = rr) do
+  def put(%DNS.Msg.RR{} = rr, ctx) do
     # make_key before check on cacheable? so we get error not ignored
     # if one of the key components is illegal.
     # - assumes rdmap hasn't been tampered/played with (i.e. org fields only)
@@ -223,7 +223,7 @@ defmodule DNS.Cache do
           do: rr,
           else: %{rr | ttl: maxttl, rdata: "", wdata: ""}
 
-      emit([:cache, :insert], key: key, rrs: rr)
+      emit([:cache, :insert], ctx: ctx, key: key, rrs: rr)
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
       _e ->
@@ -232,7 +232,7 @@ defmodule DNS.Cache do
     end
   end
 
-  def put(%DNS.Msg{answer: [_ | _]} = msg) do
+  def put(%DNS.Msg{answer: [_ | _]} = msg, ctx) do
     # Msg has answer RR's
     # - only take relevant RRs from answer section
     # REVIEW: donot ignore aut/add sections
@@ -243,7 +243,7 @@ defmodule DNS.Cache do
          qname <- hd(msg.question).name do
       msg.answer
       |> Enum.filter(fn rr -> Name.equal?(rr.name, qname) end)
-      |> Enum.map(&put/1)
+      |> Enum.map(fn rr -> put(rr, ctx) end)
       |> Enum.all?(& &1)
     else
       _ -> false
@@ -252,7 +252,7 @@ defmodule DNS.Cache do
     _ -> false
   end
 
-  def put(%DNS.Msg{answer: []} = msg) do
+  def put(%DNS.Msg{answer: []} = msg, ctx) do
     # https://www.rfc-editor.org/rfc/rfc1035#section-7.4 - using the cache
     # - ignores message if truncated, etc
     # - ignores aut-RR's unless it's a parent for qname
@@ -277,7 +277,7 @@ defmodule DNS.Cache do
       msg.additional
       |> Enum.filter(fn rr -> Name.normalize(rr.name) in nsnames end)
       |> Enum.concat(rrs)
-      |> Enum.map(&put/1)
+      |> Enum.map(fn rr -> put(rr, ctx) end)
       |> Enum.all?(& &1)
     else
       false
@@ -297,9 +297,9 @@ defmodule DNS.Cache do
 
       iex> rr = DNS.Msg.RR.new(name: "example.com", type: :A, ttl: 1, rdmap: %{ip: "10.1.1.1"})
       iex> init()
-      iex> put(rr)
+      iex> put(rr, %{})
       true
-      iex> get("example.com", :IN, :A)
+      iex> get("example.com", :IN, :A, %{})
       [%DNS.Msg.RR{
         name: "example.com",
         type: :A,
@@ -312,16 +312,18 @@ defmodule DNS.Cache do
         wdata: ""}
       ]
       iex> Process.sleep(1800)
-      iex> DNS.Cache.get("example.com", :IN, :A)
+      iex> DNS.Cache.get("example.com", :IN, :A, %{})
       []
 
       # illegal values won't get you anything
-      iex> get("example.com", :IN, 65536)
+      iex> get("example.com", :IN, 65536, %{})
       []
 
   """
-  @spec get(binary, atom | non_neg_integer, atom | non_neg_integer, boolean) :: [DNS.Msg.RR.t()]
-  def get(name, class, type, strict \\ false) do
+  @spec get(binary, atom | non_neg_integer, atom | non_neg_integer, map, boolean) :: [
+          DNS.Msg.RR.t()
+        ]
+  def get(name, class, type, ctx, strict \\ false) do
     # NOTE:
     # - strict false allows for looking up :CNAME in case given `type` yields no results
     with {:ok, key} <- make_key(name, class, type),
@@ -329,7 +331,7 @@ defmodule DNS.Cache do
          {rrs, dead} <- Enum.split_with(crrs, &alive?/1) do
       if dead != [] do
         dead = Enum.map(dead, &unwrap_ttd/1)
-        emit([:cache, :expired], key: key, rrs: dead)
+        emit([:cache, :expired], ctx: ctx, key: key, rrs: dead)
 
         # remove the dead by re-inserting the live ones (with current timer)
         if rrs == [],
@@ -338,17 +340,17 @@ defmodule DNS.Cache do
       end
 
       if crrs == [] and not strict and type != :CNAME do
-        get(name, class, :CNAME, true)
+        get(name, class, :CNAME, ctx, true)
       else
         rrs = Enum.map(rrs, &unwrap_ttd/1)
         event = if rrs == [], do: :miss, else: :hit
-        emit([:cache, event], key: key, rrs: rrs)
+        emit([:cache, event], ctx: ctx, key: key, rrs: rrs)
 
         rrs
       end
     else
       {:error, reason} ->
-        emit([:cache, :error], key: {name, class, type}, reason: reason)
+        emit([:cache, :error], ctx: ctx, key: {name, class, type}, reason: reason)
 
         []
     end
@@ -367,13 +369,13 @@ defmodule DNS.Cache do
   ## Example
 
       iex> init()
-      iex> put(DNS.Msg.RR.new(name: "example.com", type: :NS, ttl: 10, rdmap: %{name: "ns1.example.com"}))
-      iex> put(DNS.Msg.RR.new(name: "example.com", type: :NS, ttl: 10, rdmap: %{name: "ns2.example.net"}))
-      iex> put(DNS.Msg.RR.new(name: "ns1.example.com", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"}))
-      iex> put(DNS.Msg.RR.new(name: "ns2.example.net", type: :A, ttl: 10, rdmap: %{ip: "10.2.1.1"}))
+      iex> put(DNS.Msg.RR.new(name: "example.com", type: :NS, ttl: 10, rdmap: %{name: "ns1.example.com"}), %{})
+      iex> put(DNS.Msg.RR.new(name: "example.com", type: :NS, ttl: 10, rdmap: %{name: "ns2.example.net"}), %{})
+      iex> put(DNS.Msg.RR.new(name: "ns1.example.com", type: :A, ttl: 10, rdmap: %{ip: "10.1.1.1"}), %{})
+      iex> put(DNS.Msg.RR.new(name: "ns2.example.net", type: :A, ttl: 10, rdmap: %{ip: "10.2.1.1"}), %{})
       iex> size()
       3
-      iex> nss = nss("host.example.com")
+      iex> nss = nss("host.example.com", %{})
       iex> {"ns1.example.com", {10, 1, 1, 1}, 53} in nss
       true
       iex> {"ns2.example.net", {10, 2, 1, 1}, 53} in nss
@@ -382,42 +384,40 @@ defmodule DNS.Cache do
       2
 
   """
-  @spec nss(binary) :: [ns]
-  def nss(zone) when is_binary(zone) do
-    IO.inspect(zone, label: :zone)
-
+  @spec nss(binary, map) :: [ns]
+  def nss(zone, ctx) when is_binary(zone) do
     with {:ok, labels} <- Name.normalize(zone, join: false) do
-      nssp(labels)
+      nssp(labels, ctx)
     else
       _ ->
-        emit([:cache, :error], key: {zone, :IN, :NS}, reason: {"illegal zone name", zone})
+        emit([:cache, :error], key: {zone, :IN, :NS}, ctx: ctx, reason: "illegal zone #{zone}")
 
         []
     end
   end
 
   # return a list of :NS names or empty list
-  @spec nssp([binary]) :: [ns]
-  defp nssp([]),
+  @spec nssp([binary], map) :: [ns]
+  defp nssp([], _),
     do: Enum.shuffle(@root_nss)
 
-  defp nssp([first | rest]) do
+  defp nssp([first | rest], ctx) do
     zone = Enum.join([first | rest], ".")
 
-    case get(zone, :IN, :NS, true) do
+    case get(zone, :IN, :NS, ctx, true) do
       [] ->
-        nssp(rest)
+        nssp(rest, ctx)
 
       nss ->
         # NOTE:
         # - only return actual address records from cache (referrals are not
         #   guaranteed to be complete: some A or AAAA-rrs may be missing)
         # - they may have all expired, so check for non-empty list as result
-        for ns <- nss, type <- [:A, :AAAA], rr <- get(ns.rdmap.name, :IN, type) do
+        for ns <- nss, type <- [:A, :AAAA], rr <- get(ns.rdmap.name, :IN, type, ctx) do
           {rr.name, Pfx.to_tuple(rr.rdmap.ip, mask: false), 53}
         end
         |> case do
-          [] -> nssp(rest)
+          [] -> nssp(rest, ctx)
           nss -> nss
         end
         |> Enum.shuffle()

@@ -302,7 +302,7 @@ defmodule DNS.Param do
     Raises `DNS.MsgError` for unknown names or invalid values.
 
     """
-    @spec unquote(encode)(name | value) :: value | DNS.MsgError.t()
+    @spec unquote(encode)(name | value) :: value
     def unquote(encode)(name)
 
     @doc """
@@ -313,7 +313,7 @@ defmodule DNS.Param do
     Raises `DNS.MsgError` on invalid values or unknown names.
 
     """
-    @spec unquote(decode)(value | name) :: atom | DNS.MsgError.t()
+    @spec unquote(decode)(value | name) :: atom
     def unquote(decode)(value)
 
     @doc """
