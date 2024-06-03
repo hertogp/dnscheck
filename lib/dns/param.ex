@@ -89,11 +89,7 @@ defmodule DNS.Param do
   ## TODO
   - [ ] [nsec3 params](https://www.iana.org/assignments/dnssec-nsec3-parameters/dnssec-nsec3-parameters.xhtml)
 
-
   """
-
-  # beware, here be dragons
-
   import DNS.MsgError, only: [error: 2]
 
   @typedoc "A parameter's name, either an uppercase atom or uppercase binary"
@@ -109,12 +105,12 @@ defmodule DNS.Param do
   #   by the generated functions (compiler warns about redefining functions)
   @params %{
     :class => [
-      {:IN, 1},
-      {:ANY, 255},
-      {:CH, 3},
       {:RESERVED, 0},
+      {:IN, 1},
+      {:CH, 3},
       {:HS, 4},
-      {:NONE, 254}
+      {:NONE, 254},
+      {:ANY, 255}
     ],
     :opcode => [
       {:QUERY, 0},
