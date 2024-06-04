@@ -35,8 +35,6 @@ defmodule DNS.Cache do
   import DNS.Time
   alias DNS.Name
   alias DNS.Param
-  alias Logger, as: Log
-  require Logger
 
   @type key :: {binary, non_neg_integer, non_neg_integer}
   @type rr :: DNS.Msg.RR.t()
@@ -200,9 +198,8 @@ defmodule DNS.Cache do
   @spec put(DNS.Msg.RR.t() | DNS.Msg.t(), map) :: boolean
   def put(rr_or_msg, ctx)
 
-  def put(%DNS.Msg.RR{name: name} = rr, ctx) when name in ["", "."] do
-    # explicitly ignore RR's referencing root
-    Log.warning("ignoring #{inspect(rr)}, #{inspect(ctx)}")
+  def put(%DNS.Msg.RR{name: name}, _ctx) when name in ["", "."] do
+    # silently ignore RR's referencing root
     false
   end
 
@@ -210,7 +207,7 @@ defmodule DNS.Cache do
     # make_key before check on cacheable? so we get error not ignored
     # if one of the key components is illegal.
     # - assumes rdmap hasn't been tampered/played with (i.e. org fields only)
-    # TODO: keep cached rrs whose ttl > rr.ttl
+    # TODO: adopt larger ttl from rr and its cached version (if any) ?
     with true <- rr.ttl > 0,
          {:ok, key} <- make_key(rr.name, rr.class, rr.type),
          true <- cacheable?(rr),
@@ -226,8 +223,15 @@ defmodule DNS.Cache do
       emit([:cache, :insert], ctx: ctx, key: key, rrs: rr)
       :ets.insert(@cache, {key, [wrap_ttd(rr) | crrs]})
     else
+      false ->
+        emit([:cache, :error], ctx: ctx, key: {rr.name, rr.class, rr.type}, reason: "uncacheable")
+        false
+
+      {:error, reason} ->
+        emit([:cache, :error], ctx: ctx, key: {rr.name, rr.class, rr.type}, reason: reason)
+        false
+
       _e ->
-        Log.error("not caching #{inspect(rr)}")
         false
     end
   end
@@ -237,7 +241,6 @@ defmodule DNS.Cache do
     # - only take relevant RRs from answer section
     # REVIEW: donot ignore aut/add sections
     # TODO: ignore answers that have a irrelevant SOA in aut-section
-    # Log.info("msg is #{msg}")
 
     with true <- cacheable?(msg),
          qname <- hd(msg.question).name do
@@ -426,10 +429,11 @@ defmodule DNS.Cache do
 
   # [[ HELPERS ]]
 
-  # ttd is absolute, monotonic time_to_die
+  # time to die?
   defp alive?({ttd, _rr}),
     do: timeout(ttd) > 0
 
+  @spec cacheable?(DNS.Msg.t() | DNS.Msg.RR.t()) :: boolean
   defp cacheable?(%DNS.Msg.RR{} = rr) do
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
     # [ ] never cache NS from root hints
