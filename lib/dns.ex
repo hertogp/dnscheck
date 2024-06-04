@@ -11,8 +11,6 @@ defmodule DNS do
   alias DNS.Msg
   alias DNS.Cache
   alias DNS.Param
-  alias Logger, as: Log
-  require Logger
 
   @typedoc "Type of RR, as atom or non negative integer"
   @type type :: atom | non_neg_integer
@@ -650,8 +648,7 @@ defmodule DNS do
 
     case reply_type(msg) do
       :lame ->
-        Log.warning("lame reply for #{inspect(msg.question)}")
-        Log.debug("lame reply msg was #{msg}")
+        emit([:ns, :lame], ctx: ctx, ns: msg.xdata.ns, msg: msg)
         {:error, {:lame, msg}}
 
       _ ->
@@ -728,7 +725,6 @@ defmodule DNS do
         end
 
       :nodata ->
-        # Log.info("got a NODATA reply to #{qry}")
         {:ok, msg}
 
       :lame ->
@@ -882,16 +878,12 @@ defmodule DNS do
     # - a msg with other RCODEs: qry.question and rsp.question should be same
     cond do
       qry.header.id != rsp.header.id ->
-        Log.warning("ignoring reply: query ID does not match")
         false
 
       rsp.header.qr != 1 ->
-        Log.warning("ignoring reply: expected qr=1, got #{rsp.header.qr}")
         false
 
       qry.header.opcode != rsp.header.opcode ->
-        Log.warning("ignoring reply: opcode #{qry.header.opcode} != #{rsp.header.opcode}")
-
         false
 
       rsp.header.opcode == :FORMERROR ->
@@ -899,10 +891,6 @@ defmodule DNS do
 
       # REVIEW: are there other RCODEs that might have qry.questions == []?
       length(qry.question) != length(rsp.question) ->
-        Log.warning("ignoring reply: question sections do not match")
-        Log.debug("- qry msg: #{inspect(qry)}")
-        Log.debug("- rsp msg: #{inspect(rsp)}")
-
         false
 
       true ->
@@ -911,6 +899,8 @@ defmodule DNS do
         # - in which case name compression might be used in response
         # - and character case might be different as well (also unlikely)
         # - lastly, order of individual qtn's in question section may differ
+        # REVIEW: check if ns is supposed to return question(s) verbatim in its
+        # reply, in which case we can simply do qtn.wdata == msg.question.wdata.
         ql =
           qry.question
           |> Enum.map(fn q -> {elem(Name.normalize(q.name), 1), q.type, q.class} end)
@@ -921,14 +911,7 @@ defmodule DNS do
           |> Enum.map(fn r -> {elem(Name.normalize(r.name), 1), r.type, r.class} end)
           |> Enum.sort()
 
-        if ql == rl do
-          true
-        else
-          Log.warning("ignoring reply: question sections do not match")
-          Log.debug("- qry msg: #{inspect(qry)}")
-          Log.debug("- rsp msg: #{inspect(rsp)}")
-          false
-        end
+        ql == rl
     end
   end
 
