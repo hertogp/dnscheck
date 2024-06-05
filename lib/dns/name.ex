@@ -13,6 +13,9 @@ defmodule DNS.Name do
   @spec do_labels([binary], binary, binary) :: [binary] | no_return
   defp do_labels(acc, label, rest)
 
+  defp do_labels([], <<>>, rest) when rest in [<<>>, <<?.>>],
+    do: []
+
   defp do_labels(acc, l, rest) when rest in [<<>>, <<?.>>] do
     # note: add_label checks validity of l (not empty, len < 63)
     labels =
@@ -476,16 +479,8 @@ defmodule DNS.Name do
       ** (DNS.MsgError) [encode] domain name has empty label
 
   """
-  def to_labels(name) when is_binary(name) do
-    case name do
-      <<>> -> []
-      <<?.>> -> []
-      name -> do_labels([], <<>>, name)
-    end
-  end
-
-  def to_labels(noname),
-    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
+  def to_labels(name) when is_binary(name),
+    do: do_labels([], <<>>, name)
 
   @doc """
   Checks whether a domain `name` is valid, or not.
