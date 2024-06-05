@@ -266,11 +266,11 @@ defmodule DNS.Name do
   def equal?(<<>>, <<?.>>),
     do: true
 
-  def equal?(<<a::8, rest_a::binary>>, <<b::8, rest_b::binary>>) do
+  def equal?(<<a::8, left::binary>>, <<b::8, right::binary>>) do
     cond do
-      a == b -> equal?(rest_a, rest_b)
-      a == b + 32 and a in ?a..?z -> equal?(rest_a, rest_b)
-      a + 32 == b and a in ?A..?Z -> equal?(rest_a, rest_b)
+      a == b -> equal?(left, right)
+      a == b + 32 and a in ?a..?z -> equal?(left, right)
+      a + 32 == b and a in ?A..?Z -> equal?(left, right)
       true -> false
     end
   end
