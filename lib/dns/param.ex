@@ -282,40 +282,8 @@ defmodule DNS.Param do
     ]
   }
 
-  @types Map.keys(@params)
-  @name2val for({k, v} <- @params, do: {k, Map.new(v)}) |> Map.new()
-  @val2name for({k, v} <- @params, do: {k, Enum.map(v, fn {k, v} -> {v, k} end) |> Map.new()})
-            |> Map.new()
-
   defp params(param),
     do: @params[param] || []
-
-  @doc """
-  Decode a parameter type name to its value.
-
-  Known parameter types include:
-  ```
-  "#{inspect(@types, pretty: true, limit: :infinity)}"
-  ```
-
-  """
-  def decode(type, val) when is_atom(val),
-    do: @name2val[type][val]
-
-  def decode(type, val)
-      when type in [:class, :rrtype, :edns_option, :edns_ede] and val in 0..65535,
-      do: @val2name[type][val] || val
-
-  def decode(type, val)
-      when type in [:opcode, :rcode] and val in 0..15,
-      do: @val2name[type][val] || val
-
-  def decode(type, val)
-      when type in [:dnssec_algo, :ds_digest] and val in 0..15,
-      do: @val2name[type][val] || val
-
-  def decode(_type, _val),
-    do: nil
 
   # [[ GENERATE FUNCS ]]
 
