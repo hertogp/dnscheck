@@ -244,16 +244,16 @@ defmodule DNS.Msg.Qtn do
   end
 
   @spec do_put({atom, any}, t()) :: t()
-  defp do_put({k, v}, qtn) when k == :name do
+  defp do_put({:name = k, v}, qtn) do
     if Name.valid?(v),
       do: Map.put(qtn, k, v),
       else: error(:ecreate, "domain name invalid: #{v}")
   end
 
-  defp do_put({k, v}, qtn) when k == :type,
+  defp do_put({:type = k, v}, qtn),
     do: Map.put(qtn, k, Param.rrtype_decode(v))
 
-  defp do_put({k, v}, qtn) when k == :class,
+  defp do_put({:class = k, v}, qtn),
     do: Map.put(qtn, k, Param.class_decode(v))
 
   # ignore options we donot need or know
