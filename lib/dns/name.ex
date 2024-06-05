@@ -285,28 +285,29 @@ defmodule DNS.Name do
   - the trailing dot is stripped
   - all uppercase letters are converted to lowercase
 
+  If `:join` is true (the default), a binary is returned, otherwise a list of
+  labels.
+
   If the `name` is illegal (longer than 253 octets in string form, or
   has a label longer than 63 octets), the error tuple is returned.
 
   """
   @spec normalize(binary, Keyword.t()) :: {:ok, binary | [binary]} | {:error, :eencode}
   def normalize(name, opts \\ []) do
-    join = Keyword.get(opts, :join, true)
+    labels = do_labels([], <<>>, String.downcase(name))
 
-    labels =
-      name
-      |> String.downcase()
-      |> to_labels()
-
-    result = if join, do: Enum.join(labels, "."), else: labels
-
-    {:ok, result}
+    if Keyword.get(opts, :join, true),
+      do: {:ok, Enum.join(labels, ".")},
+      else: {:ok, labels}
   rescue
     _ -> {:error, :eencode}
   end
 
   @doc """
   Reverses the labels for given a domain `name`.
+
+  If `:join` is true (the default), a binary is returned. Otherwise
+  the list of labels (in reverse).
 
   Raises an error if the name is too long or has empty labels.
 
@@ -319,23 +320,28 @@ defmodule DNS.Name do
       iex> reverse("example.com.")
       "com.example"
 
+      # get labels in reverse
+      iex> reverse("eXample.coM", join: false)
+      ["coM", "eXample"]
+
       iex> reverse(".example.com")
       ** (DNS.MsgError) [encode] domain name has empty label
 
   """
   @spec reverse(binary) :: binary
-  def reverse(name) when is_binary(name) do
-    case name do
-      <<>> -> []
-      <<?.>> -> []
-      name -> do_labels([], <<>>, name)
-    end
-    |> Enum.reverse()
-    |> Enum.join(".")
-  end
+  def reverse(name, opts \\ []) when is_binary(name) do
+    labels =
+      case name do
+        <<>> -> []
+        <<?.>> -> []
+        _name -> do_labels([], <<>>, name)
+      end
+      |> Enum.reverse()
 
-  def reverse(noname),
-    do: error(:eencode, "domain name expected a binary, got: #{inspect(noname)}")
+    if Keyword.get(opts, :join, true),
+      do: Enum.join(labels, "."),
+      else: labels
+  end
 
   @doc """
   Scrambles the case of a binary's characters.
