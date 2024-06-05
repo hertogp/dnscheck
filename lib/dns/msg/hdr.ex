@@ -212,10 +212,10 @@ defmodule DNS.Msg.Hdr do
 
   # opcode & rcode store atom's if possible, numbers otherwise
   # in case we have a valid value, but no known name
-  defp do_put({k, v}, hdr) when k == :opcode,
+  defp do_put({:opcode = k, v}, hdr),
     do: Map.put(hdr, k, Param.opcode_decode(v))
 
-  defp do_put({k, v}, hdr) when k == :rcode do
+  defp do_put({:rcode = k, v}, hdr) do
     # encode_dns_rcode accepts extended rcodes as well, so check for v in 0..15
     if Param.rcode_encode(v) in 0..15,
       do: Map.put(hdr, k, Param.rcode_decode(v)),
@@ -316,7 +316,7 @@ defmodule DNS.Msg.Hdr do
         arc: arc
       )
 
-    {12, %{hdr | wdata: :binary.part(msg, {0, 12})}}
+    {offset + 12, %{hdr | wdata: :binary.part(msg, {offset, 12})}}
   rescue
     e in DNS.MsgError -> error(:edecode, "Hdr " <> e.data)
     _ -> error(:edecode, "Hdr decode error at offset #{offset}")
