@@ -475,31 +475,31 @@ defmodule DNS.Msg.RR do
     e in DNS.MsgError -> error(:ecreate, "RR " <> e.data)
   end
 
-  defp do_put({k, v}, rr) when k == :name do
+  defp do_put({:name = k, v}, rr) do
     if Name.valid?(v),
       do: Map.put(rr, k, v),
       else: error(:ecreate, "domain name invalid: #{inspect(v)}")
   end
 
-  defp do_put({k, v}, rr) when k == :class do
+  defp do_put({:class = k, v}, rr) do
     if is_u16(Param.class_encode(v)),
       do: Map.put(rr, k, Param.class_decode(v)),
       else: error(:ecreate, "#{k}, got: #{inspect(v)}")
   end
 
-  defp do_put({k, v}, rr) when k == :ttl do
+  defp do_put({:ttl = k, v}, rr) do
     if is_u32(v),
       do: Map.put(rr, k, v),
       else: error(:ecreate, "#{k}, got #{inspect(v)}")
   end
 
-  defp do_put({k, v}, rr) when k == :rdmap do
+  defp do_put({:rdmap = k, v}, rr) do
     if is_map(v),
       do: Map.put(rr, k, v),
       else: error(:ecreate, "expected a map, got: #{inspect(v)}")
   end
 
-  defp do_put({k, v}, rr) when k == :rdata do
+  defp do_put({:rdata, v}, rr) do
     # creating a raw RR, user is in control of RR here
     if is_binary(v) do
       rr
