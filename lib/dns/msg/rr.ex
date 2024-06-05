@@ -661,25 +661,20 @@ defmodule DNS.Msg.RR do
 
   # IN A (1)
   # CHAOS has a 16bit octal address (!)
-  defp encode_rdata(:A, :IN, m) do
-    required(:A, m, :ip)
-    |> ip_encode(:ip4)
-  end
+  defp encode_rdata(:A, :IN, m),
+    do: required(:A, m, :ip) |> ip_encode(:ip4)
 
   # IN NS (2)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.11
   # format is the same for all DNS classes
-  defp encode_rdata(:NS, _class, m) do
-    required(:NS, m, :name, &is_binary/1) |> Name.encode()
-  end
+  defp encode_rdata(:NS, _class, m),
+    do: required(:NS, m, :name, &is_binary/1) |> Name.encode()
 
   # IN CNAME (5)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.1
   # format is the same for all DNS classes
-  defp encode_rdata(:CNAME, _class, m) do
-    name = required(:CNAME, m, :name, &is_binary/1)
-    Name.encode(name)
-  end
+  defp encode_rdata(:CNAME, _class, m),
+    do: required(:CNAME, m, :name, &is_binary/1) |> Name.encode()
 
   # IN SOA (6)
   # https://www.rfc-editor.org/rfc/rfc1035#section-3.3.13
@@ -706,31 +701,16 @@ defmodule DNS.Msg.RR do
   end
 
   # IN MB (7), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.3
-  defp encode_rdata(:MB, :IN, m) do
-    name =
-      required(:MB, m, :name, &is_binary/1)
-      |> Name.encode()
-
-    <<name::binary>>
-  end
+  defp encode_rdata(:MB, :IN, m),
+    do: required(:MB, m, :name, &is_binary/1) |> Name.encode()
 
   # IN MG (8), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.6
-  defp encode_rdata(:MG, :IN, m) do
-    name =
-      required(:MG, m, :name, &is_binary/1)
-      |> Name.encode()
-
-    <<name::binary>>
-  end
+  defp encode_rdata(:MG, :IN, m),
+    do: required(:MG, m, :name, &is_binary/1) |> Name.encode()
 
   # IN MR (9), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.8
-  defp encode_rdata(:MR, :IN, m) do
-    name =
-      required(:MR, m, :name, &is_binary/1)
-      |> Name.encode()
-
-    <<name::binary>>
-  end
+  defp encode_rdata(:MR, :IN, m),
+    do: required(:MR, m, :name, &is_binary/1) |> Name.encode()
 
   # IN NULL (10), https://datatracker.ietf.org/doc/html/rfc1035#section-3.3.10
   # data is simply rdata, since interpretation is upto caller
@@ -751,10 +731,8 @@ defmodule DNS.Msg.RR do
 
   # IN PTR (12), https://www.rfc-editor.org/rfc/rfc1035#section-3.3.12
   # format is the same for all DNS classes (not sure about this though)
-  defp encode_rdata(:PTR, _class, m) do
-    name = required(:PTR, m, :name, &is_binary/1)
-    Name.encode(name)
-  end
+  defp encode_rdata(:PTR, _class, m),
+    do: required(:PTR, m, :name, &is_binary/1) |> Name.encode()
 
   # IN HINFO (13)
   # https://www.rfc-editor.org/rfc/rfc1035.html#section-3.3.2
@@ -883,10 +861,8 @@ defmodule DNS.Msg.RR do
 
   # - DNAME (39)
   #   - https://www.rfc-editor.org/rfc/rfc6672.html#section-2.1
-  defp encode_rdata(:DNAME, :IN, m) do
-    dname = required(:DNAME, m, :dname, &is_binary/1)
-    Name.encode(dname)
-  end
+  defp encode_rdata(:DNAME, :IN, m),
+    do: required(:DNAME, m, :dname, &is_binary/1) |> Name.encode()
 
   # IN OPT (41)
   # https://www.rfc-editor.org/rfc/rfc6891#section-6.1.2
