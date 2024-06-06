@@ -16,10 +16,15 @@ defmodule DNS.ParamTest do
       assert v == class_encode("#{k}")
     end
 
+    # returns nil invalid numbers
+    assert nil == class_encode(:inet)
+    assert nil == class_encode("inet")
+    assert nil == class_encode(65536)
+
     # raises on unknown names or invalid numbers
-    assert_raise DNS.MsgError, fn -> class_encode(:in) end
-    assert_raise DNS.MsgError, fn -> class_encode("in") end
-    assert_raise DNS.MsgError, fn -> class_encode(65536) end
+    assert_raise DNS.MsgError, fn -> class_encode!(:inet) end
+    assert_raise DNS.MsgError, fn -> class_encode!("inet") end
+    assert_raise DNS.MsgError, fn -> class_encode!(65536) end
   end
 
   test "Decode DNS class" do
@@ -30,10 +35,15 @@ defmodule DNS.ParamTest do
       assert k == class_decode("#{k}")
     end
 
+    # returns nil for unknown names or numbers
+    assert nil == class_decode(:OOPS)
+    assert nil == class_decode("OOPS")
+    assert nil == class_decode(65536)
+
     # raises on unknown names or numbers
-    assert_raise DNS.MsgError, fn -> class_decode(:OOPS) end
-    assert_raise DNS.MsgError, fn -> class_decode("OOPS") end
-    assert_raise DNS.MsgError, fn -> class_decode(65536) end
+    assert_raise DNS.MsgError, fn -> class_decode!(:OOPS) end
+    assert_raise DNS.MsgError, fn -> class_decode!("OOPS") end
+    assert_raise DNS.MsgError, fn -> class_decode!(65536) end
   end
 
   test "DNS class_list" do

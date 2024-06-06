@@ -109,13 +109,13 @@ defmodule DNS do
     ctx = %{
       bufsize: Keyword.get(opts, :bufsize, 1280),
       cd: Keyword.get(opts, :cd, 0),
-      class: Param.class_decode(class),
+      class: Param.class_decode!(class),
       do: Keyword.get(opts, :do, 0),
       edns: opts[:do] == 1 or opts[:bufsize] != nil,
       maxtime: Keyword.get(opts, :maxtime, 5_000),
       name: name,
       nameservers: Keyword.get(opts, :nameservers, nil),
-      opcode: Keyword.get(opts, :opcode, :QUERY) |> Param.opcode_encode(),
+      opcode: Keyword.get(opts, :opcode, :QUERY) |> Param.opcode_encode!(),
       scramble: scramble,
       rd: (recurse && 0) || Keyword.get(opts, :rd, 1),
       retry: Keyword.get(opts, :retry, 3),
@@ -919,17 +919,14 @@ defmodule DNS do
   def xrcode(msg) do
     # calculate rcode (no TSIG's yet)
 
-    xrcode =
-      Enum.find(msg.additional, %{}, fn rr -> rr.type == :OPT end)
-      |> Map.get(:rdmap, %{})
-      |> Map.get(:xrcode, :NOERROR)
-      |> Param.rcode_encode()
+    Enum.find(msg.additional, %{}, fn rr -> rr.type == :OPT end)
+    |> Map.get(:rdmap, %{})
+    |> Map.get(:xrcode, :NOERROR)
+    |> Param.rcode_encode!()
+    |> Kernel.*(16)
+    |> Kernel.+(Param.rcode_encode!(msg.header.rcode))
 
-    rcode =
-      (16 * xrcode + Param.rcode_encode(msg.header.rcode))
-      |> Param.rcode_decode()
-
-    rcode
+    # (16 * xrcode + Param.rcode_encode!(msg.header.rcode)) |> Param.rcode_decode!()
   end
 
   @spec unwrap({ns, integer}) :: ns

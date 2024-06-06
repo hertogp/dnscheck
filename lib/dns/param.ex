@@ -1,110 +1,31 @@
 defmodule DNS.Param do
   @moduledoc """
-  Functions to work with names and values for various types of DNS parameters.
-
-  The `<parameter>_{encode, decode}/1` functions map between the name for a
-  parameter value (like `:IN` or "IN" for the type DNS `:class` parameter) and
-  its numeric value in the valid range for that type of parameter.
-
-  Both functions actually take an argument in the form of what they would
-  return and return it, as-is, if it is valid (the name is known or the value
-  is in range for that particular type of DNS parameter) or raise a
-  `DNS.MsgError`. This helps prevent subtle bugs when encoding a `DNS.Msg` to
-  its wireformat or vice versa.
-
-  The `<parameter>_valid?/1` functions simply say whether the name if known or
-  the numeric value is in range or not.
-
-  The `<parameter>_list/0` functions return the list of known `{name, value}`
-  pairs for the DNS `<parameter>`.
-
-  ## Examples
-
-      iex> class_list()
-      [{:RESERVED, 0}, {:IN, 1}, {:CH, 3}, {:HS, 4}, {:NONE, 254}, {:ANY, 255}]
-
-      iex> class_valid?(:IN)
-      true
-
-      iex> class_valid?(1)
-      true
-
-      iex> class_valid?("IN")
-      true
-
-      iex> class_valid?(:OOPS)
-      false
-
-      iex> class_valid?("OOPS")
-      false
-
-      iex> class_valid?(65536)
-      false
-
-      # unassigned, but valid class value
-      iex> class_valid?(2)
-      true
-
-      iex> class_encode(:IN)
-      1
-
-      iex> class_encode("IN")
-      1
-
-      iex> class_encode(1)
-      1
-
-      iex> class_encode(:OOPS)
-      ** (DNS.MsgError) [encode] class_encode: unknown parameter name ':OOPS'
-
-      # unknown but valid numeric values are returned as-is
-      iex> class_encode(42)
-      42
-
-      iex> class_encode(65536)
-      ** (DNS.MsgError) [encode] class_encode: unknown parameter name '65536'
-
-      iex> class_decode(1)
-      :IN
-
-      iex> class_decode(:IN)
-      :IN
-
-      iex> class_decode("IN")
-      :IN
-
-      iex> class_decode(42)
-      42
-
-      iex> class_decode(:OOPS)
-      ** (DNS.MsgError) [decode] class_decode: unknown parameter value ':OOPS'
-
-      iex> class_decode(65536)
-      ** (DNS.MsgError) [decode] class_decode: unknown parameter value '65536'
+  Functions to map DNS parameter names to their values and vice versa.
 
   See
   [iana](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml)
   for more details on DNS parameters.
 
-  ## TODO
-  - [ ] [nsec3 params](https://www.iana.org/assignments/dnssec-nsec3-parameters/dnssec-nsec3-parameters.xhtml)
-
   """
   import DNS.MsgError, only: [error: 2]
 
-  @typedoc "A parameter's name, either an uppercase atom or uppercase binary"
-  @type name :: atom | binary
+  @typedoc "The name of a parameter's numeric value"
+  @type name :: atom
 
   @typedoc "A parameter's numeric value"
   @type value :: non_neg_integer
 
   # DNS Parameter definitions for generating encode/decode/list/valid? functions
+  # params = %{ {:name, range} => Keyword list of known name,value-pairs}.
   # - param type names (the keys) are atoms and used as prefix in function names
   # - the {name, value}-pairs as a list allows for ordering func defs by popularity
-  # - each name and each value in the list must be unique due pattern matching
+  # - each name and each value in the list must be unique due to pattern matching
   #   by the generated functions (compiler warns about redefining functions)
-  @params %{
-    :class => [
+  # - generate encode/decode/list/valid? per parameter type instead of
+  #   decode(:class, value) so you can use code completion instead of remembering
+  #   the parameter type's atom.
+  params = %{
+    {:class, 0..65535} => [
       {:RESERVED, 0},
       {:IN, 1},
       {:CH, 3},
@@ -112,7 +33,7 @@ defmodule DNS.Param do
       {:NONE, 254},
       {:ANY, 255}
     ],
-    :opcode => [
+    {:opcode, 0..15} => [
       {:QUERY, 0},
       {:IQUERY, 1},
       {:STATUS, 2},
@@ -120,7 +41,7 @@ defmodule DNS.Param do
       {:UPDATE, 5},
       {:DSO, 6}
     ],
-    :rcode => [
+    {:rcode, 0..65535} => [
       {:NOERROR, 0},
       {:FORMERROR, 1},
       {:SERVFAIL, 2},
@@ -144,7 +65,7 @@ defmodule DNS.Param do
       {:BADTRUNC, 22},
       {:BADCOOKIE, 23}
     ],
-    :rrtype => [
+    {:rrtype, 0..65535} => [
       {:RESERVED, 0},
       {:A, 1},
       {:NS, 2},
@@ -197,7 +118,7 @@ defmodule DNS.Param do
       {:CAA, 257},
       {:AMTRELAY, 260}
     ],
-    :edns_option => [
+    {:edns_option, 0..65535} => [
       {:RESERVED, 0},
       {:LLQ, 1},
       {:UL, 2},
@@ -218,7 +139,7 @@ defmodule DNS.Param do
       {:UMBRELLA_IDENT, 20292},
       {:DEVICEID, 26946}
     ],
-    :edns_ede => [
+    {:edns_ede, 0..65535} => [
       {:OTHER, 0},
       {:DNSKEY_ALGO, 1},
       {:DS_DIGEST, 2},
@@ -250,7 +171,7 @@ defmodule DNS.Param do
       {:POLICY, 28},
       {:SYNTHESIZED, 29}
     ],
-    :dnssec_algo => [
+    {:dnssec_algo, 0..255} => [
       {:DELETE, 0},
       {:RSAMD5, 1},
       {:DH, 2},
@@ -271,7 +192,7 @@ defmodule DNS.Param do
       {:PRIVATEDNS, 253},
       {:PRIVATEOID, 254}
     ],
-    :ds_digest => [
+    {:ds_digest, 0..255} => [
       {:RESERVED, 0},
       {:SHA1, 1},
       {:SHA256, 2},
@@ -282,109 +203,165 @@ defmodule DNS.Param do
     ]
   }
 
-  defp params(param),
-    do: @params[param] || []
+  @doc """
+  Returns a list of parameter types and their valid ranges.
 
-  # [[ GENERATE FUNCS ]]
+  ```
+  #{inspect(Map.keys(params), pretty: true, limit: :infinity)}
+  ```
 
-  for {name, parms} <- @params do
-    encode = String.to_atom("#{name}_encode")
-    decode = String.to_atom("#{name}_decode")
-    list = String.to_atom("#{name}_list")
-    valid = String.to_atom("#{name}_valid?")
+  """
+  @spec types() :: [{name, Range.t()}]
+  def types do
+    unquote(
+      for {n, r} <- Map.keys(params),
+          do: {n, Macro.escape(r)}
+    )
+  end
 
-    ## [[ @doc, @spec and function heads ]]
+  for {{p, r}, l} <- params do
+    range = Macro.escape(r)
 
-    @doc """
-    Returns the numeric value for given `name` of the `#{name}` parameter.
+    # [[ DECODE ]]
 
-    When given a valid numeric value, it is simply returned as-is.  \\
-    Raises `DNS.MsgError` for unknown names or invalid values.
-
-    """
-    @spec unquote(encode)(name | value) :: value
-    def unquote(encode)(name)
-
-    @doc """
-    Returns the name (as uppercase atom) for given `value` of the `#{name}`
-    parameter.
-
-    When given a valid name instead, it returns the uppercase atom.  \\
-    Raises `DNS.MsgError` on invalid values or unknown names.
-
-    """
-    @spec unquote(decode)(value | name) :: atom
-    def unquote(decode)(value)
+    name = String.to_atom("#{p}_decode")
+    bang = String.to_atom("#{p}_decode!")
 
     @doc """
-    Returns `true` if given `arg` is a valid value or known name of the
-    `#{name}` parameter, `false` otherwise.
+    Returns the name for given #{p} `value` in range #{inspect(r)}, or
+    `value` itself if it has no name.
+
+    When given a known name for a #{p} value (or a binary that can be
+    converted to a known name) it returns that name.  Returns `nil` for unknown
+    names or invalid values. See `#{p}_list/0` for known
+    `{name, value}`-pairs.
 
     """
-    @spec unquote(valid)(name | value) :: boolean
-    def unquote(valid)(arg)
+    @spec unquote(name)(value | name | binary) :: name | value | nil
+    def unquote(name)(value)
 
-    @doc """
-    Returns the list of known `{name, value}` pairs for the `#{name}` parameter.
+    # map value -> name and vice versa
+    for {k, v} <- l, do: def(unquote(name)(unquote(v)), do: unquote(k))
+    for {k, _} <- l, do: def(unquote(name)(unquote(k)), do: unquote(k))
 
-    ```elixir
-    # Currently known:
-    #{inspect(@params[name], pretty: true, width: 10, limit: :infinity)}
-    ```
+    # valid values without a name decode to themselves
+    def unquote(name)(n) when n in unquote(range), do: n
 
-    """
-    @spec unquote(list)() :: [{name, value}]
-    def unquote(list)()
-
-    ## [[ encode/decode - known names/values ]]
-
-    for {k, v} <- parms do
-      s = Atom.to_string(k)
-      def unquote(encode)(unquote(k)), do: unquote(v)
-      def unquote(encode)(unquote(v)), do: unquote(v)
-      def unquote(encode)(unquote(s)), do: unquote(v)
-      def unquote(decode)(unquote(v)), do: unquote(k)
-      def unquote(decode)(unquote(k)), do: unquote(k)
-      def unquote(decode)(unquote(s)), do: unquote(k)
-    end
-
-    ## [[ encode/decode - return valid values as-is ]]
-
-    case name do
-      name when name in [:class, :rrtype, :edns_option, :edns_ede] ->
-        def unquote(decode)(k) when k in 0..65535, do: k
-        def unquote(encode)(k) when k in 0..65535, do: k
-
-      name when name in [:opcode, :rcode] ->
-        def unquote(decode)(k) when k in 0..15, do: k
-        def unquote(encode)(k) when k in 0..15, do: k
-
-      name when name in [:dnssec_algo, :ds_digest] ->
-        def unquote(decode)(k) when k in 0..255, do: k
-        def unquote(encode)(k) when k in 0..255, do: k
-
-      _ ->
-        nil
-    end
-
-    ## [[ encode/decode - raise for encode/decode ]]
-
-    def unquote(encode)(k),
-      do: error(:eencode, "#{unquote(encode)}: unknown parameter name '#{inspect(k)}'")
-
-    def unquote(decode)(v),
-      do: error(:edecode, "#{unquote(decode)}: unknown parameter value '#{inspect(v)}'")
-
-    # [[ list/valid? definitions ]]
-
-    def unquote(list)(),
-      do: params(unquote(name))
-
-    def unquote(valid)(parm) do
-      unquote(encode)(parm)
-      true
+    # given a binary, try it as an (existing) atom name
+    def unquote(name)(str) when is_binary(str) do
+      String.upcase(str) |> String.to_existing_atom() |> unquote(name)()
     rescue
-      _ -> false
+      _ -> nil
     end
+
+    def unquote(name)(_), do: nil
+
+    @doc """
+    Same as `#{name}/1`, but raises instead of returning `nil`
+
+    """
+    @spec unquote(bang)(value | name | binary) :: name | value | no_return
+    def unquote(bang)(value) do
+      case unquote(name)(value) do
+        nil ->
+          error(
+            :eencode,
+            "unknown #{unquote(p)} name or value not in #{inspect(unquote(range))}, got: '#{value}'"
+          )
+
+        value ->
+          value
+      end
+    end
+
+    # [[ ENCODE ]]
+
+    name = String.to_atom("#{p}_encode")
+    bang = String.to_atom("#{p}_encode!")
+
+    @doc """
+    Returns the value, in range #{inspect(r)}, for given #{p} `name`.
+
+    When given a valid value, the value itself is returned. When given a binary
+    that can be converted to a valid name, it returns the associated value.
+    Returns `nil` for unknown names or invalid values.  See `#{p}_list/0` for
+    known `{name, value}`-pairs.
+
+    """
+    @spec unquote(name)(name | value | binary) :: value | nil
+    def unquote(name)(name)
+
+    for {k, v} <- l, do: def(unquote(name)(unquote(k)), do: unquote(v))
+
+    def unquote(name)(n) when n in unquote(range), do: n
+
+    def unquote(name)(s) when is_binary(s) do
+      String.upcase(s) |> String.to_existing_atom() |> unquote(name)()
+    rescue
+      _ -> nil
+    end
+
+    def unquote(name)(_), do: nil
+
+    @doc """
+    Same as `#{name}/1`, but raises on `nil`.
+
+    """
+    @spec unquote(bang)(name | value | binary) :: value | no_return
+    def unquote(bang)(name) do
+      case unquote(name)(name) do
+        nil ->
+          error(
+            :eencode,
+            "unknown #{unquote(p)} name or value not in #{inspect(unquote(range))}, got: '#{name}'"
+          )
+
+        value ->
+          value
+      end
+    end
+
+    # [[ VALID? ]]
+
+    name = String.to_atom("#{p}_valid?")
+
+    @doc """
+    Returns `true` if given a known name or valid value (in #{inspect(r)})
+    for the #{p} parameter, `false` otherwise.
+
+    Also returns `true` when given a binary that can be converted to a known
+    `t:name/0`.
+
+    """
+    @spec unquote(name)(name | value | binary) :: boolean
+    def unquote(name)(name_or_value)
+
+    # for {k, v} <- l, do: def(unquote(name)(unquote(v)), do: true)
+    for {k, _} <- l, do: def(unquote(name)(unquote(k)), do: true)
+
+    def unquote(name)(n) when n in unquote(range), do: true
+
+    def unquote(name)(s) when is_binary(s) do
+      String.upcase(s) |> String.to_existing_atom() |> unquote(name)()
+    rescue
+      _ -> nil
+    end
+
+    def unquote(name)(_), do: false
+
+    # [[ LIST ]]
+
+    name = String.to_atom("#{p}_list")
+
+    @doc """
+    Returns the known `t:name/0`,`t:value/0`-pairs for the #{p} parameter.
+
+    These include:
+    ```
+    #{inspect(l, pretty: true, width: 10, limit: :infinity)}
+    ```
+    """
+    @spec unquote(name)() :: [{name, value}]
+    def unquote(name)(), do: unquote(l)
   end
 end

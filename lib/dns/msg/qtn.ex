@@ -132,8 +132,8 @@ defmodule DNS.Msg.Qtn do
   @spec encode(t()) :: t() | no_return
   def encode(%__MODULE__{} = qtn) do
     dname = Name.encode(qtn.name)
-    class = Param.class_encode(qtn.class)
-    type = Param.rrtype_encode(qtn.type)
+    class = Param.class_encode!(qtn.class)
+    type = Param.rrtype_encode!(qtn.type)
     %{qtn | wdata: <<dname::binary, type::16, class::16>>}
   rescue
     e in DNS.MsgError -> error(:eencode, "Qtn " <> e.data)
@@ -251,10 +251,10 @@ defmodule DNS.Msg.Qtn do
   end
 
   defp do_put({:type = k, v}, qtn),
-    do: Map.put(qtn, k, Param.rrtype_decode(v))
+    do: Map.put(qtn, k, Param.rrtype_decode!(v))
 
   defp do_put({:class = k, v}, qtn),
-    do: Map.put(qtn, k, Param.class_decode(v))
+    do: Map.put(qtn, k, Param.class_decode!(v))
 
   # ignore options we donot need or know
   defp do_put(_, qtn),

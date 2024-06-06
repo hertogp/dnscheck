@@ -452,7 +452,7 @@ defmodule DNS.Msg.RR do
       }
 
       iex> new() |> put(type: 65536)
-      ** (DNS.MsgError) [create] RR rrtype_decode: unknown parameter value '65536'
+      ** (DNS.MsgError) [create] RR unknown rrtype name or value not in 0..65535, got: '65536'
 
   """
   @spec put(t(), Keyword.t()) :: t | no_return
@@ -462,7 +462,7 @@ defmodule DNS.Msg.RR do
     # ensure (native) decode_rdata func's can match on type as an atom
     {type, opts} = Keyword.pop(opts, :type, rr.type)
     # type = decode_rr_type(type)
-    type = Param.rrtype_decode(type)
+    type = Param.rrtype_decode!(type)
 
     rr = %{rr | type: type}
 
@@ -482,8 +482,8 @@ defmodule DNS.Msg.RR do
   end
 
   defp do_put({:class = k, v}, rr) do
-    if is_u16(Param.class_encode(v)),
-      do: Map.put(rr, k, Param.class_decode(v)),
+    if is_u16(Param.class_encode!(v)),
+      do: Map.put(rr, k, Param.class_decode!(v)),
       else: error(:ecreate, "#{k}, got: #{inspect(v)}")
   end
 
@@ -552,7 +552,7 @@ defmodule DNS.Msg.RR do
       do: error(:ecreate, "bufsize range is 0..65535, got: #{inspect(class)}")
 
     # construct EDNS(0) TTL
-    xrcode = Keyword.get(opts, :xrcode, 0) |> Param.rcode_encode()
+    xrcode = Keyword.get(opts, :xrcode, 0) |> Param.rcode_encode!()
     version = Keyword.get(opts, :version, 0)
     do_bit = Keyword.get(opts, :do, 1)
     z = Keyword.get(opts, :z, 0)
@@ -575,14 +575,14 @@ defmodule DNS.Msg.RR do
       do:
         error(:ecreate, "ENDS0 opts should be list of {CODE, DATA}, got: %#{inspect(edns_opts)}")
 
-    edns_opts = edns_opts |> Enum.map(fn {opt, dta} -> {Param.edns_option_decode(opt), dta} end)
+    edns_opts = edns_opts |> Enum.map(fn {opt, dta} -> {Param.edns_option_decode!(opt), dta} end)
 
     # pseudo-rr: add information encoded in class & ttl to rdmap as well
     # even though it's not encoded in this rr's rdata
     rdmap =
       Keyword.get(opts, :rdmap, %{})
       |> Map.put(:bufsize, class)
-      |> Map.put(:xrcode, Param.rcode_decode(xrcode))
+      |> Map.put(:xrcode, Param.rcode_decode!(xrcode))
       |> Map.put(:do, do_bit)
       |> Map.put(:version, version)
       |> Map.put(:z, z)
@@ -633,8 +633,8 @@ defmodule DNS.Msg.RR do
   @spec encode(t) :: t | no_return
   def encode(%__MODULE__{} = rr) do
     name = Name.encode(rr.name)
-    class = Param.class_encode(rr.class)
-    type = Param.rrtype_encode(rr.type)
+    class = Param.class_encode!(rr.class)
+    type = Param.rrtype_encode!(rr.type)
     rdata = if rr.raw, do: rr.rdata, else: encode_rdata(rr.type, rr.class, rr.rdmap)
     rdlen = byte_size(rdata)
 
@@ -917,7 +917,7 @@ defmodule DNS.Msg.RR do
 
   # IN RRSIG (46), https://www.rfc-editor.org/rfc/rfc4034#section-3
   defp encode_rdata(:RRSIG, :IN, m) do
-    type = required(:RRSIG, m, :type, fn t -> Param.rrtype_encode(t) |> is_u16 end)
+    type = required(:RRSIG, m, :type, fn t -> Param.rrtype_encode!(t) |> is_u16 end)
     algo = required(:RRSIG, m, :algo, &is_u8/1)
     labels = required(:RRSIG, m, :labels, &is_u8/1)
     ttl = required(:RRSIG, m, :ttl, &is_u32/1)
@@ -1398,11 +1398,11 @@ defmodule DNS.Msg.RR do
 
     opts =
       for <<code::16, len::16, data::binary-size(len) <- rdata>>,
-        do: Param.edns_option_decode(code) |> decode_edns_opt(len, data)
+        do: Param.edns_option_decode!(code) |> decode_edns_opt(len, data)
 
     %{
       bufsize: bufsize,
-      xrcode: Param.rcode_decode(xrcode),
+      xrcode: Param.rcode_decode!(xrcode),
       version: version,
       do: do_bit,
       z: z,
@@ -1492,7 +1492,7 @@ defmodule DNS.Msg.RR do
 
     %{
       # type: decode_rr_type(type),
-      type: Param.rrtype_decode(type),
+      type: Param.rrtype_decode!(type),
       algo: algo,
       labels: labels,
       ttl: ttl,
@@ -1786,7 +1786,7 @@ defmodule DNS.Msg.RR do
       |> Enum.map(fn n -> n + w * 256 end)
     end
     |> List.flatten()
-    |> Enum.map(fn n -> Param.rrtype_decode(n) end)
+    |> Enum.map(fn n -> Param.rrtype_decode!(n) end)
 
     # |> Enum.map(fn n -> decode_rr_type(n) end)
   end
@@ -1794,7 +1794,7 @@ defmodule DNS.Msg.RR do
   defp bitmap_4_rrs(rrs) do
     # TODO: maybe filter out QTYPEs like ANY (255), AXFR (252), IXFR (251), OPT (41)
     # or leave that up to the caller so experimentation remains possible
-    Enum.map(rrs, fn n -> Param.rrtype_encode(n) end)
+    Enum.map(rrs, fn n -> Param.rrtype_encode!(n) end)
     |> Enum.sort(:asc)
     |> Enum.group_by(fn n -> div(n, 256) end)
     |> Enum.map(fn {w, nrs} -> bitmap_block(w, nrs) end)

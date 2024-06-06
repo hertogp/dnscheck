@@ -437,7 +437,7 @@ defmodule DNS.Cache do
   defp cacheable?(%DNS.Msg.RR{} = rr) do
     # https://datatracker.ietf.org/doc/html/rfc1123#section-6
     # [ ] never cache NS from root hints
-    type = Param.rrtype_decode(rr.type)
+    type = Param.rrtype_decode!(rr.type)
 
     cond do
       type in @uncacheable -> false
@@ -493,8 +493,8 @@ defmodule DNS.Cache do
 
   @spec make_key(binary, atom, atom) :: {:ok, tuple} | :error
   defp make_key(name, class, type) do
-    ntype = Param.rrtype_encode(type)
-    nclass = Param.class_encode(class)
+    ntype = Param.rrtype_encode!(type)
+    nclass = Param.class_encode!(class)
     {:ok, name} = Name.normalize(name)
     {:ok, {name, nclass, ntype}}
   rescue
